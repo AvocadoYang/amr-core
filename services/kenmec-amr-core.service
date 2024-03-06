@@ -1,0 +1,12 @@
+[Unit]
+Description=Kenmec AMR Core
+After=kenmec-localization.service
+
+[Service]
+Type=simple
+ExecStart=/home/kenmec/amr-core/services/amr-core.sh
+Restart=always
+TimeoutStopSec=5
+
+[Install]
+WantedBy=kenmec-localization.service

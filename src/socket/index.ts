@@ -1,0 +1,124 @@
+import chalk from 'chalk';
+import { fromEventPattern, map, share, tap } from 'rxjs';
+import { io, Socket } from 'socket.io-client';
+import config from '~/config';
+// import { SimplePose, formatPose, sanitizeDegree } from '~/helpers';
+import logger from '~/logger';
+
+let socket: Socket;
+
+export function init(serialNumber: string) {
+  const url = `ws://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/amr`;
+  socket = io(url, { query: { serialNumber } });
+}
+
+export function responseShortestPath() {
+  socket.emit('res-shortestPath', { test: 'test' });
+}
+
+export const connect$ = fromEventPattern<never>((next) =>
+  socket.on('connect', next),
+).pipe(share());
+
+export const disconnect$ = fromEventPattern<string>((next) =>
+  socket.on('disconnect', next),
+).pipe(share());
+
+export const connectionError$ = fromEventPattern<Error>((next) =>
+  socket.on('connect_error', next),
+).pipe(share());
+
+export const writeStatus$ = fromEventPattern<{
+  status: string;
+}>((next) => {
+  socket.on('write-status', next);
+}).pipe(share());
+
+export const writeCancel$ = fromEventPattern<{
+  id: string;
+}>((next) => {
+  socket.on('write-cancel', next);
+}).pipe(share());
+
+export const moveToPoint$ = fromEventPattern<{
+  tolerance: number;
+  locationId?: string;
+}>((next) => socket.on('move-to-point', next)).pipe(
+  tap((target) => {
+    // console.log(chalk.bgYellow('move to poient'));
+    // console.log(target);
+  }),
+  map((target) => ({
+    ...target,
+    tolerance: 0.1,
+  })),
+  share(),
+);
+
+export const moveToPointPrecisely$ = fromEventPattern<{
+  tolerance: number;
+  locationId?: string;
+}>((next) => socket.on('move-to-point-precisely', next)).pipe(
+  tap((pose) => {
+    // console.log(chalk.bgMagentaBright('move to precise'));
+    // console.log(pose);
+  }),
+  map((target) => ({
+    ...target,
+    tolerance: 0.1,
+  })),
+  share(),
+);
+
+export const shortestPath$ = fromEventPattern<{ shortestPath: string[] }>(
+  (next) => socket.on('shortest-path', next),
+).pipe(share());
+
+export const allowPath$ = fromEventPattern<{
+  locationId: string;
+  isAllow: boolean;
+}>((next) => socket.on('allow-path', next)).pipe(share());
+
+export function sendIsArriveLocation(arriveMsg: {
+  locationId: string;
+  isArrive: boolean;
+}) {
+  socket.emit('arrive-loc', arriveMsg);
+}
+
+export function sendShortestIsReceived(result) {
+  socket.volatile.emit('receive-shortestPath', { result });
+}
+
+export function sendWriteStateFeedback(feedback: string) {
+  socket.volatile.emit('writeStatus-feedback', { feedback });
+}
+
+export function sendReadStatus(msg: string) {
+  socket.volatile.emit('read-status', { msg });
+}
+
+export function sendIOInfo(msg: string) {
+  socket.volatile.emit('io-info', { msg });
+}
+
+export function sendError(error: string) {
+  // logger.http(`emit socket 'error' { rosError: ${error}}`);
+  socket.volatile.emit('ros-error', { rosError: error });
+}
+
+export function sendStatus(status: string) {
+  // logger.http(`emit socket 'status' { rosStatus: ${status}}`);
+  socket.volatile.emit('ros-status', { rosStatus: status });
+}
+
+// 回傳座標到fleet
+export function sendPose(x: number, y: number, yaw: number) {
+  socket.volatile.emit('pose', { x, y, yaw });
+}
+
+// 回傳已到座標到fleeet
+export function sendReachGoal(locationId: string) {
+  logger.http(`emit socket 'reach-goal' ${locationId}`);
+  socket.emit('reach-goal', { locationId });
+}

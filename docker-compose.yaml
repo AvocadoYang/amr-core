@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  amr-core:
+    container_name: amr-core
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - '6060:6060'
+    environment:
+      - NODE_CONFIG_ENV=px_ruifang
+
