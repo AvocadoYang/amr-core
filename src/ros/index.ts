@@ -21,6 +21,7 @@ import {
   MyRosMessage,
   IsArrive,
   FeedbackOfMove,
+  isAway
 } from '~/types/fleetInfo';
 
 import * as SOCKET from '../socket';
@@ -187,6 +188,21 @@ export const getFeedbackFromMoveAction$ = (() => {
     });
   });
 })();
+
+export const getLeaveLocation$ = (() => {
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/fleet_manager/is_away',
+    messageType: 'std_msgs/String'
+  })
+
+  return fromEventPattern<isAway>((next) =>{
+    topic.subscribe((msg) => {
+      console.log(msg, '==================')
+      next(msg)
+    })
+  })
+})()
 
 export const getArriveTarget$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({

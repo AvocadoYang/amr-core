@@ -154,6 +154,10 @@ export type IsArrive = {
   isArrive: boolean;
 };
 
+export type isAway = {
+  locationId: string;
+}
+
 export type FeedbackOfMove = {
   header: {
     seq: number;

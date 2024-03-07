@@ -86,6 +86,10 @@ export function sendIsArriveLocation(arriveMsg: {
   socket.emit('arrive-loc', arriveMsg);
 }
 
+export function sendIsLeaveLocation(isAwayMsg: {locationId: string}){
+  socket.emit('leave-location', isAwayMsg)
+}
+
 export function sendShortestIsReceived(result) {
   socket.volatile.emit('receive-shortestPath', { result });
 }

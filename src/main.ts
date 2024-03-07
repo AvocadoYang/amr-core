@@ -32,6 +32,7 @@ import {
   Subject,
   takeWhile,
   Subscription,
+  from,
 } from 'rxjs';
 import macaddress, { all } from 'macaddress';
 import chalk from 'chalk';
@@ -59,6 +60,7 @@ async function bootstrap() {
   let accMoveAction: string;
   let lastWriteStatus: string = JSON.stringify(initWrite);
   let InitSubscription$: Subscription;
+  let lastShortestPath: string[];
   const notifyMoveStart$ = new Subject<boolean>();
   let getSendActionFeedback$: Subscription;
   SOCKET.init(mac);
@@ -177,7 +179,9 @@ async function bootstrap() {
 
   const startMoveSteps = () => {
     return merge(
-      SOCKET.shortestPath$.pipe(take(1), ROS.shortestPath()),
+      SOCKET.shortestPath$.pipe(take(1),tap((shortestPath) =>{
+        lastShortestPath = shortestPath.shortestPath
+      }), ROS.shortestPath()),
       SOCKET.allowPath$,
     ).pipe(filter(isLocationIdAndIsAllow));
   };
@@ -185,7 +189,6 @@ async function bootstrap() {
   InitSubscription$ = startMoveSteps()
     .pipe(takeWhile((allowTarget) => allowTarget.isAllow === true))
     .subscribe((allowTarget) => {
-      console.log(allowTarget, '185 ');
       ROS.allowTarget(
         allowTarget as {
           locationId: string;
@@ -290,13 +293,22 @@ async function bootstrap() {
                 },
               );
             } else {
-              console.log(allowTarget, '303');
               ROS.allowTarget(
                 allowTarget as {
                   locationId: string;
                   isAllow: boolean;
                 },
               );
+              ROS.getLeaveLocation$.pipe(take(1)).subscribe((leaveLocation) => {
+                if(!lastShortestPath.length) return;
+                if(leaveLocation.locationId === lastShortestPath[0]){
+                  from([leaveLocation, leaveLocation]).subscribe((leaveLocationId) => {
+                    SOCKET.sendIsLeaveLocation(leaveLocationId)
+                  })
+                } else {
+                  SOCKET.sendIsLeaveLocation(leaveLocation);
+                }
+              })
             }
           });
 

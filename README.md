@@ -8,9 +8,9 @@ Modify `.env` and `configs/*.yaml`
 
 ## Mocking Tips
 
-```sh
+<!-- ```sh
 roslaunch turtlebot3_gazebo turtlebot3_world.launch
-```
+``` -->
 
 ```sh
 roslaunch rosbridge_server rosbridge_websocket.launch
