@@ -102,6 +102,10 @@ export function sendReadStatus(msg: string) {
   socket.volatile.emit('read-status', { msg });
 }
 
+export function sendRealTimeReadStatus(msg: string) {
+  socket.volatile.emit('real-time-read-status', { msg });
+}
+
 export function sendIOInfo(msg: string) {
   socket.volatile.emit('io-info', { msg });
 }
@@ -125,4 +129,12 @@ export function sendPose(x: number, y: number, yaw: number) {
 export function sendReachGoal(locationId: string) {
   logger.http(`emit socket 'reach-goal' ${locationId}`);
   socket.emit('reach-goal', { locationId });
+}
+
+export function sendGas(msg: string) {
+  socket.volatile.emit('yellow-car-gas', { msg });
+}
+
+export function sendThermal(msg: string) {
+  socket.volatile.emit('yellow-car-thermal', { msg });
 }

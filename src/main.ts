@@ -369,6 +369,19 @@ async function bootstrap() {
     ROS.writeCancel(cancelMessage);
   });
 
+  ROS.getRealTimeReadStatus$.subscribe((data) => {
+    SOCKET.sendRealTimeReadStatus(data)
+  })
+
+
+  ROS.getGas$.subscribe((data) => {
+    SOCKET.sendGas(data)
+  })
+
+  ROS.getThermal$.subscribe((data) => {
+    SOCKET.sendThermal(data)
+  })
+
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
 }

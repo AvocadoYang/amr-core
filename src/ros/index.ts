@@ -368,3 +368,64 @@ export const writeCancel = (() => {
   };
 })();
 // ------------------------------------------------------------------------------ 交車主要交握
+
+
+
+
+// 插車回傳任務狀況
+export const getRealTimeReadStatus$ = (() => {
+  const schema = object({
+    data: string().required('amr read status missed '),
+  }).required('amr detail data missed');
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/fleet_manager/real_time_read_status',
+    messageType: 'std_msgs/String',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();
+
+// 小車氣體 
+export const getGas$ = (() => {
+  const schema = object({
+    data: string().required('gas missed '),
+  }).required('gas missed');
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/kenmec_yellow/gas',
+    messageType: 'std_msgs/String',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();
+
+
+// 小車熱感 
+export const getThermal$ = (() => {
+  const schema = object({
+    data: string().required('thermal missed '),
+  }).required('thermal missed');
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/infraredtemp/info',
+    messageType: 'std_msgs/String',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();
