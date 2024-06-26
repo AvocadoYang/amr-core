@@ -429,3 +429,18 @@ export const getThermal$ = (() => {
     }),
   );
 })();
+
+
+export const updatePosition = (() => {
+  // Create a topic instance
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: '/mission_control/update_position',
+    messageType: 'std_msgs/Bool',
+  });
+
+  return (msg: ROSLIB.Message) => {
+    // Publish the cancel message
+    topic.publish(msg);
+  };
+})();

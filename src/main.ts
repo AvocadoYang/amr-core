@@ -382,6 +382,9 @@ async function bootstrap() {
     SOCKET.sendThermal(data)
   })
 
+  SOCKET.updatePosition$.subscribe((data)=>{
+    ROS.updatePosition(data)
+  })
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
 }

@@ -79,6 +79,11 @@ export const allowPath$ = fromEventPattern<{
   isAllow: boolean;
 }>((next) => socket.on('allow-path', next)).pipe(share());
 
+
+export const updatePosition$ = fromEventPattern<{ isUpdate: boolean }>(
+  (next) => socket.on('write-new-position', next),
+).pipe(share());
+
 export function sendIsArriveLocation(arriveMsg: {
   locationId: string;
   isArrive: boolean;
