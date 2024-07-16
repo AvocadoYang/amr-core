@@ -383,7 +383,7 @@ async function bootstrap() {
   })
 
   SOCKET.updatePosition$.subscribe((data)=>{
-    ROS.updatePosition(data)
+    ROS.updatePosition({data: data.isUpdate})
   })
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
