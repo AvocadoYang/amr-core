@@ -1,5 +1,4 @@
-/* eslint-disable no-console */
-/* eslint-disable import/first */
+//version 3
 import dotenv from 'dotenv';
 import { cleanEnv, str } from 'envalid';
 
@@ -26,15 +25,13 @@ import {
   switchMap,
   switchMapTo,
   take,
-  Observable,
   tap,
-  of,
-  Subject,
-  takeWhile,
   Subscription,
-  from,
+  timeout,
+  throwError,
+  catchError,
 } from 'rxjs';
-import macaddress, { all } from 'macaddress';
+import macaddress from 'macaddress';
 import chalk from 'chalk';
 import { object, string, number, boolean } from 'yup';
 import logger from './logger';
@@ -55,14 +52,13 @@ async function bootstrap() {
   let lastLocId: number = 0;
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
   let targetLoc: string;
-  let startMoveSteps$: Observable<{ locationId: string; isAllow: boolean }>;
-  let accMoveActionId: string;
+  let missionType: string = '';
   let accMoveAction: string;
   let lastWriteStatus: string = JSON.stringify(initWrite);
-  let InitSubscription$: Subscription;
+  let cancelFlag: boolean = false;
   let lastShortestPath: string[];
-  const notifyMoveStart$ = new Subject<boolean>();
-  let getSendActionFeedback$: Subscription;
+  let getLeaveLoc$: Subscription;
+  let getArriveLoc$: Subscription;
   SOCKET.init(mac);
   ROS.init();
 
@@ -77,6 +73,8 @@ async function bootstrap() {
     logger.info('ROS Bridge Connection closed');
   });
 
+
+
   merge(
     ROS.connected$.pipe(mapTo(true)),
     ROS.connectionClosed$.pipe(mapTo(false)),
@@ -88,6 +86,8 @@ async function bootstrap() {
     .subscribe(() => {
       ROS.reconnect();
     });
+
+
 
   ROS.connected$
     .pipe(switchMapTo(ROS.pose$), take(1))
@@ -108,7 +108,6 @@ async function bootstrap() {
       x: -Math.sin((pose.yaw * Math.PI) / 180) * config.OFFSET_X,
       y: -Math.cos((pose.yaw * Math.PI) / 180) * config.OFFSET_X,
     };
-    // console.log(pose.x + machineOffset.x, pose.y + machineOffset.y, pose.yaw);
     SOCKET.sendPose(
       pose.x + machineOffset.x,
       pose.y + machineOffset.y,
@@ -119,11 +118,6 @@ async function bootstrap() {
 
   ROS.getReadStatus$.subscribe((data) => {
     const myFeedback = data.result.result_status;
-    if (myFeedback !== 1) return;
-    if (accMoveAction === 'move') {
-      getSendActionFeedback$.unsubscribe();
-      SOCKET.sendReachGoal(targetLoc);
-    }
     const newState = {
       read: {
         is_arrive: true,
@@ -155,14 +149,28 @@ async function bootstrap() {
         error: '',
       },
     };
+
     console.log('\n', '==========', '\n');
+    console.log(new Date().toLocaleString())
     console.log(`🐝 ${chalk.magenta('mission complete')} 🐝`);
     console.log('\n', '==========');
+
+    if (accMoveAction === 'move') {
+      console.log('arrived at destination', targetLoc);
+      SOCKET.sendReachGoal(targetLoc);
+      missionType = '';
+      targetLoc = '';
+      setTimeout(() => {
+        SOCKET.sendReadStatus(JSON.stringify(newState));
+      }, 1000)
+      return
+    }
+    
     SOCKET.sendReadStatus(JSON.stringify(newState));
+    
   });
 
   ROS.getIOInfo$.subscribe((data) => {
-    // console.log(data);
     SOCKET.sendIOInfo(data);
   });
 
@@ -177,25 +185,82 @@ async function bootstrap() {
     );
   }
 
-  const startMoveSteps = () => {
-    return merge(
-      SOCKET.shortestPath$.pipe(take(1),tap((shortestPath) =>{
-        lastShortestPath = shortestPath.shortestPath
-      }), ROS.shortestPath()),
-      SOCKET.allowPath$,
-    ).pipe(filter(isLocationIdAndIsAllow));
-  };
+  SOCKET.startOneTermAllowPath$.subscribe(() => {
+    ROS.getArriveTarget$.pipe(take(1),
+    timeout(3000),
+    catchError(() => {
+      return throwError(
+        () => new Error(`Amr register wrong ! close arrive observer of Init.`),
+      );
+    }),).subscribe({
+      next:(isArriveRes) => {
+        logger.info(
+          `Arrive location ${isArriveRes.data}  is received successful`,
+        );
+        const resData = (isArriveRes as { data: string }).data;
+  
+        const parseData = JSON.parse(resData);
+        SOCKET.sendIsArriveLocation(parseData)
+        SOCKET.sendReachGoal(parseData.locationId);
+  
+      },
+      error: (err) => console.log(chalk.bgRed(err)),
+    })
+  })
 
-  InitSubscription$ = startMoveSteps()
-    .pipe(takeWhile((allowTarget) => allowTarget.isAllow === true))
-    .subscribe((allowTarget) => {
+
+  SOCKET.shortestPath$.pipe(
+    tap((shortestPath) =>{ lastShortestPath = shortestPath.shortestPath})
+    ,ROS.shortestPath())
+    .subscribe();
+
+  SOCKET.allowPath$.pipe(filter(isLocationIdAndIsAllow))
+  .subscribe((allowTarget) => {
+    console.log(allowTarget)
+    if(allowTarget.isAllow){
+      getArriveLoc$ = ROS.getArriveTarget$.pipe(take(1)).subscribe((isArriveRes) => {
+        logger.info(
+          `Arrive location ${isArriveRes.data}  is received successful`,
+        );
+        const resData = (isArriveRes as { data: string }).data;
+        SOCKET.sendIsArriveLocation(JSON.parse(resData));
+        const parseData = JSON.parse(resData);
+        if(targetLoc === allowTarget.locationId){
+          SOCKET.sendReachGoal(parseData.locationId);
+        }
+      });
+    }
       ROS.allowTarget(
         allowTarget as {
           locationId: string;
           isAllow: boolean;
         },
       );
-    });
+      if(!cancelFlag && targetLoc !== allowTarget.locationId){
+        console.log('create leave location Observerble!!!!!!!!!!, now allow =', allowTarget.locationId)
+        getLeaveLoc$ = ROS.getLeaveLocation$.pipe(
+          filter((response) => {
+            const Loc = JSON.parse(response.data).locationId;
+            return Loc === allowTarget.locationId
+          }),
+          take(1))
+          .subscribe((leaveLocation) => {
+          const leaveLoc = JSON.parse(leaveLocation.data);
+          console.log('leave location = ', leaveLoc.locationId)
+          if(!lastShortestPath.length) return;
+          SOCKET.sendIsLeaveLocation(leaveLocation);
+        })
+        return;
+      }
+      cancelFlag = false;
+  })
+
+
+
+  ROS.getAmrError$.subscribe((error: { warning_msg: string[]; warning_id: string[]; } ) => {
+    SOCKET.sendForkErrorInfo(error)
+  })
+
 
   SOCKET.writeStatus$
     .pipe(
@@ -269,95 +334,42 @@ async function bootstrap() {
     .subscribe((msg) => {
       console.log(chalk.greenBright(`write status ${JSON.stringify(msg)}`));
       if (msg.operation.type === 'move') {
-        InitSubscription$.unsubscribe();
         targetLoc = msg.move.goal_id.toString();
+        missionType = msg.operation.type;
         ROS.writeStatus(msg);
-        startMoveSteps$ = startMoveSteps();
-
-        getSendActionFeedback$ = notifyMoveStart$
-          .pipe(
-            switchMap((notify) => {
-              if (notify) {
-                return startMoveSteps$;
-              }
-              return of(null);
-            }),
-          )
-          .subscribe((allowTarget) => {
-            if (process.env.MODE === 'debug') {
-              if (!allowTarget.isAllow) return;
-              ROS.allowTargetTest(
-                allowTarget as {
-                  locationId: string;
-                  isAllow: boolean;
-                },
-              );
-            } else {
-              ROS.allowTarget(
-                allowTarget as {
-                  locationId: string;
-                  isAllow: boolean;
-                },
-              );
-              ROS.getLeaveLocation$.pipe(take(1)).subscribe((leaveLocation) => {
-                if(!lastShortestPath.length) return;
-                if(leaveLocation.locationId === lastShortestPath[0]){
-                  from([leaveLocation, leaveLocation]).subscribe((leaveLocationId) => {
-                    SOCKET.sendIsLeaveLocation(leaveLocationId)
-                  })
-                } else {
-                  SOCKET.sendIsLeaveLocation(leaveLocation);
-                }
-              })
-            }
-          });
-
-        if (process.env.MODE === 'debug') {
-          notifyMoveStart$.next(true);
-        }
       } else {
         ROS.writeStatus(msg);
       }
-      // ROS.writeStatus(msg.status);
     });
+
 
   ROS.getFeedbackFromMoveAction$.subscribe((Feedback) => {
-    const schema = object({
-      task_process: string().required(),
-      action_process: string().required(),
-      error: string().required(),
-      heartbeat: number().required(),
 
-      with_goods: boolean().required(),
-      warning_msg: string().required(),
-      warning_id: number().required(),
-      warning: number().required(),
-    });
-    // Message {
-    //   header: {
-    //     seq: 3,
-    //     stamp: { secs: 1708049462, nsecs: 974755287 },
-    //     frame_id: ''
-    //   },
-    //   status: { goal_id: { stamp: [Object], id: '12345' }, status: 1, text: '' },
-    //   feedback: {
-    //     feedback_json: '{"task_process": 0, "warning": 0, "warning_id": 23, "warning_msg": "\\u6b63\\u5e38", "is_running": null, "cancel_task": false, "task_status": true}'
-    //   }
-    //  }
+    /** Feedback Content
+     Message {
+       header: {
+        seq: 3,
+         stamp: { secs: 1708049462, nsecs: 974755287 },
+         frame_id: ''
+      },
+      status: { goal_id: { stamp: [Object], id: '12345' }, status: 1, text: '' },
+       feedback: {
+        feedback_json: '{"task_process": 0, "warning": 0, "warning_id": 23, "warning_msg": "\\u6b63\\u5e38", "is_running": null, "cancel_task": false, "task_status": true}'
+       }
+      }
+    */
+
     const { status, feedback } = Feedback;
     const actionId = status.goal_id.id;
-    if (!actionId) return;
-    if (actionId !== accMoveActionId) {
-      notifyMoveStart$.next(true);
-      accMoveActionId = actionId;
-      SOCKET.sendWriteStateFeedback(feedback.feedback_json);
-    } else {
-      // console.log(Feedback);
+    if(lastSendGoalId !== actionId){
+      console.log(chalk.bgRed(`execute action ID: ${lastSendGoalId} not equal to feedback action ID: ${actionId}`));
+      return;
     }
+    if (!actionId) return;
+    SOCKET.sendWriteStateFeedback(feedback.feedback_json);
   });
 
   SOCKET.writeCancel$.subscribe(({ id }) => {
-    // 要傳送的資料長這樣
     const cancelMessage: ROSLIB.Message = {
       stamp: {
         secs: 0,
@@ -365,9 +377,15 @@ async function bootstrap() {
       },
       id,
     };
+    if(missionType === 'move'){
+      getLeaveLoc$.unsubscribe();
+      getArriveLoc$.unsubscribe();
+      cancelFlag = true;
+    }
 
     ROS.writeCancel(cancelMessage);
   });
+
 
   ROS.getRealTimeReadStatus$.subscribe((data) => {
     SOCKET.sendRealTimeReadStatus(data)
