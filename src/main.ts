@@ -215,7 +215,6 @@ async function bootstrap() {
 
   SOCKET.allowPath$.pipe(filter(isLocationIdAndIsAllow))
   .subscribe((allowTarget) => {
-    console.log(allowTarget)
     if(allowTarget.isAllow){
       getArriveLoc$ = ROS.getArriveTarget$.pipe(take(1)).subscribe((isArriveRes) => {
         logger.info(
