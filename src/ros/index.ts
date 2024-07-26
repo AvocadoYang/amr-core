@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import ROSLIB from 'roslib';
+import ROSLIB, { Ros } from 'roslib';
 import {
   EMPTY,
   Observable,
@@ -9,6 +9,7 @@ import {
   share,
   switchMap,
   take,
+  Subscription
 } from 'rxjs';
 import { boolean, number, object, string } from 'yup';
 
@@ -124,7 +125,7 @@ export const getIOInfo$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: 'kenmec_fork/io_info',
+    name: `/kenmec_${process.env.CAR}/io_info`,
     messageType: 'std_msgs/String',
   });
 
@@ -140,36 +141,36 @@ export const getIOInfo$ = (() => {
 // 傳送路徑
 
 export const shortestPath = () => {
-  return (isAllow$: Observable<{ shortestPath: string[] }>) => {
+  return (shortestPath$: Observable<{ shortestPath: string[] }>) => {
     const service = new ROSLIB.Service({
       ros,
       name: '/fleet_manager/shortest_path',
-      serviceType: 'kenmec_fork_socket/shortest_path',
+      serviceType: `kenmec_${process.env.CAR}_socket/shortest_path`,
     });
     return new Observable<{ result: boolean }>((subscriber) => {
-      isAllow$.subscribe((shortest_Path) => {
+      shortestPath$.subscribe((shortest_Path) => {
         // subscriber.complete();
         console.log('shortestPath is transmitting ...');
-        console.log({ shortestPath: shortest_Path });
-        service.callService(
-          {
-            shortestPath: shortest_Path.shortestPath,
-          },
-          ({ result }) => {
-            logger.info(`Result of shortestPath from ${service.name}`);
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-            if (result as boolean) {
-              console.log(
-                chalk.blue(`AMR received shortPath, Service server is working`),
-              );
-              SOCKET.sendShortestIsReceived(result);
-              subscriber.complete();
-            }
-          },
-          (error: string) => {
-            console.log(`Service request is failed ${error}`);
-          },
-        );
+        console.log(shortest_Path );
+          service.callService(
+            {
+              shortestPath: shortest_Path.shortestPath,
+            },
+            ({ result }) => {
+              logger.info(`Result of shortestPath from ${service.name}`);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              if (result as boolean) {
+                console.log(
+                  chalk.blue(`AMR received shortPath, Service server is working`),
+                );
+                SOCKET.sendShortestIsReceived(result);
+              }
+            },
+            (error: string) => {
+              console.log(`Service request is failed ${error}`);
+            },
+          );
+        
       });
     });
   };
@@ -178,8 +179,8 @@ export const shortestPath = () => {
 export const getFeedbackFromMoveAction$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: '/fleet_manager/mission/feedback',
-    messageType: 'kenmec_fork_socket/MissionActionFeedback',
+    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/feedback`,
+    messageType: `kenmec_${process.env.CAR}_socket/MissionActionFeedback`,
   });
 
   return fromEventPattern<FeedbackOfMove>((next) => {
@@ -192,13 +193,12 @@ export const getFeedbackFromMoveAction$ = (() => {
 export const getLeaveLocation$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: '/fleet_manager/is_away',
+    name: `/kenmec_${process.env.CAR}/navigation/is_away`,
     messageType: 'std_msgs/String'
   })
 
   return fromEventPattern<isAway>((next) =>{
     topic.subscribe((msg) => {
-      console.log(msg, '==================')
       next(msg)
     })
   })
@@ -207,7 +207,7 @@ export const getLeaveLocation$ = (() => {
 export const getArriveTarget$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: '/fleet_manager/is_arrive',
+    name: `/kenmec_${process.env.CAR}/navigation/is_arrive`,
     messageType: 'std_msgs/String',
   });
 
@@ -234,34 +234,10 @@ export const allowTarget = (() => {
   const service = new ROSLIB.Service({
     ros,
     name: '/fleet_manager/allow_path',
-    serviceType: 'kenmec_fork_socket/TrafficStatus',
+    serviceType: `kenmec_${process.env.CAR}_socket/TrafficStatus`,
   });
-  const schema = object({
-    locationId: string().required(),
-    isArrive: boolean().required(),
-  });
+
   return (nextLocation: { locationId: string; isAllow: boolean }) => {
-    if (nextLocation.isAllow) {
-      getArriveTarget$.pipe(take(1)).subscribe((isArriveRes) => {
-        const resData = (isArriveRes as { data: string }).data;
-        SOCKET.sendIsArriveLocation(JSON.parse(resData));
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const parseData = JSON.parse(resData);
-
-        setTimeout(() => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          SOCKET.sendReachGoal(parseData.locationId);
-        }, 2000);
-        // schema
-        //   .validate(JSON.parse(resData))
-        //   .then((transferData) => {
-        //     SOCKET.sendIsArriveLocation(transferData);
-        //   })
-        //   .catch(() => {
-        //     console.log('Form error from ROS response');
-        //   });
-      });
       service.callService(
         nextLocation,
         (res) => {
@@ -271,43 +247,41 @@ export const allowTarget = (() => {
             );
             return;
           }
-          // res = { locationId: string, isArrive: boolean}
+          const Log = nextLocation.isAllow 
+          ? `Allow location ${nextLocation.locationId}  is transmitted successfully` 
+          : `Not allow location ${nextLocation.locationId}  is transmitted successfully `
           logger.info(
-            `Allow location ${nextLocation.locationId}  is transmitted successfully  `,
+            Log,
           );
         },
         (error: string) => {
           console.log(`Service request is failed ${error}`);
         },
       );
-    } else {
-      service.callService(
-        nextLocation,
-        (res) => {
-          if (!(res as { result: boolean }).result) {
-            logger.info(
-              `Allow location ${nextLocation.locationId}  is transmitted wrong`,
-            );
-            return;
-          }
-          logger.info(
-            `Allow location ${nextLocation.locationId}  is transmitted successfully  `,
-          );
-        },
-        (error: string) => {
-          console.log(`Service request is failed ${error}`);
-        },
-      );
-    }
   };
+})();
+
+export const forkStatus$ = (() => {
+  if(process.env.CAR === 'yellow') return;
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: '/fleet_manager/fork_status',
+    messageType: `kenmec_${process.env.CAR}_socket/ForkStatus`,
+  });
+
+  return fromEventPattern((next) => {
+    topic.subscribe(( msg ) => {
+      next(msg);
+    })
+  })
 })();
 
 // 傳送寫入 主要是任務
 export const writeStatus = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: '/fleet_manager/mission/goal',
-    messageType: 'kenmec_fork_socket/MissionActionGoal',
+    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/goal`,
+    messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
   });
 
   return (msg: ConvertedWriteStatus) => {
@@ -336,14 +310,11 @@ export const writeStatus = (() => {
 
 // 插車回傳任務狀況
 export const getReadStatus$ = (() => {
-  // const schema = object({
-  //   data: string().required('amr read status missed'),
-  // }).required('amr detail data missed');
 
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: '/fleet_manager/mission/result',
-    messageType: 'kenmec_fork_socket/MissionActionResult',
+    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/result`,
+    messageType: `kenmec_${process.env.CAR}_socket/MissionActionResult`,
   });
 
   return fromEventPattern<MyRosMessage>((next) =>
@@ -358,7 +329,7 @@ export const writeCancel = (() => {
   // Create a topic instance
   const topic = new ROSLIB.Topic({
     ros,
-    name: '/kenmec_yellow/fleet_manager/cancel',
+    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/cancel`,
     messageType: 'actionlib_msgs/GoalID',
   });
 
@@ -368,7 +339,6 @@ export const writeCancel = (() => {
   };
 })();
 // ------------------------------------------------------------------------------ 交車主要交握
-
 
 
 
@@ -389,6 +359,37 @@ export const getRealTimeReadStatus$ = (() => {
       next(schema.validateSync(msg).data);
     }),
   );
+})();
+
+
+
+
+export const getAmrError$ = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${process.env.CAR}/error_info`,
+    messageType: 'std_msgs/String'
+  });
+  return fromEventPattern((next) => {
+    topic.subscribe((msg:{ warning_msg: string[]; warning_id: string[];}) => {
+      next(msg);
+    })
+  })
+})();
+
+
+export const updatePosition = (() => {
+  // Create a topic instance
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: '/mission_control/update_position',
+    messageType: 'std_msgs/Bool',
+  });
+
+  return (msg: ROSLIB.Message) => {
+    // Publish the cancel message
+    topic.publish(msg);
+  };
 })();
 
 // 小車氣體 
@@ -428,19 +429,4 @@ export const getThermal$ = (() => {
       next(schema.validateSync(msg).data);
     }),
   );
-})();
-
-
-export const updatePosition = (() => {
-  // Create a topic instance
-  const topic = new ROSLIB.Topic({
-    ros,
-    name: '/mission_control/update_position',
-    messageType: 'std_msgs/Bool',
-  });
-
-  return (msg: ROSLIB.Message) => {
-    // Publish the cancel message
-    topic.publish(msg);
-  };
 })();

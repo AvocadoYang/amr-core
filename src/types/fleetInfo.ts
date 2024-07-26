@@ -155,6 +155,7 @@ export type IsArrive = {
 };
 
 export type isAway = {
+  data: any;
   locationId: string;
 }
 
