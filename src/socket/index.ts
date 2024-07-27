@@ -8,8 +8,9 @@ import logger from '~/logger';
 let socket: Socket;
 
 export function init(serialNumber: string) {
-  const url = `ws://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/amr`;
-  socket = io(url, { query: { serialNumber } });
+  const url = `wss://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/amr`;
+  socket = io(url, { query: { serialNumber }, secure: true,
+    rejectUnauthorized: false, });
 }
 
 export function responseShortestPath() {
@@ -70,6 +71,13 @@ export const moveToPointPrecisely$ = fromEventPattern<{
   share(),
 );
 
+// ======= communication with Jack =======
+
+
+export const startOneTermAllowPath$ = fromEventPattern<{ amrId: string, start:boolean}>(
+  (next) => socket.on('start-initial', next),
+).pipe(share());
+
 export const shortestPath$ = fromEventPattern<{ shortestPath: string[] }>(
   (next) => socket.on('shortest-path', next),
 ).pipe(share());
@@ -87,11 +95,6 @@ export const allowPath$ = fromEventPattern<{
   locationId: string;
   isAllow: boolean;
 }>((next) => socket.on('allow-path', next)).pipe(share());
-
-
-export const updatePosition$ = fromEventPattern<{ isUpdate: boolean }>(
-  (next) => socket.on('write-new-position', next),
-).pipe(share());
 
 export function sendIsArriveLocation(arriveMsg: {
   locationId: string;
@@ -112,12 +115,16 @@ export function sendWriteStateFeedback(feedback: string) {
   socket.volatile.emit('writeStatus-feedback', { feedback });
 }
 
-export function sendReadStatus(msg: string) {
-  socket.volatile.emit('read-status', { msg });
+
+export function sendForkErrorInfo(errorInfo: { warning_msg: string[]; warning_id: string[];}){
+  socket.volatile.emit('fork-error-info', errorInfo);
 }
 
-export function sendRealTimeReadStatus(msg: string) {
-  socket.volatile.emit('real-time-read-status', { msg });
+// ======= communication with Jack =======
+
+export function sendReadStatus(msg: string) {
+  console.log('it has send read Statue')
+  socket.volatile.emit('read-status', { msg });
 }
 
 export function sendIOInfo(msg: string) {
@@ -145,10 +152,19 @@ export function sendReachGoal(locationId: string) {
   socket.emit('reach-goal', { locationId });
 }
 
+
+export const updatePosition$ = fromEventPattern<{ isUpdate: boolean }>(
+  (next) => socket.on('write-new-position', next),
+).pipe(share());
+
 export function sendGas(msg: string) {
   socket.volatile.emit('yellow-car-gas', msg );
 }
 
 export function sendThermal(msg: string) {
-  socket.volatile.emit('yellow-car-thermal', msg );
+  socket.volatile.emit('yellow-car-thermal', { msg });
+}
+
+export function sendRealTimeReadStatus(msg: string) {
+  socket.volatile.emit('real-time-read-status', { msg });
 }
