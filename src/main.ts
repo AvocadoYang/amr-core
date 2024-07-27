@@ -356,6 +356,11 @@ async function bootstrap() {
     }
   });
 
+
+  SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
+    ROS.yellowImgLog(imgPath)
+  })
+
   SOCKET.writeCancel$.subscribe(({ id }) => {
     // 要傳送的資料長這樣
     const cancelMessage: ROSLIB.Message = {
@@ -385,6 +390,11 @@ async function bootstrap() {
   SOCKET.updatePosition$.subscribe((data)=>{
     ROS.updatePosition({data: data.isUpdate})
   })
+
+  SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
+    ROS.yellowImgLog(imgPath)
+  })
+  
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
 }

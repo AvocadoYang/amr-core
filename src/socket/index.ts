@@ -74,6 +74,15 @@ export const shortestPath$ = fromEventPattern<{ shortestPath: string[] }>(
   (next) => socket.on('shortest-path', next),
 ).pipe(share());
 
+export const yellowImgLog$ = fromEventPattern<{ imgPath: string }>(
+  (next) => socket.on('yellow-img-log-path', next),
+).pipe(share());
+
+export function sendServiceYellowResult(image_data: string,result: boolean,result_msg:string) {
+  socket.volatile.emit('send-yellow-img-log', {image_data,result,result_msg});
+}
+
+
 export const allowPath$ = fromEventPattern<{
   locationId: string;
   isAllow: boolean;
@@ -137,9 +146,9 @@ export function sendReachGoal(locationId: string) {
 }
 
 export function sendGas(msg: string) {
-  socket.volatile.emit('yellow-car-gas', { msg });
+  socket.volatile.emit('yellow-car-gas', msg );
 }
 
 export function sendThermal(msg: string) {
-  socket.volatile.emit('yellow-car-thermal', { msg });
+  socket.volatile.emit('yellow-car-thermal', msg );
 }

@@ -51,7 +51,7 @@ const terminalStates = [
 ] as const;
 
 export function init() {
-  ros.connect(config.ROS_BRIDGE_URL);
+  ros.connect(config.ROS_BRIDGE_URL);''
 }
 
 export function reconnect() {
@@ -174,6 +174,11 @@ export const shortestPath = () => {
     });
   };
 };
+
+
+
+
+
 
 export const getFeedbackFromMoveAction$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
@@ -444,3 +449,26 @@ export const updatePosition = (() => {
     topic.publish(msg);
   };
 })();
+
+
+export const yellowImgLog = ((image_path: string)=>{
+  const service = new ROSLIB.Service({
+    ros,
+    name: '/kenmec_yellow/image_log',
+    serviceType: 'kenmec_yellow_socket/image_log',
+  });
+  const request = new ROSLIB.ServiceRequest({image_path });
+  
+  const schema = object({
+    image_data: string().optional(),
+    result: boolean().required(),
+    result_msg: string().required()
+  }).required('yellow img log service missed');
+ 
+
+  service.callService(request, (serviceResult) =>{
+    const {image_data,result,result_msg} =schema.validateSync(serviceResult)
+     console.log(serviceResult)
+    SOCKET.sendServiceYellowResult(image_data,result,result_msg)
+  })
+})
