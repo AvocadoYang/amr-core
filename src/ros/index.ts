@@ -461,3 +461,26 @@ export const yellowImgLog = ((image_path: string)=>{
     SOCKET.sendServiceYellowResult(image_data,result,result_msg)
   })
 })
+
+// 任何情況都可以使小車取消任務
+// 消小車在充電的時候沒衝到電不會賦歸  
+export const cancelCarStatusAnyway = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/cancel`,
+    messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
+  });
+
+  return () => {
+    topic.publish({
+      header: {
+        seq: 0,
+        stamp: {
+          secs: 0,
+          nsecs: 0,
+        },
+        id: '',
+      },
+    });
+  };
+})();

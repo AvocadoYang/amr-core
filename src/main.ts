@@ -31,7 +31,7 @@ import {
   throwError,
   catchError,
 } from 'rxjs';
-import macaddress from 'macaddress';
+import macaddress from 'macaddress';   
 import chalk from 'chalk';
 import { object, string, number, boolean } from 'yup';
 import logger from './logger';
@@ -63,13 +63,18 @@ async function bootstrap() {
 
   ROS.connected$.subscribe(() => {
     logger.info(`Connected to ROS Bridge ${config.ROS_BRIDGE_URL}`);
+    SOCKET.sendRosBridgeConnection(true)
   });
   ROS.connectionError$.subscribe((error: Error) => {
     logger.warn(`ROS Bridge connect error: ${JSON.stringify(error)}`);
+    SOCKET.sendRosBridgeConnection(false)
+    lastSendGoalId = '';
   });
   ROS.connectionClosed$.subscribe(() => {
     lastGoal = null;
     logger.info('ROS Bridge Connection closed');
+    SOCKET.sendRosBridgeConnection(false)
+    lastSendGoalId = '';
   });
 
 
@@ -116,7 +121,7 @@ async function bootstrap() {
   });
 
   ROS.getReadStatus$.subscribe((data) => {
-    const myFeedback = data.result.result_status;
+    
     const newState = {
       read: {
         is_arrive: true,
@@ -129,8 +134,10 @@ async function bootstrap() {
         with_goods: false,
         is_finished_mission: false,
         isReadyCharge: false,
-        feedback_id: data.status.goal_id.id,
-        feedback_code: myFeedback,
+        feedback_id: data.status.goal_id.id,// 我們的uid
+        action_status: data.status.status,   
+        result_status: data.result.result_status,
+        result_message: data.result.result_message,
       },
       info: {
         amr_id: 1,
@@ -407,6 +414,10 @@ async function bootstrap() {
 
   SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
     ROS.yellowImgLog(imgPath)
+  })
+
+  SOCKET.cancelAnyways$.subscribe(()=>{
+    ROS.cancelCarStatusAnyway()
   })
   
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');

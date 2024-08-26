@@ -96,6 +96,9 @@ export const allowPath$ = fromEventPattern<{
   isAllow: boolean;
 }>((next) => socket.on('allow-path', next)).pipe(share());
 
+export const cancelAnyways$ = fromEventPattern((next) => socket.on('cancel-anyway', next)).pipe(share());
+
+
 export function sendIsArriveLocation(arriveMsg: {
   locationId: string;
   isArrive: boolean;
@@ -123,7 +126,6 @@ export function sendForkErrorInfo(errorInfo: { warning_msg: string[]; warning_id
 // ======= communication with Jack =======
 
 export function sendReadStatus(msg: string) {
-  console.log('it has send read Statue')
   socket.volatile.emit('read-status', { msg });
 }
 
@@ -167,4 +169,9 @@ export function sendThermal(msg: string) {
 
 export function sendRealTimeReadStatus(msg: string) {
   socket.volatile.emit('real-time-read-status', { msg });
+}
+
+
+export function sendRosBridgeConnection(online: boolean) {
+  socket.volatile.emit('rosbridge-connection', { online });
 }
