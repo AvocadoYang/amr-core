@@ -52,7 +52,7 @@ const terminalStates = [
 ] as const;
 
 export function init() {
-  ros.connect(config.ROS_BRIDGE_URL);''
+  ros.connect(config.ROS_BRIDGE_URL);
 }
 
 export function reconnect() {
@@ -70,6 +70,8 @@ export const connectionError$ = fromEventPattern<Error>((next) => {
 export const connectionClosed$ = fromEventPattern<never>((next) => {
   ros.on('close', next);
 }).pipe(share());
+
+
 
 // 座標
 export const pose$ = (() => {
@@ -175,11 +177,6 @@ export const shortestPath = () => {
     });
   };
 };
-
-
-
-
-
 
 export const getFeedbackFromMoveAction$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
@@ -383,8 +380,6 @@ export const getAmrError$ = (() => {
 })();
 
 
-
-
 // 小車氣體 
 export const getGas$ = (() => {
   const schema = object({
@@ -468,19 +463,16 @@ export const cancelCarStatusAnyway = (() => {
   const topic = new ROSLIB.Topic({
     ros,
     name: `/kenmec_${process.env.CAR}/fleet_manager/mission/cancel`,
-    messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
+    messageType: 'actionlib_msgs/GoalID',
   });
 
   return () => {
     topic.publish({
-      header: {
-        seq: 0,
-        stamp: {
-          secs: 0,
-          nsecs: 0,
-        },
-        id: '',
+      stamp: {
+        secs: 0,
+        nsecs: 0,
       },
+      id: '',
     });
   };
 })();

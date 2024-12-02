@@ -37,6 +37,7 @@ const initWrite: WriteStatus = {
       min_forward: 0,
       max_backward: 0,
       min_backward: 0,
+      auto_preparatory_point: false
     },
     io: {
       fork: {

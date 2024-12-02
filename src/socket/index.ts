@@ -21,7 +21,7 @@ export const connect$ = fromEventPattern<never>((next) =>
   socket.on('connect', next),
 ).pipe(share());
 
-export const disconnect$ = fromEventPattern<string>((next) =>
+export const disconnect$ = fromEventPattern<never>((next) =>
   socket.on('disconnect', next),
 ).pipe(share());
 
@@ -82,6 +82,24 @@ export const shortestPath$ = fromEventPattern<{ shortestPath: string[] }>(
   (next) => socket.on('shortest-path', next),
 ).pipe(share());
 
+export const allowPath$ = fromEventPattern<{
+  locationId: string;
+  isAllow: boolean;
+}>((next) => socket.on('allow-path', next)).pipe(share());
+
+export function sendIsArriveLocation(arriveMsg: {
+  locationId: string;
+  isArrive: boolean;
+}) {
+  console.log(`🚩 location ${arriveMsg.locationId} is arriving `)
+  socket.emit('arrive-loc', arriveMsg);
+}
+
+export function sendIsLeaveLocation(isAwayMsg: {locationId: string}){
+  socket.emit('leave-location', isAwayMsg)
+}
+
+
 export const yellowImgLog$ = fromEventPattern<{ imgPath: string }>(
   (next) => socket.on('yellow-img-log-path', next),
 ).pipe(share());
@@ -90,25 +108,6 @@ export function sendServiceYellowResult(image_data: string,result: boolean,resul
   socket.volatile.emit('send-yellow-img-log', {image_data,result,result_msg});
 }
 
-
-export const allowPath$ = fromEventPattern<{
-  locationId: string;
-  isAllow: boolean;
-}>((next) => socket.on('allow-path', next)).pipe(share());
-
-export const cancelAnyways$ = fromEventPattern((next) => socket.on('cancel-anyway', next)).pipe(share());
-
-
-export function sendIsArriveLocation(arriveMsg: {
-  locationId: string;
-  isArrive: boolean;
-}) {
-  socket.emit('arrive-loc', arriveMsg);
-}
-
-export function sendIsLeaveLocation(isAwayMsg: {locationId: string}){
-  socket.emit('leave-location', isAwayMsg)
-}
 
 export function sendShortestIsReceived(result) {
   socket.volatile.emit('receive-shortestPath', { result });
@@ -119,13 +118,14 @@ export function sendWriteStateFeedback(feedback: string) {
 }
 
 
-export function sendForkErrorInfo(errorInfo: { warning_msg: string[]; warning_id: string[];}){
-  socket.volatile.emit('fork-error-info', errorInfo);
+export function sendCarErrorInfo(errorInfo: { warning_msg: string[]; warning_id: string[];}){
+  socket.volatile.emit('car-error-info', errorInfo);
 }
 
 // ======= communication with Jack =======
 
 export function sendReadStatus(msg: string) {
+  console.log('it has send read Statue')
   socket.volatile.emit('read-status', { msg });
 }
 
@@ -164,14 +164,21 @@ export function sendGas(msg: string) {
 }
 
 export function sendThermal(msg: string) {
-  socket.volatile.emit('yellow-car-thermal', { msg });
+  socket.volatile.emit('yellow-car-thermal', msg );
 }
 
 export function sendRealTimeReadStatus(msg: string) {
   socket.volatile.emit('real-time-read-status', { msg });
 }
 
-
+export function sendAmrDisconnect(MacAddress: string) {
+  socket.volatile.emit('disconnect', {MacAddress});
+}
 export function sendRosBridgeConnection(online: boolean) {
   socket.volatile.emit('rosbridge-connection', { online });
+}
+
+
+export function sendRetryConnect(retryCount: number) {
+  socket.volatile.emit('trying-reconnection',  retryCount );
 }
