@@ -476,3 +476,22 @@ export const cancelCarStatusAnyway = (() => {
     });
   };
 })();
+
+
+export const topicTask$ = (() => {
+  const schema = object({
+    data: string().required(),
+  }).required();
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: `/kenmec_${process.env.CAR}/joystick_status`,
+    messageType: 'std_msgs/String',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();

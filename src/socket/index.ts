@@ -182,3 +182,8 @@ export function sendRosBridgeConnection(online: boolean) {
 export function sendRetryConnect(retryCount: number) {
   socket.volatile.emit('trying-reconnection',  retryCount );
 }
+
+
+export function topicTask(msg: string) {
+  socket.volatile.emit('topic-task',  msg );
+}

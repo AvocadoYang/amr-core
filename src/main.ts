@@ -439,6 +439,12 @@ async function bootstrap() {
   // SOCKET.cancelAnyways$.subscribe(()=>{
   //   ROS.cancelCarStatusAnyway()
   // })
+
+
+  ROS.topicTask$.subscribe((msg)=>{
+    SOCKET.topicTask(msg)
+  })
+
   ROS.cancelCarStatusAnyway()
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
