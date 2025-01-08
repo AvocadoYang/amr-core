@@ -187,3 +187,10 @@ export function sendRetryConnect(retryCount: number) {
 export function topicTask(msg: string) {
   socket.volatile.emit('topic-task',  msg );
 }
+
+
+// 回傳已到座標到fleeet
+export function sendCurrentId(currentId: string) {
+
+  socket.emit('currentId', currentId);
+}

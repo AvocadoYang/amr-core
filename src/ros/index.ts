@@ -495,3 +495,22 @@ export const topicTask$ = (() => {
     }),
   );
 })();
+
+
+export const currentId$ = (() => {
+  const schema = object({
+    data: string().required('currentId missed'),
+  }).required('amr info missed');
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/kenmec_fork/current_id',
+    messageType: 'std_msgs/Int32',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();

@@ -31,6 +31,7 @@ import {
   throwError,
   catchError,
   BehaviorSubject,
+  throttleTime,
 } from 'rxjs';
 import macaddress from 'macaddress';
 import chalk from 'chalk';
@@ -443,6 +444,12 @@ async function bootstrap() {
 
   ROS.topicTask$.subscribe((msg)=>{
     SOCKET.topicTask(msg)
+  })
+
+  ROS.currentId$.pipe(
+    throttleTime(5000)
+  ).subscribe((currentId) => {
+    SOCKET.sendCurrentId(currentId)
   })
 
   ROS.cancelCarStatusAnyway()
