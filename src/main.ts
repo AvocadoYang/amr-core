@@ -44,7 +44,7 @@ import { isDifferentPose, SimplePose, TrafficGoal } from './helpers/geometry';
 import { formatPose } from './helpers';
 import { MyRosMessage, WriteStatus, isLocationIdAndIsAllow } from './types/fleetInfo';
 import initWrite from './helpers/initData';
-import fleetMoveMock from './mock ';
+
 
 async function bootstrap() {
   let lastGoal: number = null;

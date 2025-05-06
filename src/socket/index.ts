@@ -41,6 +41,12 @@ export const writeCancel$ = fromEventPattern<{
   socket.on('write-cancel', next);
 }).pipe(share());
 
+export const pause$ = fromEventPattern<{
+  payload: string;
+}>((next) => {
+  socket.on('pause', next);
+}).pipe(share());
+
 export const moveToPoint$ = fromEventPattern<{
   tolerance: number;
   locationId?: string;
