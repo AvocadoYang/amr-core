@@ -52,7 +52,7 @@ const terminalStates = [
 ] as const;
 
 export function init() {
-  ros.connect(config.ROS_BRIDGE_URL);''
+  ros.connect(config.ROS_BRIDGE_URL);
 }
 
 export function reconnect() {
@@ -70,6 +70,8 @@ export const connectionError$ = fromEventPattern<Error>((next) => {
 export const connectionClosed$ = fromEventPattern<never>((next) => {
   ros.on('close', next);
 }).pipe(share());
+
+
 
 // 座標
 export const pose$ = (() => {
@@ -138,8 +140,7 @@ export const getIOInfo$ = (() => {
 
 // ------------------------------------------------------------------------------ 交車主要交握
 
-// 傳送路徑
-
+// 傳送最佳路徑
 export const shortestPath = () => {
   return (shortestPath$: Observable<{ shortestPath: string[] }>) => {
     const service = new ROSLIB.Service({
@@ -149,7 +150,6 @@ export const shortestPath = () => {
     });
     return new Observable<{ result: boolean }>((subscriber) => {
       shortestPath$.subscribe((shortest_Path) => {
-        // subscriber.complete();
         console.log('shortestPath is transmitting ...');
         console.log(shortest_Path );
           service.callService(
@@ -170,16 +170,45 @@ export const shortestPath = () => {
               console.log(`Service request is failed ${error}`);
             },
           );
-        
       });
     });
   };
 };
 
-
-
-
-
+// 重新規劃路徑
+export const reroutePath = () => {
+  return (reroutePath$: Observable<{ reroutePath: string[] }>) => {
+    const service = new ROSLIB.Service({
+      ros,
+      name: '/fleet_manager/update_path',
+      serviceType: `kenmec_${process.env.CAR}_socket/update_path`,
+    });
+    return new Observable<{ result: boolean }>((subscriber) => {
+      reroutePath$.subscribe((reroute_Path) => {
+        console.log('update path is transmitting ...');
+        console.log(reroute_Path );
+          service.callService(
+            {
+              updatePath: reroute_Path.reroutePath,
+            },
+            (response) => {
+              logger.info(`Result of shortestPath from ${service.name}`);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              if (response.result as boolean) {
+                console.log(
+                  chalk.blue(`AMR received reroute path, Service server is working`),
+                );
+                SOCKET.sendReroutePathInProcess(response);
+              }
+            },
+            (error: string) => {
+              console.log(`Service request is failed ${error}`);
+            },
+          );
+      });
+    });
+  };
+};
 
 export const getFeedbackFromMoveAction$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
@@ -383,8 +412,6 @@ export const getAmrError$ = (() => {
 })();
 
 
-
-
 // 小車氣體 
 export const getGas$ = (() => {
   const schema = object({
@@ -468,19 +495,35 @@ export const cancelCarStatusAnyway = (() => {
   const topic = new ROSLIB.Topic({
     ros,
     name: `/kenmec_${process.env.CAR}/fleet_manager/mission/cancel`,
-    messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
+    messageType: 'actionlib_msgs/GoalID',
   });
 
   return () => {
     topic.publish({
-      header: {
-        seq: 0,
-        stamp: {
-          secs: 0,
-          nsecs: 0,
-        },
-        id: '',
+      stamp: {
+        secs: 0,
+        nsecs: 0,
       },
+      id: '',
     });
   };
+})();
+
+
+export const currentId$ = (() => {
+  const schema = object({
+    data: string().required('currentId missed'),
+  }).required('amr info missed');
+
+  const topic = new ROSLIB.Topic<typeof string>({
+    ros,
+    name: '/kenmec_fork/current_id',
+    messageType: 'std_msgs/Int32',
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
 })();

@@ -1,4 +1,4 @@
-//version 3
+//version 2024/08/22
 import dotenv from 'dotenv';
 import { cleanEnv, str } from 'envalid';
 
@@ -30,8 +30,10 @@ import {
   timeout,
   throwError,
   catchError,
+  BehaviorSubject,
+  throttleTime,
 } from 'rxjs';
-import macaddress from 'macaddress';   
+import macaddress from 'macaddress';
 import chalk from 'chalk';
 import { object, string, number, boolean } from 'yup';
 import logger from './logger';
@@ -40,14 +42,14 @@ import * as SOCKET from './socket';
 import config from './config';
 import { isDifferentPose, SimplePose, TrafficGoal } from './helpers/geometry';
 import { formatPose } from './helpers';
-import { MyRosMessage, WriteStatus } from './types/fleetInfo';
+import { MyRosMessage, WriteStatus, isLocationIdAndIsAllow } from './types/fleetInfo';
 import initWrite from './helpers/initData';
-import fleetMoveMock from './mock ';
+//import fleetMoveMock from './mock ';
 
 async function bootstrap() {
   let lastGoal: number = null;
   const currentGoal: TrafficGoal = null;
-  const mac = 'de:40:d2:41:b7:36';
+  const mac = '00:0e:8e:a5:3a:36';
   let lastSendGoalId: string = '';
   let lastLocId: number = 0;
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
@@ -58,24 +60,46 @@ async function bootstrap() {
   let lastShortestPath: string[];
   let getLeaveLoc$: Subscription;
   let getArriveLoc$: Subscription;
+  let reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0)
   SOCKET.init(mac);
   ROS.init();
-
   ROS.connected$.subscribe(() => {
     logger.info(`Connected to ROS Bridge ${config.ROS_BRIDGE_URL}`);
     SOCKET.sendRosBridgeConnection(true)
+    reconnectCount$.next(reconnectCount$.value + 1)
+
   });
   ROS.connectionError$.subscribe((error: Error) => {
     logger.warn(`ROS Bridge connect error: ${JSON.stringify(error)}`);
     SOCKET.sendRosBridgeConnection(false)
     lastSendGoalId = '';
   });
+
+  reconnectCount$.pipe(
+    filter((v) => v > 1)
+  ).subscribe((count)=>{
+    logger.info(`ROSBRIDGE HAS BEEN RECONNECTED FOR ${count} TIMES!`);
+
+    setTimeout(() => {
+      SOCKET.sendRetryConnect(count)
+    }, 1000);
+  })
+
+
+
   ROS.connectionClosed$.subscribe(() => {
     lastGoal = null;
     logger.info('ROS Bridge Connection closed');
+    ROS.cancelCarStatusAnyway()
     SOCKET.sendRosBridgeConnection(false)
     lastSendGoalId = '';
   });
+
+  SOCKET.disconnect$.subscribe(()=> {
+    logger.info('Socket Connection closed');
+    ROS.cancelCarStatusAnyway()
+  })
+
 
 
 
@@ -121,7 +145,6 @@ async function bootstrap() {
   });
 
   ROS.getReadStatus$.subscribe((data) => {
-    
     const newState = {
       read: {
         is_arrive: true,
@@ -135,7 +158,7 @@ async function bootstrap() {
         is_finished_mission: false,
         isReadyCharge: false,
         feedback_id: data.status.goal_id.id,// 我們的uid
-        action_status: data.status.status,   
+        action_status: data.status.status,
         result_status: data.result.result_status,
         result_message: data.result.result_message,
       },
@@ -155,7 +178,6 @@ async function bootstrap() {
         error: '',
       },
     };
-
     console.log('\n', '==========', '\n');
     console.log(new Date().toLocaleString())
     console.log(`🐝 ${chalk.magenta('mission complete')} 🐝`);
@@ -171,55 +193,181 @@ async function bootstrap() {
       }, 1000)
       return
     }
-    
-    SOCKET.sendReadStatus(JSON.stringify(newState));
-    
+    interval(500).pipe(
+      take(2)
+    ).subscribe(()=>{
+      SOCKET.sendReadStatus(JSON.stringify(newState));
+    })
   });
 
-  ROS.getIOInfo$.subscribe((data) => {
-    SOCKET.sendIOInfo(data);
+  /** 任務開始訊號 Action */
+  SOCKET.writeStatus$
+  .pipe(
+    filter((msg) => {
+      const initPayload = msg.status;
+      const init = JSON.stringify(initWrite);
+      return initPayload !== init;
+    }),
+    map((msg) => {
+      lastWriteStatus = msg.status;
+      const parse = JSON.parse(lastWriteStatus) as WriteStatus;
+      return parse;
+    }),
+    filter((v) => lastSendGoalId !== v.action.mission_status.feedback_id),
+    filter((v) => v.action.operation.type !== 'end'),
+    filter((v) => v.action.operation.type !== ''),
+    map((v) => {
+      lastLocId = Number(v.action.operation.id);
+      lastSendGoalId = v.action.mission_status.feedback_id;
+      accMoveAction = v.action.operation.type;
+      const convertedData = {
+        operation: {
+          type: v.action.operation.type,
+          action_id: v.action.mission_status.feedback_id,
+          new_task: false,
+        },
+        move: {
+          control: v.action.operation.control,
+          goal_id: v.action.operation.id,
+          wait: v.action.operation.wait,
+          is_define_yaw: v.action.operation.is_define_yaw,
+          yaw: v.action.operation.yaw,
+          tolerance: v.action.operation.tolerance,
+          lookahead: v.action.operation.lookahead,
+          from: v.action.operation.from,
+          to: v.action.operation.to,
+          hasCargoToProcess: v.action.operation.hasCargoToProcess,
+          max_forward: v.action.operation.max_forward,
+          min_forward: v.action.operation.min_forward,
+          max_backward: v.action.operation.max_backward,
+          min_backward: v.action.operation.min_backward,
+          traffic_light_status: false,
+          auto_preparatory_point: v.action.operation.auto_preparatory_point,
+        },
+        io: {
+          fork: {
+            is_define_height: v.action.io.fork.is_define_height,
+            height: v.action.io.fork.height,
+            move: v.action.io.fork.move,
+            shift: v.action.io.fork.shift,
+            tilt: v.action.io.fork.tilt,
+          },
+          camera: {
+            config: v.action.io.camera.config,
+            modify_dis: v.action.io.camera.modify_dis,
+          },
+        },
+        cargo_limit: {
+          load: v.action.cargo_limit.load,
+          offload: v.action.cargo_limit.offload,
+        },
+        mission_status: {
+          feedback_id: v.action.mission_status.feedback_id,
+          name: v.action.mission_status.name,
+          start: v.action.mission_status.start,
+          end: v.action.mission_status.end,
+        },
+      };
+      return convertedData;
+    }),
+  )
+  .subscribe((msg) => {
+    console.log(chalk.greenBright(`write status ${JSON.stringify(msg)}`));
+    if (msg.operation.type === 'move') {
+      targetLoc = msg.move.goal_id.toString();
+      missionType = msg.operation.type;
+      ROS.writeStatus(msg);
+    } else {
+      ROS.writeStatus(msg);
+    }
   });
 
-  function isLocationIdAndIsAllow(obj: {
-    locationId: string;
-    isAllow: boolean;
-  }): obj is { locationId: string; isAllow: boolean } {
+  /** 任務中回傳值 Action Feedback
+   * Feedback Content:
+      Message {
+        header: {
+          seq: 3,
+          stamp: { secs: 1708049462, nsecs: 974755287 },
+          frame_id: ''
+        },
+        status: { goal_id: { stamp: [Object], id: '12345' }, status: 1, text: '' },
+        feedback: {
+          feedback_json: '{"task_process": 0, "warning": 0, "warning_id": 23, "warning_msg": "\\u6b63\\u5e38", "is_running": null, "cancel_task": false, "task_status": true}'
+        }
+        }
+   */
+  ROS.getFeedbackFromMoveAction$
+  .subscribe((Feedback) => {
+    const { status, feedback } = Feedback;
+    const actionId = status.goal_id.id;
+    if(lastSendGoalId !== actionId){
+      console.log(chalk.bgRed(`execute action ID: ${lastSendGoalId} not equal to feedback action ID: ${actionId}`));
+      return;
+    }
+    if (!actionId) return;
+    SOCKET.sendWriteStateFeedback(feedback.feedback_json);
+  });
+
+
+  SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
+    ROS.yellowImgLog(imgPath)
+  })
+
+  SOCKET.writeCancel$.subscribe(({ id }) => {
+    const cancelMessage: ROSLIB.Message = {
+      stamp: {
+        secs: 0,
+        nsecs: 0,
+      },
+      id,
+    };
+    if(missionType === 'move'){
+      if(getLeaveLoc$){
+        getLeaveLoc$.unsubscribe();
+      }
+      if(getArriveLoc$){
+        getArriveLoc$.unsubscribe();
+      }
+    }
+    ROS.cancelCarStatusAnyway()
+    ROS.writeCancel(cancelMessage);
+  });
+
+
+  /** 註冊時會訂閱的一次性 Subscription
+   *  用於等待車輛回應以抵達註冊點
+  */
+  SOCKET.startOneTermAllowPath$.pipe(tap((data) => console.log('start register')),switchMap(() => {
     return (
-      obj &&
-      typeof obj.locationId === 'string' &&
-      typeof obj.isAllow === 'boolean'
-    );
-  }
-
-  SOCKET.startOneTermAllowPath$.subscribe(() => {
-    ROS.getArriveTarget$.pipe(take(1),
-    timeout(10000),
-    catchError(() => {
-      return throwError(
-        () => new Error(`Amr register wrong ! close arrive observer of Init.`),
-      );
-    }),).subscribe({
+    ROS.getArriveTarget$.pipe(take(1))
+  )})).subscribe(
+    {
       next:(isArriveRes) => {
         logger.info(
           `Arrive location ${isArriveRes.data}  is received successful`,
         );
         const resData = (isArriveRes as { data: string }).data;
-  
+
         const parseData = JSON.parse(resData);
         SOCKET.sendIsArriveLocation(parseData)
         SOCKET.sendReachGoal(parseData.locationId);
-  
+
       },
-      error: (err) => console.log(chalk.bgRed(err)),
-    })
-  })
+    }
+  )
 
-
+  /** 接收最短路徑 Subscription */
   SOCKET.shortestPath$.pipe(
     tap((shortestPath) =>{ lastShortestPath = shortestPath.shortestPath})
     ,ROS.shortestPath())
     .subscribe();
 
+  /** 接收重新導航路徑 Subscription */
+  SOCKET.reroutePath$.pipe(tap((reroutePath) => { lastShortestPath= reroutePath.reroutePath}), ROS.reroutePath()).subscribe(( reroutePath) => {
+    console.log(reroutePath, '@@@@@@@@@@@@@?????????');
+  })
+
+  /** 通行權 (isAllow: true/false) Subscription */
   SOCKET.allowPath$.pipe(filter(isLocationIdAndIsAllow))
   .subscribe((allowTarget) => {
     if(allowTarget.isAllow){
@@ -248,7 +396,6 @@ async function bootstrap() {
           if(!lastShortestPath.length) return;
           SOCKET.sendIsLeaveLocation(leaveLocation);
         })
-        return;
       }
     }
       ROS.allowTarget(
@@ -259,140 +406,10 @@ async function bootstrap() {
       );
   })
 
-
-
-  ROS.getAmrError$.subscribe((error: { warning_msg: string[]; warning_id: string[]; } ) => {
-    SOCKET.sendForkErrorInfo(error)
+  ROS.getAmrError$.subscribe((msg: { data: string})=>{
+    const trans = JSON.parse(msg.data)
+    SOCKET.sendCarErrorInfo(trans)
   })
-
-
-  SOCKET.writeStatus$
-    .pipe(
-      filter((msg) => {
-        const initPayload = msg.status;
-        const init = JSON.stringify(initWrite);
-        return initPayload !== init;
-      }),
-      map((msg) => {
-        lastWriteStatus = msg.status;
-        const parse = JSON.parse(lastWriteStatus) as WriteStatus;
-        return parse;
-      }),
-      filter((v) => lastSendGoalId !== v.action.mission_status.feedback_id),
-      filter((v) => v.action.operation.type !== 'end'),
-      filter((v) => v.action.operation.type !== ''),
-      map((v) => {
-        lastLocId = Number(v.action.operation.id);
-        lastSendGoalId = v.action.mission_status.feedback_id;
-        accMoveAction = v.action.operation.type;
-        const convertedData = {
-          operation: {
-            type: v.action.operation.type,
-            action_id: v.action.mission_status.feedback_id,
-            new_task: false,
-          },
-          move: {
-            control: v.action.operation.control,
-            goal_id: v.action.operation.id,
-            wait: 0,
-            is_define_yaw: v.action.operation.is_define_yaw,
-            yaw: v.action.operation.yaw,
-            tolerance: v.action.operation.tolerance,
-            lookahead: v.action.operation.lookahead,
-            from: v.action.operation.from,
-            to: v.action.operation.to,
-            hasCargoToProcess: v.action.operation.hasCargoToProcess,
-            max_forward: v.action.operation.max_forward,
-            min_forward: v.action.operation.min_forward,
-            max_backward: v.action.operation.max_backward,
-            min_backward: v.action.operation.min_backward,
-            traffic_light_status: false,
-          },
-          io: {
-            fork: {
-              is_define_height: v.action.io.fork.is_define_height,
-              height: v.action.io.fork.height,
-              move: v.action.io.fork.move,
-              shift: v.action.io.fork.shift,
-              tilt: v.action.io.fork.tilt,
-            },
-            camera: {
-              config: v.action.io.camera.config,
-              modify_dis: v.action.io.camera.modify_dis,
-            },
-          },
-          cargo_limit: {
-            load: v.action.cargo_limit.load,
-            offload: v.action.cargo_limit.offload,
-          },
-          mission_status: {
-            feedback_id: v.action.mission_status.feedback_id,
-            name: v.action.mission_status.name,
-            start: v.action.mission_status.start,
-            end: v.action.mission_status.end,
-          },
-        };
-        return convertedData;
-      }),
-    )
-    .subscribe((msg) => {
-      console.log(chalk.greenBright(`write status ${JSON.stringify(msg)}`));
-      if (msg.operation.type === 'move') {
-        targetLoc = msg.move.goal_id.toString();
-        missionType = msg.operation.type;
-        ROS.writeStatus(msg);
-      } else {
-        ROS.writeStatus(msg);
-      }
-    });
-
-
-  ROS.getFeedbackFromMoveAction$.subscribe((Feedback) => {
-
-    /** Feedback Content
-     Message {
-       header: {
-        seq: 3,
-         stamp: { secs: 1708049462, nsecs: 974755287 },
-         frame_id: ''
-      },
-      status: { goal_id: { stamp: [Object], id: '12345' }, status: 1, text: '' },
-       feedback: {
-        feedback_json: '{"task_process": 0, "warning": 0, "warning_id": 23, "warning_msg": "\\u6b63\\u5e38", "is_running": null, "cancel_task": false, "task_status": true}'
-       }
-      }
-    */
-
-    const { status, feedback } = Feedback;
-    const actionId = status.goal_id.id;
-    if(lastSendGoalId !== actionId){
-      console.log(chalk.bgRed(`execute action ID: ${lastSendGoalId} not equal to feedback action ID: ${actionId}`));
-      return;
-    }
-    if (!actionId) return;
-    SOCKET.sendWriteStateFeedback(feedback.feedback_json);
-  });
-
-
-  SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
-    ROS.yellowImgLog(imgPath)
-  })
-
-  SOCKET.writeCancel$.subscribe(({ id }) => {
-    const cancelMessage: ROSLIB.Message = {
-      stamp: {
-        secs: 0,
-        nsecs: 0,
-      },
-      id,
-    };
-    if(missionType === 'move'){
-      getLeaveLoc$.unsubscribe();
-      getArriveLoc$.unsubscribe();
-    }
-
-    ROS.writeCancel(cancelMessage);
-  });
 
 
   ROS.getRealTimeReadStatus$.subscribe((data) => {
@@ -403,23 +420,32 @@ async function bootstrap() {
   ROS.getGas$.subscribe((data) => {
     SOCKET.sendGas(data)
   })
-
+  
   ROS.getThermal$.subscribe((data) => {
+    // console.log(data)
     SOCKET.sendThermal(data)
-  })
+  })  
 
   SOCKET.updatePosition$.subscribe((data)=>{
     ROS.updatePosition({data: data.isUpdate})
-  })
+  })  
+  ROS.getIOInfo$.subscribe((data) => {
+    SOCKET.sendIOInfo(data);
+  });
 
   SOCKET.yellowImgLog$.subscribe(({imgPath})=>{
     ROS.yellowImgLog(imgPath)
   })
-
-  SOCKET.cancelAnyways$.subscribe(()=>{
-    ROS.cancelCarStatusAnyway()
+  ROS.currentId$.pipe(
+    throttleTime(5000)
+  ).subscribe((currentId) => {
+    SOCKET.sendCurrentId(currentId)
   })
-  
+
+  // SOCKET.cancelAnyways$.subscribe(()=>{
+  //   ROS.cancelCarStatusAnyway()
+  // })
+  ROS.cancelCarStatusAnyway()
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
 }

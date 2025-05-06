@@ -33,6 +33,7 @@ export type WriteStatus = {
       from: number;
       to: number;
       hasCargoToProcess: boolean;
+      auto_preparatory_point: boolean;
       max_forward: number;
       min_forward: number;
       max_backward: number;
@@ -177,3 +178,14 @@ export type FeedbackOfMove = {
     feedback_json: string;
   };
 };
+
+export function isLocationIdAndIsAllow(obj: {
+  locationId: string;
+  isAllow: boolean;
+}): obj is { locationId: string; isAllow: boolean } {
+  return (
+    obj &&
+    typeof obj.locationId === 'string' &&
+    typeof obj.isAllow === 'boolean'
+  );
+}
