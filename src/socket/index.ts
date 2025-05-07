@@ -88,6 +88,10 @@ export const shortestPath$ = fromEventPattern<{ shortestPath: string[] }>(
   (next) => socket.on('shortest-path', next),
 ).pipe(share());
 
+export const reroutePath$ = fromEventPattern<{ reroutePath: string[]}>(
+  (next) => socket.on('reroute-path', next),
+).pipe(share());
+
 export const allowPath$ = fromEventPattern<{
   locationId: string;
   isAllow: boolean;
@@ -117,6 +121,10 @@ export function sendServiceYellowResult(image_data: string,result: boolean,resul
 
 export function sendShortestIsReceived(result) {
   socket.volatile.emit('receive-shortestPath', { result });
+}
+
+export function sendReroutePathInProcess(response){
+  socket.volatile.emit('reroute-response', response);
 }
 
 export function sendWriteStateFeedback(feedback: string) {

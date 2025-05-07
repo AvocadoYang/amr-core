@@ -44,12 +44,12 @@ import { isDifferentPose, SimplePose, TrafficGoal } from './helpers/geometry';
 import { formatPose } from './helpers';
 import { MyRosMessage, WriteStatus, isLocationIdAndIsAllow } from './types/fleetInfo';
 import initWrite from './helpers/initData';
-
+//import fleetMoveMock from './mock ';
 
 async function bootstrap() {
   let lastGoal: number = null;
   const currentGoal: TrafficGoal = null;
-  const mac = 'aa:96:31:94:f6:72';
+  const mac = '00:0e:8e:a5:3a:36';
   let lastSendGoalId: string = '';
   let lastLocId: number = 0;
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
@@ -96,7 +96,7 @@ async function bootstrap() {
   });
 
   SOCKET.disconnect$.subscribe(()=> {
-    logger.info('ROS Bridge Connection closed');
+    logger.info('Socket Connection closed');
     ROS.cancelCarStatusAnyway()
   })
 
@@ -158,7 +158,7 @@ async function bootstrap() {
         is_finished_mission: false,
         isReadyCharge: false,
         feedback_id: data.status.goal_id.id,// 我們的uid
-        action_status: data.status.status,   
+        action_status: data.status.status,
         result_status: data.result.result_status,
         result_message: data.result.result_message,
       },
@@ -198,11 +198,9 @@ async function bootstrap() {
     ).subscribe(()=>{
       SOCKET.sendReadStatus(JSON.stringify(newState));
     })
-
-    
   });
 
-  /** 任務完成訊號 Action Result */
+  /** 任務開始訊號 Action */
   SOCKET.writeStatus$
   .pipe(
     filter((msg) => {
@@ -285,7 +283,7 @@ async function bootstrap() {
   });
 
   /** 任務中回傳值 Action Feedback
-   * Feedback Content: 
+   * Feedback Content:
       Message {
         header: {
           seq: 3,
@@ -339,9 +337,7 @@ async function bootstrap() {
   /** 註冊時會訂閱的一次性 Subscription
    *  用於等待車輛回應以抵達註冊點
   */
-  
-  SOCKET.startOneTermAllowPath$.pipe(tap((data) => console.log(data)),switchMap(() => {
-    console.log('Star wait arriving')
+  SOCKET.startOneTermAllowPath$.pipe(tap((data) => console.log('start register')),switchMap(() => {
     return (
     ROS.getArriveTarget$.pipe(take(1))
   )})).subscribe(
@@ -365,6 +361,11 @@ async function bootstrap() {
     tap((shortestPath) =>{ lastShortestPath = shortestPath.shortestPath})
     ,ROS.shortestPath())
     .subscribe();
+
+  /** 接收重新導航路徑 Subscription */
+  SOCKET.reroutePath$.pipe(tap((reroutePath) => { lastShortestPath= reroutePath.reroutePath}), ROS.reroutePath()).subscribe(( reroutePath) => {
+    console.log(reroutePath, '@@@@@@@@@@@@@?????????');
+  })
 
   /** 通行權 (isAllow: true/false) Subscription */
   SOCKET.allowPath$.pipe(filter(isLocationIdAndIsAllow))
@@ -452,6 +453,15 @@ async function bootstrap() {
     SOCKET.sendCurrentId(currentId)
   })
 
+  ROS.currentId$.pipe(
+    throttleTime(5000)
+  ).subscribe((currentId) => {
+    SOCKET.sendCurrentId(currentId)
+  })
+
+  // SOCKET.cancelAnyways$.subscribe(()=>{
+  //   ROS.cancelCarStatusAnyway()
+  // })
   ROS.cancelCarStatusAnyway()
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);

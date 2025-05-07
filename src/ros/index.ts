@@ -140,8 +140,7 @@ export const getIOInfo$ = (() => {
 
 // ------------------------------------------------------------------------------ 交車主要交握
 
-// 傳送路徑
-
+// 傳送最佳路徑
 export const shortestPath = () => {
   return (shortestPath$: Observable<{ shortestPath: string[] }>) => {
     const service = new ROSLIB.Service({
@@ -151,7 +150,6 @@ export const shortestPath = () => {
     });
     return new Observable<{ result: boolean }>((subscriber) => {
       shortestPath$.subscribe((shortest_Path) => {
-        // subscriber.complete();
         console.log('shortestPath is transmitting ...');
         console.log(shortest_Path );
           service.callService(
@@ -172,7 +170,41 @@ export const shortestPath = () => {
               console.log(`Service request is failed ${error}`);
             },
           );
-        
+      });
+    });
+  };
+};
+
+// 重新規劃路徑
+export const reroutePath = () => {
+  return (reroutePath$: Observable<{ reroutePath: string[] }>) => {
+    const service = new ROSLIB.Service({
+      ros,
+      name: '/fleet_manager/update_path',
+      serviceType: `kenmec_${process.env.CAR}_socket/update_path`,
+    });
+    return new Observable<{ result: boolean }>((subscriber) => {
+      reroutePath$.subscribe((reroute_Path) => {
+        console.log('update path is transmitting ...');
+        console.log(reroute_Path );
+          service.callService(
+            {
+              updatePath: reroute_Path.reroutePath,
+            },
+            (response) => {
+              logger.info(`Result of shortestPath from ${service.name}`);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              if (response.result as boolean) {
+                console.log(
+                  chalk.blue(`AMR received reroute path, Service server is working`),
+                );
+                SOCKET.sendReroutePathInProcess(response);
+              }
+            },
+            (error: string) => {
+              console.log(`Service request is failed ${error}`);
+            },
+          );
       });
     });
   };
