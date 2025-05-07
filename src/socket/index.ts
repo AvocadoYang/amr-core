@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import config from '~/config';
 // import { SimplePose, formatPose, sanitizeDegree } from '~/helpers';
 import logger from '~/logger';
+import { Mission_Payload } from '~/types/fleetInfo';
 
 let socket: Socket;
 
@@ -30,7 +31,9 @@ export const connectionError$ = fromEventPattern<Error>((next) =>
 ).pipe(share());
 
 export const writeStatus$ = fromEventPattern<{
-  status: string;
+  status: Mission_Payload,
+  actionType: string,
+  locationId: number
 }>((next) => {
   socket.on('write-status', next);
 }).pipe(share());

@@ -42,8 +42,7 @@ import * as SOCKET from './socket';
 import config from './config';
 import { isDifferentPose, SimplePose, TrafficGoal } from './helpers/geometry';
 import { formatPose } from './helpers';
-import { MyRosMessage, WriteStatus, isLocationIdAndIsAllow } from './types/fleetInfo';
-import initWrite from './helpers/initData';
+import { Mission_Payload, MyRosMessage, isLocationIdAndIsAllow } from './types/fleetInfo';
 //import fleetMoveMock from './mock ';
 
 async function bootstrap() {
@@ -56,7 +55,6 @@ async function bootstrap() {
   let targetLoc: string;
   let missionType: string = '';
   let accMoveAction: string;
-  let lastWriteStatus: string = JSON.stringify(initWrite);
   let lastShortestPath: string[];
   let getLeaveLoc$: Subscription;
   let getArriveLoc$: Subscription;
@@ -147,35 +145,10 @@ async function bootstrap() {
   ROS.getReadStatus$.subscribe((data) => {
     const newState = {
       read: {
-        is_arrive: true,
-        is_locations: [123],
-        checked_locations: [123],
-        is_taking_goods: false,
-        is_dropping_goods: false,
-        is_drop_goods: false,
-        is_take_goods: false,
-        with_goods: false,
-        is_finished_mission: false,
-        isReadyCharge: false,
         feedback_id: data.status.goal_id.id,// 我們的uid
         action_status: data.status.status,
         result_status: data.result.result_status,
         result_message: data.result.result_message,
-      },
-      info: {
-        amr_id: 1,
-        activated: 1,
-        is_running: 1,
-        warning_msg: '',
-        warning_id: 0,
-        warning: 0,
-        task_process: 110,
-        action_process: `F${lastLocId}`,
-        pallet_conflict: '',
-        grid_info: '',
-        charging: false,
-        heartbeat: 0,
-        error: '',
       },
     };
     console.log('\n', '==========', '\n');
@@ -203,82 +176,16 @@ async function bootstrap() {
   /** 任務開始訊號 Action */
   SOCKET.writeStatus$
   .pipe(
-    filter((msg) => {
-      const initPayload = msg.status;
-      const init = JSON.stringify(initWrite);
-      return initPayload !== init;
-    }),
-    map((msg) => {
-      lastWriteStatus = msg.status;
-      const parse = JSON.parse(lastWriteStatus) as WriteStatus;
-      return parse;
-    }),
-    filter((v) => lastSendGoalId !== v.action.mission_status.feedback_id),
-    filter((v) => v.action.operation.type !== 'end'),
-    filter((v) => v.action.operation.type !== ''),
-    map((v) => {
-      lastLocId = Number(v.action.operation.id);
-      lastSendGoalId = v.action.mission_status.feedback_id;
-      accMoveAction = v.action.operation.type;
-      const convertedData = {
-        operation: {
-          type: v.action.operation.type,
-          action_id: v.action.mission_status.feedback_id,
-          new_task: false,
-        },
-        move: {
-          control: v.action.operation.control,
-          goal_id: v.action.operation.id,
-          wait: v.action.operation.wait,
-          is_define_yaw: v.action.operation.is_define_yaw,
-          yaw: v.action.operation.yaw,
-          tolerance: v.action.operation.tolerance,
-          lookahead: v.action.operation.lookahead,
-          from: v.action.operation.from,
-          to: v.action.operation.to,
-          hasCargoToProcess: v.action.operation.hasCargoToProcess,
-          max_forward: v.action.operation.max_forward,
-          min_forward: v.action.operation.min_forward,
-          max_backward: v.action.operation.max_backward,
-          min_backward: v.action.operation.min_backward,
-          traffic_light_status: false,
-          auto_preparatory_point: v.action.operation.auto_preparatory_point,
-        },
-        io: {
-          fork: {
-            is_define_height: v.action.io.fork.is_define_height,
-            height: v.action.io.fork.height,
-            move: v.action.io.fork.move,
-            shift: v.action.io.fork.shift,
-            tilt: v.action.io.fork.tilt,
-          },
-          camera: {
-            config: v.action.io.camera.config,
-            modify_dis: v.action.io.camera.modify_dis,
-          },
-        },
-        cargo_limit: {
-          load: v.action.cargo_limit.load,
-          offload: v.action.cargo_limit.offload,
-        },
-        mission_status: {
-          feedback_id: v.action.mission_status.feedback_id,
-          name: v.action.mission_status.name,
-          start: v.action.mission_status.start,
-          end: v.action.mission_status.end,
-        },
-      };
-      return convertedData;
-    }),
   )
   .subscribe((msg) => {
-    console.log(chalk.greenBright(`write status ${JSON.stringify(msg)}`));
-    if (msg.operation.type === 'move') {
-      targetLoc = msg.move.goal_id.toString();
-      missionType = msg.operation.type;
-      ROS.writeStatus(msg);
+    console.log(chalk.greenBright(`write status: ${msg.status.Id}`));
+
+    if (msg.status.Body.operation.type === 'move') {
+      targetLoc = msg.locationId.toString()
+      missionType = msg.status.Body.operation.type;
+      ROS.writeStatus(msg.status);
     } else {
-      ROS.writeStatus(msg);
+      ROS.writeStatus(msg.status);
     }
   });
 

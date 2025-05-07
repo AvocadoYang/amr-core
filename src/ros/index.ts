@@ -18,7 +18,6 @@ import { sampleInterval, tfTransformToCoords } from '~/helpers';
 import config from '~/config';
 import { SimplePose } from '~/helpers/geometry';
 import {
-  ConvertedWriteStatus,
   MyRosMessage,
   IsArrive,
   FeedbackOfMove,
@@ -318,7 +317,7 @@ export const writeStatus = (() => {
     messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
   });
 
-  return (msg: ConvertedWriteStatus) => {
+  return (msg) => {
     topic.publish({
       header: {
         seq: 0,
