@@ -21,7 +21,8 @@ import {
   MyRosMessage,
   IsArrive,
   FeedbackOfMove,
-  isAway
+  isAway,
+  Mission_Payload
 } from '~/types/fleetInfo';
 
 import * as SOCKET from '../socket';
@@ -317,7 +318,7 @@ export const writeStatus = (() => {
     messageType: `kenmec_${process.env.CAR}_socket/MissionActionGoal`,
   });
 
-  return (msg) => {
+  return (msg:Mission_Payload) => {
     topic.publish({
       header: {
         seq: 0,
@@ -332,7 +333,7 @@ export const writeStatus = (() => {
           secs: 0,
           nsecs: 0,
         },
-        id: msg.operation.action_id, // 這邊要自己設計id 跟回傳 跟cancel都是參造這個id
+        id: msg.Id, // 這邊要自己設計id 跟回傳 跟cancel都是參造這個id
       },
       goal: {
         request_json: JSON.stringify(msg),
