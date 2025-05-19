@@ -179,7 +179,7 @@ async function bootstrap() {
   )
   .subscribe((msg) => {
     console.log(chalk.greenBright(`write status: ${msg.status.Id}`));
-
+    lastSendGoalId = msg.status.Id
     if (msg.status.Body.operation.type === 'move') {
       targetLoc = msg.locationId.toString()
       missionType = msg.status.Body.operation.type;
@@ -369,6 +369,13 @@ async function bootstrap() {
   // SOCKET.cancelAnyways$.subscribe(()=>{
   //   ROS.cancelCarStatusAnyway()
   // })
+
+
+  SOCKET.pause$.subscribe((msg)=>{
+    ROS.pause(msg.payload)
+  })
+
+
   ROS.cancelCarStatusAnyway()
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);

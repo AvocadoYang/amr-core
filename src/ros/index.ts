@@ -546,3 +546,19 @@ export const currentId$ = (() => {
     }),
   );
 })();
+
+
+
+// 傳送寫入 主要是任務
+export const pause = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${process.env.CAR}/fleet_manager/pause`,
+    messageType: 'std_msgs/String'
+  });
+
+  return (msg) => {
+    // Publish the cancel message
+    topic.publish(msg);
+  };
+})();
