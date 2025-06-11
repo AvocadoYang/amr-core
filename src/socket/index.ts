@@ -117,6 +117,10 @@ export const yellowImgLog$ = fromEventPattern<{ imgPath: string }>(
   (next) => socket.on('yellow-img-log-path', next),
 ).pipe(share());
 
+export const heartbeat$ = fromEventPattern<{ payload: string }>(
+  (next) => socket.on('heartbeat', next),
+).pipe(share());
+
 export function sendServiceYellowResult(image_data: string,result: boolean,result_msg:string) {
   socket.volatile.emit('send-yellow-img-log', {image_data,result,result_msg});
 }
@@ -210,4 +214,14 @@ export function topicTask(msg: string) {
 export function sendCurrentId(currentId: string) {
 
   socket.emit('currentId', currentId);
+}
+
+export function sendCurrentPoseIsAccurate(isAccurate: boolean) {
+
+  socket.emit('current-pose-is-accurate', isAccurate);
+}
+
+export function sendHeartbeat(payload: string) {
+
+  socket.emit('heartbeat', payload);
 }

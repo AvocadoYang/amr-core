@@ -138,3 +138,14 @@ export function isLocationIdAndIsAllow(obj: {
     typeof obj.isAllow === 'boolean'
   );
 }
+
+
+export type Pause_Payload = {
+  Id: string; //傳送此指令的為一值
+  Action: 'pause' //指令類型
+  Time: number; //時間戳記
+  Device: string; // 傳送對象的 ID
+  Body: {
+    StopType: 1
+  }
+}

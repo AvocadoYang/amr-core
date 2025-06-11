@@ -42,7 +42,7 @@ import * as SOCKET from './socket';
 import config from './config';
 import { isDifferentPose, SimplePose, TrafficGoal } from './helpers/geometry';
 import { formatPose } from './helpers';
-import { Mission_Payload, MyRosMessage, isLocationIdAndIsAllow } from './types/fleetInfo';
+import { Mission_Payload, MyRosMessage, Pause_Payload, isLocationIdAndIsAllow } from './types/fleetInfo';
 //import fleetMoveMock from './mock ';
 
 async function bootstrap() {
@@ -54,11 +54,23 @@ async function bootstrap() {
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
   let targetLoc: string;
   let missionType: string = '';
-  let accMoveAction: string;
+  let accMoveAction: string = '';
   let lastShortestPath: string[];
   let getLeaveLoc$: Subscription;
   let getArriveLoc$: Subscription;
   let reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0)
+
+  const generatePause: Pause_Payload = {
+      Id: 'generateByAmrCore',
+      Action: "pause",
+      Time: Date.now(),
+      Device: mac,
+      Body: {
+        StopType: 1,
+      },
+    }
+
+
   SOCKET.init(mac);
   ROS.init();
   ROS.connected$.subscribe(() => {
@@ -88,14 +100,16 @@ async function bootstrap() {
   ROS.connectionClosed$.subscribe(() => {
     lastGoal = null;
     logger.info('ROS Bridge Connection closed');
-    ROS.cancelCarStatusAnyway()
+    //ROS.cancelCarStatusAnyway()
+    ROS.pause(JSON.stringify(generatePause))
     SOCKET.sendRosBridgeConnection(false)
     lastSendGoalId = '';
   });
 
   SOCKET.disconnect$.subscribe(()=> {
     logger.info('Socket Connection closed');
-    ROS.cancelCarStatusAnyway()
+    // ROS.cancelCarStatusAnyway()
+    ROS.pause(JSON.stringify(generatePause))
   })
 
 
@@ -179,9 +193,10 @@ async function bootstrap() {
   )
   .subscribe((msg) => {
     console.log(chalk.greenBright(`write status: ${msg.status.Id}`));
+    accMoveAction = msg.status.Body.operation.type
     lastSendGoalId = msg.status.Id
     if (msg.status.Body.operation.type === 'move') {
-      targetLoc = msg.locationId.toString()
+      targetLoc = msg.status.Body.operation.locationId.toString()
       missionType = msg.status.Body.operation.type;
       ROS.writeStatus(msg.status);
     } else {
@@ -376,9 +391,27 @@ async function bootstrap() {
   })
 
 
+
+  ROS.currentPoseAccurate$.subscribe((msg)=>{
+    SOCKET.sendCurrentPoseIsAccurate(msg)
+  })
+
+
+  ROS.getHeartbeat$.subscribe((msg)=>{  
+    SOCKET.sendHeartbeat(msg)
+  })
+
+  SOCKET.heartbeat$.subscribe((msg)=>{
+    ROS.heartbeat(msg.payload)
+  })
+
+
+
   ROS.cancelCarStatusAnyway()
   logger.info('AMR Core Started, Waiting for ROS and SocketIO connection...');
   // fleetMoveMock(SOCKET, notifyMoveStart$);
+
+
 }
 
 void bootstrap();

@@ -562,3 +562,54 @@ export const pause = (() => {
     topic.publish(msg);
   };
 })();
+
+export const currentPoseAccurate$ = (() => {
+  const schema = object({
+    data: boolean().required('currentId missed'),
+  }).required('amr info missed');
+
+  const topic = new ROSLIB.Topic<typeof boolean>({
+    ros,
+    name: '/kenmec_fork/localization_check',
+    messageType: 'std_msgs/Bool',
+  });
+
+  return fromEventPattern<boolean>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();
+
+
+// 接收
+export const getHeartbeat$ = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${process.env.CAR}/heartbeat_resp`,
+    messageType: 'std_msgs/String'
+  });
+    const schema = object({
+    data: string().required('heartbeat missed'),
+  }).required('heartbeat info missed');
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    }),
+  );
+})();
+
+//發送
+export const heartbeat = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${process.env.CAR}/heartbeat`,
+    messageType: 'std_msgs/String'
+  });
+
+  return (msg) => {
+    // Publish the cancel message
+    topic.publish(msg);
+  };
+})();
