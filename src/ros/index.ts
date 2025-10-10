@@ -610,6 +610,22 @@ export const heartbeat = (() => {
 
   return (msg) => {
     // Publish the cancel message
-    topic.publish(msg);
+    topic.publish({data: msg});
+  };
+})();
+
+
+//交管傳送賦歸
+export const forceResetButton = (() => {
+  // Create a topic instance
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: '/kenmec_fork/set_recovery',
+    messageType: 'std_msgs/Bool',
+  });
+
+  return () => {
+    // Publish the cancel message
+    topic.publish({data: true});
   };
 })();
