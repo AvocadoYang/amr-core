@@ -233,3 +233,7 @@ export function sendCurrentPoseIsAccurate(isAccurate: boolean) {
 export function sendHeartbeat(payload: string) {
   socket.emit("heartbeat-resp", payload);
 }
+
+export function sendCargoVerity(payload: string) {
+  socket.emit("cargo-verity", payload);
+}

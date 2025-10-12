@@ -27,15 +27,10 @@ import {
   take,
   tap,
   Subscription,
-  timeout,
-  throwError,
-  catchError,
   BehaviorSubject,
   throttleTime,
 } from "rxjs";
-import macaddress from "macaddress";
 import chalk from "chalk";
-import { object, string, number, boolean } from "yup";
 import logger from "./logger";
 import * as ROS from "./ros";
 import * as SOCKET from "./socket";
@@ -44,39 +39,31 @@ import { isDifferentPose, SimplePose, TrafficGoal } from "./helpers/geometry";
 import { formatPose } from "./helpers";
 import {
   Mission_Payload,
-  MyRosMessage,
   Pause_Payload,
   isLocationIdAndIsAllow,
 } from "./types/fleetInfo";
 //import fleetMoveMock from './mock ';
 
 async function bootstrap() {
-  let lastGoal: number = null;
-  const currentGoal: TrafficGoal = null;
-  const mac = "00:0e:8e:a5:3a:36";
-  let lastSendGoalId: string = "";
-  let lastLocId: number = 0;
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
   let targetLoc: string;
   let missionType: string = "";
+
+  let lastSendGoalId: string = "";
   let accMoveAction: string = "";
   let lastShortestPath: string[];
   let getLeaveLoc$: Subscription;
   let getArriveLoc$: Subscription;
   let reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
 
-  const generatePause: Pause_Payload = {
-    Id: "generateByAmrCore",
-    Action: "pause",
-    Time: Date.now(),
-    Device: mac,
-    Body: {
-      StopType: 1,
-    },
-  };
-
-  SOCKET.init(mac);
+  logger.info("AMR Core Started, Waiting for ROS and SocketIO connection...");
+  SOCKET.init(config.MAC);
   ROS.init();
+
+  SOCKET.connect$.subscribe(() => {
+    logger.info(`Connected to Fleet successful`);
+  });
+
   ROS.connected$.subscribe(() => {
     logger.info(`Connected to ROS Bridge ${config.ROS_BRIDGE_URL}`);
     SOCKET.sendRosBridgeConnection(true);
@@ -97,10 +84,7 @@ async function bootstrap() {
   });
 
   ROS.connectionClosed$.subscribe(() => {
-    lastGoal = null;
     logger.info("ROS Bridge Connection closed");
-    //ROS.cancelCarStatusAnyway()
-    //ROS.pause(JSON.stringify(generatePause))
     SOCKET.sendRosBridgeConnection(false);
     lastSendGoalId = "";
   });
@@ -139,8 +123,8 @@ async function bootstrap() {
       logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
     }
     const machineOffset = {
-      x: -Math.sin((pose.yaw * Math.PI) / 180) * config.OFFSET_X,
-      y: -Math.cos((pose.yaw * Math.PI) / 180) * config.OFFSET_X,
+      x: -Math.sin((pose.yaw * Math.PI) / 180) * 0,
+      y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
     };
     SOCKET.sendPose(
       pose.x + machineOffset.x,
@@ -234,10 +218,6 @@ async function bootstrap() {
     SOCKET.sendWriteStateFeedback(feedback.feedback_json);
   });
 
-  SOCKET.yellowImgLog$.subscribe(({ imgPath }) => {
-    ROS.yellowImgLog(imgPath);
-  });
-
   SOCKET.writeCancel$.subscribe(({ id }) => {
     const cancelMessage: ROSLIB.Message = {
       stamp: {
@@ -300,7 +280,7 @@ async function bootstrap() {
       ROS.reroutePath()
     )
     .subscribe((reroutePath) => {
-      console.log(reroutePath, "@@@@@@@@@@@@@?????????");
+      //console.log(reroutePath, "@@@@@@@@@@@@@?????????");
     });
 
   /** 通行權 (isAllow: true/false) Subscription */
@@ -360,29 +340,12 @@ async function bootstrap() {
     SOCKET.sendRealTimeReadStatus(data);
   });
 
-  ROS.getGas$.subscribe((data) => {
-    SOCKET.sendGas(data);
-  });
-
-  ROS.getThermal$.subscribe((data) => {
-    // console.log(data)
-    SOCKET.sendThermal(data);
-  });
-
   SOCKET.updatePosition$.subscribe((data) => {
     ROS.updatePosition({ data: data.isUpdate });
   });
   ROS.getIOInfo$.subscribe((data) => {
     SOCKET.sendIOInfo(data);
   });
-
-  SOCKET.yellowImgLog$.subscribe(({ imgPath }) => {
-    ROS.yellowImgLog(imgPath);
-  });
-
-  // SOCKET.cancelAnyways$.subscribe(()=>{
-  //   ROS.cancelCarStatusAnyway()
-  // })
 
   ROS.topicTask$.subscribe((msg) => {
     SOCKET.topicTask(msg);
@@ -392,16 +355,18 @@ async function bootstrap() {
     SOCKET.sendCurrentId(currentId);
   });
 
-  ROS.currentId$.pipe(throttleTime(5000)).subscribe((currentId) => {
-    SOCKET.sendCurrentId(currentId);
-  });
-
   // SOCKET.cancelAnyways$.subscribe(()=>{
   //   ROS.cancelCarStatusAnyway()
   // })
 
+  // 急停
   SOCKET.pause$.subscribe((msg) => {
     ROS.pause(msg.payload);
+  });
+
+  // 復歸
+  SOCKET.forceReset$.subscribe(() => {
+    ROS.forceResetButton();
   });
 
   ROS.currentPoseAccurate$.subscribe((msg) => {
@@ -413,17 +378,14 @@ async function bootstrap() {
   });
 
   SOCKET.heartbeat$.subscribe((msg) => {
-    console.log(msg);
     ROS.heartbeat(msg.payload);
   });
 
-  SOCKET.forceReset$.subscribe(() => {
-    ROS.forceResetButton();
+  ROS.getVerityCargo$.subscribe((msg) => {
+    SOCKET.sendCargoVerity(msg);
   });
 
   ROS.cancelCarStatusAnyway();
-  logger.info("AMR Core Started, Waiting for ROS and SocketIO connection...");
-  // fleetMoveMock(SOCKET, notifyMoveStart$);
 }
 
 void bootstrap();
