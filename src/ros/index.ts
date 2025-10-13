@@ -158,7 +158,6 @@ export const shortestPath = () => {
             shortestPath: shortest_Path.shortestPath,
           },
           (data) => {
-            TCLoggerNormal.info(`receive shortest path response from ${service.name}`)
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (data.result as boolean) {
               SOCKET.sendShortestIsReceived(data.result);

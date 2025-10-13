@@ -180,7 +180,7 @@ async function bootstrap() {
         feedback_id: data.status.goal_id.id, // 我們的uid
         action_status: data.status.status,
         result_status: data.result.result_status,
-        result_message: data.result.result_message,
+        result_message: JSON.parse(data.result.result_message),
       },
     };
 
@@ -335,7 +335,7 @@ async function bootstrap() {
         getArriveLoc$ = ROS.getArriveTarget$
           .pipe(take(1))
           .subscribe((isArriveRes) => {
-            TCLoggerNormal.info(`receive arrive location ${isArriveRes.locationId}`, {
+            TCLoggerNormal.info(`receive arrive location ${isArriveRes.data}`, {
               group: "traffic",
               type: "isArrive"
             })
