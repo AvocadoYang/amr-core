@@ -42,9 +42,18 @@ import {
   Pause_Payload,
   isLocationIdAndIsAllow,
 } from "./types/fleetInfo";
+import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "./logger/systemLogger";
+import { count, group } from "console";
+import { TCLoggerNormal, TCLoggerNormalError } from "./logger/trafficCenterLogger";
 //import fleetMoveMock from './mock ';
 
 async function bootstrap() {
+  //for log show
+  let ros_bridge_error_log = true;
+  let ros_bridge_close_log = true;
+  let socket_error_log = true;
+
+
   let lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
   let targetLoc: string;
   let missionType: string = "";
@@ -56,43 +65,72 @@ async function bootstrap() {
   let getArriveLoc$: Subscription;
   let reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
 
-  logger.info("AMR Core Started, Waiting for ROS and SocketIO connection...");
   SOCKET.init(config.MAC);
   ROS.init();
 
-  SOCKET.connect$.subscribe(() => {
-    logger.info(`Connected to Fleet successful`);
-  });
 
   ROS.connected$.subscribe(() => {
-    logger.info(`Connected to ROS Bridge ${config.ROS_BRIDGE_URL}`);
+    SysLoggerNormal.info(`Connected to ROS Bridge ${config.ROS_BRIDGE_URL}`, {
+      type: 'ros bridge'
+    })
+    ros_bridge_error_log = true;
+    ros_bridge_close_log = true
     SOCKET.sendRosBridgeConnection(true);
     reconnectCount$.next(reconnectCount$.value + 1);
   });
+
   ROS.connectionError$.subscribe((error: Error) => {
-    logger.warn(`ROS Bridge connect error: ${JSON.stringify(error)}`);
+    if(ros_bridge_error_log){
+      SysLoggerNormalWarning.warn("ROS Bridge connect error", {
+        type: "ros bridge",
+        status: error.message
+      });
+      ros_bridge_error_log = false
+    }
     SOCKET.sendRosBridgeConnection(false);
     lastSendGoalId = "";
   });
-
+  
+    ROS.connectionClosed$.subscribe(() => {
+      if(ros_bridge_close_log){
+        SysLoggerNormalWarning.warn("ROS Bridge connection closed", {
+          type : "ros bridge"
+        })
+        ros_bridge_close_log = false
+      }
+      SOCKET.sendRosBridgeConnection(false);
+      lastSendGoalId = "";
+    });
   reconnectCount$.pipe(filter((v) => v > 1)).subscribe((count) => {
-    logger.info(`ROSBRIDGE HAS BEEN RECONNECTED FOR ${count} TIMES!`);
-
+    SysLoggerNormal.info(`ros bridge has been reconnected for ${count} time`, {
+      type: "ros bridge"
+    })
     setTimeout(() => {
       SOCKET.sendRetryConnect(count);
     }, 1000);
   });
 
-  ROS.connectionClosed$.subscribe(() => {
-    logger.info("ROS Bridge Connection closed");
-    SOCKET.sendRosBridgeConnection(false);
-    lastSendGoalId = "";
-  });
+  SOCKET.connect$.subscribe(() => {
+    SysLoggerNormal.info(`Socket connect to Fleet successful ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`,
+      { type: "socket"}
+    );
+    socket_error_log = true;
+  })
+
+  SOCKET.connectionError$.subscribe((err) => {
+    if(socket_error_log){
+      SysLoggerNormalWarning.warn("Socket connect error", {
+        type: "socket"
+      });
+      socket_error_log = false;
+    }
+  })
 
   SOCKET.disconnect$.subscribe(() => {
-    logger.info("Socket Connection closed");
-    // ROS.cancelCarStatusAnyway()
-    //ROS.pause(JSON.stringify(generatePause))
+    SysLoggerNormalWarning.warn("Socket Connection closed", {
+      type: "socket"
+    })
+    ROS.cancelCarStatusAnyway(lastSendGoalId);
   });
 
   merge(
@@ -112,9 +150,11 @@ async function bootstrap() {
     .subscribe(({ x, y, yaw }) => {
       if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1 && Math.abs(yaw)) {
         const pose = `(${x.toFixed(2)}, ${y.toFixed(2)}, ${yaw.toFixed(2)})`;
-        logger.error(
-          `Connected to ROS and get pose ${pose}, which is too close to (0, 0) and possible wrong. Please make sure AMR have reasonable initial pose.`
-        );
+        SysLoggerNormalError.error(`Connected to ROS and get pose ${pose}, which is too close to (0, 0) and possible wrong. Please make sure AMR have reasonable initial pose.`,
+          {
+            type: "ros bridge",
+          }
+        )
       }
     });
 
@@ -143,13 +183,14 @@ async function bootstrap() {
         result_message: data.result.result_message,
       },
     };
-    console.log("\n", "==========", "\n");
-    console.log(new Date().toLocaleString());
-    console.log(`🐝 ${chalk.magenta("mission complete")} 🐝`);
-    console.log("\n", "==========");
 
+    TCLoggerNormal.info(`mission [${accMoveAction}] complete`, {
+      group: "mission",
+      type: "mission complete",
+      status: accMoveAction === "move" ? { mid: lastSendGoalId, dest: targetLoc, mission: newState} : { mid: lastSendGoalId, mission: newState }
+    })
+    
     if (accMoveAction === "move") {
-      console.log("arrived at destination", targetLoc);
       SOCKET.sendReachGoal(targetLoc);
       missionType = "";
       targetLoc = "";
@@ -159,10 +200,10 @@ async function bootstrap() {
       return;
     }
     interval(500)
-      .pipe(take(2))
-      .subscribe(() => {
-        SOCKET.sendReadStatus(JSON.stringify(newState));
-      });
+    .pipe(take(2))
+    .subscribe(() => {
+      SOCKET.sendReadStatus(JSON.stringify(newState));
+    });
   });
 
   /** 任務開始訊號 Action */
@@ -177,16 +218,22 @@ async function bootstrap() {
       })
     )
     .subscribe((msg) => {
-      console.log(chalk.greenBright(`write status: ${msg.status.Id}`));
+
       accMoveAction = msg.status.Body.operation.type;
       lastSendGoalId = msg.status.Id;
+
+
       if (msg.status.Body.operation.type === "move") {
         targetLoc = msg.status.Body.operation.locationId.toString();
         missionType = msg.status.Body.operation.type;
-        ROS.writeStatus(msg.status);
-      } else {
-        ROS.writeStatus(msg.status);
-      }
+      };
+
+      ROS.writeStatus(msg.status);
+      TCLoggerNormal.info(`receive mission ${accMoveAction}`, {
+        group: "mission",
+        type: "new mission",
+        status: accMoveAction === "move" ? { mid: lastSendGoalId, dest: targetLoc} : { mid: lastSendGoalId}
+      })
     });
 
   /** 任務中回傳值 Action Feedback
@@ -207,11 +254,10 @@ async function bootstrap() {
     const { status, feedback } = Feedback;
     const actionId = status.goal_id.id;
     if (lastSendGoalId !== actionId) {
-      console.log(
-        chalk.bgRed(
-          `execute action ID: ${lastSendGoalId} not equal to feedback action ID: ${actionId}`
-        )
-      );
+      TCLoggerNormalError.error(`execute action ID: ${lastSendGoalId} not equal to feedback action ID: ${actionId}`, {
+        group: "mission",
+        type: "ros handshake"
+      })
       return;
     }
     if (!actionId) return;
@@ -219,13 +265,6 @@ async function bootstrap() {
   });
 
   SOCKET.writeCancel$.subscribe(({ id }) => {
-    const cancelMessage: ROSLIB.Message = {
-      stamp: {
-        secs: 0,
-        nsecs: 0,
-      },
-      id,
-    };
     if (missionType === "move") {
       if (getLeaveLoc$) {
         getLeaveLoc$.unsubscribe();
@@ -234,8 +273,7 @@ async function bootstrap() {
         getArriveLoc$.unsubscribe();
       }
     }
-    ROS.cancelCarStatusAnyway();
-    ROS.writeCancel(cancelMessage);
+    ROS.cancelCarStatusAnyway(lastSendGoalId);
   });
 
   /** 註冊時會訂閱的一次性 Subscription
@@ -243,16 +281,22 @@ async function bootstrap() {
    */
   SOCKET.startOneTermAllowPath$
     .pipe(
-      tap((data) => console.log("start register")),
+      tap(() => {
+        TCLoggerNormal.info("start register", {
+          group: "traffic",
+          type: "register"
+        })
+      }),
       switchMap(() => {
         return ROS.getArriveTarget$.pipe(take(1));
       })
     )
     .subscribe({
       next: (isArriveRes) => {
-        logger.info(
-          `Arrive location ${isArriveRes.data}  is received successful`
-        );
+        TCLoggerNormal.info(`register success: Arrive location ${isArriveRes.data}`, {
+          group: "traffic",
+          type: "register"
+        })
         const resData = (isArriveRes as { data: string }).data;
 
         const parseData = JSON.parse(resData);
@@ -268,8 +312,7 @@ async function bootstrap() {
         lastShortestPath = shortestPath.shortestPath;
       }),
       ROS.shortestPath()
-    )
-    .subscribe();
+    ).subscribe();
 
   /** 接收重新導航路徑 Subscription */
   SOCKET.reroutePath$
@@ -278,23 +321,24 @@ async function bootstrap() {
         lastShortestPath = reroutePath.reroutePath;
       }),
       ROS.reroutePath()
-    )
-    .subscribe((reroutePath) => {
-      //console.log(reroutePath, "@@@@@@@@@@@@@?????????");
-    });
+    ).subscribe();
 
   /** 通行權 (isAllow: true/false) Subscription */
   SOCKET.allowPath$
     .pipe(filter(isLocationIdAndIsAllow))
     .subscribe((allowTarget) => {
       if (allowTarget.isAllow) {
-        console.log(`allow location ${allowTarget.locationId} @@@@@@@@@@@`);
+        TCLoggerNormal.info(`send  allow location ${allowTarget.locationId}`, {
+          group: "traffic",
+          type: "isAllow"
+        })
         getArriveLoc$ = ROS.getArriveTarget$
           .pipe(take(1))
           .subscribe((isArriveRes) => {
-            logger.info(
-              `Arrive location ${isArriveRes.data}  is received successful`
-            );
+            TCLoggerNormal.info(`receive arrive location ${isArriveRes.locationId}`, {
+              group: "traffic",
+              type: "isArrive"
+            })
             const resData = (isArriveRes as { data: string }).data;
             SOCKET.sendIsArriveLocation(JSON.parse(resData));
             const parseData = JSON.parse(resData);
@@ -303,10 +347,11 @@ async function bootstrap() {
             }
           });
         if (targetLoc !== allowTarget.locationId) {
-          console.log(
-            "create leave location Observerble!!!!!!!!!!, now allow =",
-            allowTarget.locationId
-          );
+          TCLoggerNormal.info("create leave location obs", {
+            group: "traffic",
+            type: "create leave obs",
+            status: { waitLeave: allowTarget.locationId}
+          });
           getLeaveLoc$ = ROS.getLeaveLocation$
             .pipe(
               filter((response) => {
@@ -317,7 +362,11 @@ async function bootstrap() {
             )
             .subscribe((leaveLocation) => {
               const leaveLoc = JSON.parse(leaveLocation.data);
-              console.log("leave location = ", leaveLoc.locationId);
+              TCLoggerNormal.info(`receive leave location ${leaveLoc.locationId}`, {
+                group: "traffic",
+                type: "isAway",
+                status: { }
+              })
               if (!lastShortestPath.length) return;
               SOCKET.sendIsLeaveLocation(leaveLocation);
             });
@@ -385,7 +434,7 @@ async function bootstrap() {
     SOCKET.sendCargoVerity(msg);
   });
 
-  ROS.cancelCarStatusAnyway();
+  ROS.cancelCarStatusAnyway(lastSendGoalId);
 }
 
 void bootstrap();

@@ -27,6 +27,7 @@ import {
 
 import * as SOCKET from "../socket";
 import logger from "~/logger";
+import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 
 const ros = new ROSLIB.Ros({ encoding: "utf8" } as any); // cast for removing warning
 
@@ -102,7 +103,6 @@ export const pose$ = (() => {
           angularThres: 0.01,
           transThres: 0.01,
         }).subscribe("base_link", (msg) => {
-          // console.log(msg);
           next(
             tfTransformToCoords(
               schema.validateSync(msg, { stripUnknown: true })
@@ -148,24 +148,34 @@ export const shortestPath = () => {
     });
     return new Observable<{ result: boolean }>((subscriber) => {
       shortestPath$.subscribe((shortest_Path) => {
-        console.log("shortestPath is transmitting ...");
-        console.log(shortest_Path);
+        TCLoggerNormal.info("send shortest path", {
+          group: "traffic",
+          type: "shortest path [req]",
+          status: shortest_Path.shortestPath
+        })
         service.callService(
           {
             shortestPath: shortest_Path.shortestPath,
           },
-          ({ result }) => {
-            logger.info(`Result of shortestPath from ${service.name}`);
+          (data) => {
+            TCLoggerNormal.info(`receive shortest path response from ${service.name}`)
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-            if (result as boolean) {
-              console.log(
-                chalk.blue(`AMR received shortPath, Service server is working`)
-              );
-              SOCKET.sendShortestIsReceived(result);
+            if (data.result as boolean) {
+              SOCKET.sendShortestIsReceived(data.result);
             }
+
+            TCLoggerNormal.info(`receive shortest path response from ros service`, {
+              group: "traffic",
+              type: "shortest path [res]",
+              status: { serviceName: service.name, res: data}
+            })
           },
           (error: string) => {
-            console.log(`Service request is failed ${error}`);
+            TCLoggerNormalError.error(`Service request is failed `, {
+              group: "traffic",
+              type: "shortest path",
+              status: error
+            })
           }
         );
       });
@@ -183,26 +193,34 @@ export const reroutePath = () => {
     });
     return new Observable<{ result: boolean }>((subscriber) => {
       reroutePath$.subscribe((reroute_Path) => {
-        console.log("update path is transmitting ...");
-        console.log(reroute_Path);
+
+        TCLoggerNormal.info("send reroute path", {
+          group: "traffic",
+          type: "reroute path [req]",
+          status: reroute_Path.reroutePath
+        })
+
         service.callService(
           {
             updatePath: reroute_Path.reroutePath,
           },
           (response) => {
-            logger.info(`Result of shortestPath from ${service.name}`);
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (response.result as boolean) {
-              console.log(
-                chalk.blue(
-                  `AMR received reroute path, Service server is working`
-                )
-              );
               SOCKET.sendReroutePathInProcess(response);
             }
+            TCLoggerNormal.info(`receive reroute path response from ros service`, {
+              group: "traffic",
+              type: "reroute path [res]",
+              status: { serviceName: service.name, res: response}
+            })
           },
           (error: string) => {
-            console.log(`Service request is failed ${error}`);
+            TCLoggerNormalError.error(`Service request is failed `, {
+              group: "traffic",
+              type: "reroute path",
+              status: error
+            })
           }
         );
       });
@@ -276,18 +294,15 @@ export const allowTarget = (() => {
       nextLocation,
       (res) => {
         if (!(res as { result: boolean }).result) {
-          logger.info(
-            `Allow location ${nextLocation.locationId}  is transmitted wrong`
-          );
           return;
         }
-        const Log = nextLocation.isAllow
-          ? `Allow location ${nextLocation.locationId}  is transmitted successfully`
-          : `Not allow location ${nextLocation.locationId}  is transmitted successfully `;
-        logger.info(Log);
       },
       (error: string) => {
-        console.log(`Service request is failed ${error}`);
+        TCLoggerNormalError.error(`Service request is failed `, {
+          group: "traffic",
+          type: "isAllow",
+          status: error
+        })
       }
     );
   };
@@ -340,20 +355,7 @@ export const getReadStatus$ = (() => {
   );
 })();
 
-// 主要是刪除任務
-export const writeCancel = (() => {
-  // Create a topic instance
-  const topic = new ROSLIB.Topic({
-    ros,
-    name: `/kenmec_${process.env.CAR}/fleet_manager/mission/cancel`,
-    messageType: "actionlib_msgs/GoalID",
-  });
 
-  return (msg: ROSLIB.Message) => {
-    // Publish the cancel message
-    topic.publish(msg);
-  };
-})();
 // ------------------------------------------------------------------------------ 交車主要交握
 
 // 插車回傳任務狀況
@@ -412,7 +414,12 @@ export const cancelCarStatusAnyway = (() => {
     messageType: "actionlib_msgs/GoalID",
   });
 
-  return () => {
+  return (lastSendGoalId: string) => {
+    TCLoggerNormal.info("cancel mission", {
+      group: "mission",
+      type: "cancel mission",
+      status: { mid: lastSendGoalId }
+    })
     topic.publish({
       stamp: {
         secs: 0,

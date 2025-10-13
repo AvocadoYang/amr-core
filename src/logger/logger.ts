@@ -8,7 +8,7 @@ const format = winston.format.combine(
   winston.format.printf((info) => {
     // const timestamp = info.timestamp as string;
     const level = info.level.padEnd(18, ' ');
-    const message = info.message.trim();
+    const message = (info.message as string).trim();
     return `${level} ${message}`;
   }),
 );

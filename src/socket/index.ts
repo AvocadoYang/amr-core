@@ -111,7 +111,6 @@ export function sendIsArriveLocation(arriveMsg: {
   locationId: string;
   isArrive: boolean;
 }) {
-  console.log(`🚩 location ${arriveMsg.locationId} is arriving `);
   socket.emit("arrive-loc", arriveMsg);
 }
 
@@ -161,7 +160,6 @@ export function sendCarErrorInfo(errorInfo: {
 // ======= communication with Jack =======
 
 export function sendReadStatus(msg: string) {
-  console.log("it has send read Statue");
   socket.volatile.emit("read-status", { msg });
 }
 
