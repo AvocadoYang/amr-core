@@ -180,14 +180,15 @@ async function bootstrap() {
         feedback_id: data.status.goal_id.id, // 我們的uid
         action_status: data.status.status,
         result_status: data.result.result_status,
-        result_message: JSON.parse(data.result.result_message),
+        result_message: data.result.result_message,
       },
     };
+    const copyMsg = {...newState.read, result_message: JSON.parse(newState.read.result_message)}
 
     TCLoggerNormal.info(`mission [${accMoveAction}] complete`, {
       group: "mission",
       type: "mission complete",
-      status: accMoveAction === "move" ? { mid: lastSendGoalId, dest: targetLoc, mission: newState} : { mid: lastSendGoalId, mission: newState }
+      status: accMoveAction === "move" ? { mid: lastSendGoalId, dest: targetLoc, mission: copyMsg} : { mid: lastSendGoalId, mission: copyMsg }
     })
     
     if (accMoveAction === "move") {
