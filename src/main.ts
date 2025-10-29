@@ -34,7 +34,7 @@ import chalk from "chalk";
 import logger from "./logger";
 import * as ROS from "./ros";
 import * as SOCKET from "./socket";
-import config from "./config";
+import config from "./configs";
 import { isDifferentPose, SimplePose, TrafficGoal } from "./helpers/geometry";
 import { formatPose } from "./helpers";
 import {

@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { fromEventPattern, map, share, tap } from "rxjs";
 import { io, Socket } from "socket.io-client";
-import config from "~/config";
+import config from "~/configs";
 // import { SimplePose, formatPose, sanitizeDegree } from '~/helpers';
 import logger from "~/logger";
 import { Mission_Payload } from "~/types/fleetInfo";

@@ -15,7 +15,7 @@ import { boolean, number, object, string } from "yup";
 
 import chalk from "chalk";
 import { sampleInterval, tfTransformToCoords } from "~/helpers";
-import config from "~/config";
+import config from "~/configs";
 import { SimplePose } from "~/helpers/geometry";
 import {
   MyRosMessage,

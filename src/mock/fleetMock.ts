@@ -4,7 +4,7 @@ import { string, boolean, object } from 'yup';
 // import { MyRosMessage, WriteStatus } from './types/fleetInfo';
 import { Subject, fromEventPattern, share } from 'rxjs';
 import chalk from 'chalk';
-import config from '~/config';
+import config from '~/configs';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fleetMoveMock = (

@@ -1,5 +1,5 @@
 import winston from 'winston';
-import config from '~/config';
+import config from '~/configs';
 
 const format = winston.format.combine(
   winston.format.colorize(),
