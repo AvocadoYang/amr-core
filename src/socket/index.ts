@@ -37,24 +37,38 @@ export const writeStatus$ = fromEventPattern<{
   status: string;
   actionType: string;
   locationId: number;
+  ack: (...args: any[]) => void;
 }>((next) => {
-  socket.on("write-status", next);
+  socket.on("write-status", (msg, ack) => {
+    next({ ...msg, ack });
+  });
 }).pipe(share());
 
 export const writeCancel$ = fromEventPattern<{
   id: string;
+  ack: (...args: any[]) => void;
 }>((next) => {
-  socket.on("write-cancel", next);
+  socket.on("write-cancel", (msg, ack) => {
+    next({ ...msg, ack });
+  });
 }).pipe(share());
 
 export const pause$ = fromEventPattern<{
   payload: string;
+  ack: (...args: any[]) => void;
 }>((next) => {
-  socket.on("pause", next);
+  socket.on("pause", (msg, ack) => {
+    next({ ...msg, ack });
+  });
 }).pipe(share());
 
-export const forceReset$ = fromEventPattern<boolean>((next) => {
-  socket.on("force-reset", next);
+export const forceReset$ = fromEventPattern<{
+  payload: boolean;
+  ack: (...args: any[]) => void;
+}>((next) => {
+  socket.on("force-reset", (msg, ack) => {
+    next({ ...msg, ack });
+  });
 }).pipe(share());
 
 export const moveToPoint$ = fromEventPattern<{
