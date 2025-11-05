@@ -287,10 +287,10 @@ async function bootstrap() {
   SOCKET.writeCancel$.subscribe(({ id, ack }) => {
     ack({ code: "0000" });
     if (missionType === "move") {
-      if (getLeaveLoc$) {
+      if (getLeaveLoc$ && !getArriveLoc$.closed) {
         getLeaveLoc$.unsubscribe();
       }
-      if (getArriveLoc$) {
+      if (getArriveLoc$ && !getArriveLoc$.closed) {
         getArriveLoc$.unsubscribe();
       }
     }
