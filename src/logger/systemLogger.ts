@@ -6,7 +6,7 @@ import { kenmecLogs } from '~/helpers/system';
 
 
 const LOG_LEVEL = 'info';
-const AMR_ID_COLOR = chalk.hex('#ffcefe');
+const AMR_ID_COLOR = chalk.hex('#ffe7ff');
 const NORMAL = chalk.hex('#deffc8');
 const WRANG = chalk.hex('#f17109');
 const HAND_SHAKE = chalk.hex('#bad1ff');

@@ -7,9 +7,7 @@ import {
   mapTo,
   merge,
   share,
-  switchMap,
-  take,
-  Subscription,
+  switchMap
 } from "rxjs";
 import { boolean, number, object, string } from "yup";
 

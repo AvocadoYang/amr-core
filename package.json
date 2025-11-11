@@ -28,11 +28,15 @@
     "outputPath": "build"
   },
   "dependencies": {
+    "@types/amqplib": "^0.10.8",
     "@types/cors": "^2.8.17",
-    "chalk": "4.1.2",
+    "amqplib": "^0.10.9",
+    "axios": "^1.13.2",
+    "chalk": "^4.1.2",
     "config": "^3.3.7",
     "dotenv": "^10.0.0",
     "envalid": "^7.2.1",
+    "faker": "^5.5.3",
     "js-yaml": "^4.1.0",
     "macaddress": "^0.5.2",
     "pkg": "^5.8.1",
