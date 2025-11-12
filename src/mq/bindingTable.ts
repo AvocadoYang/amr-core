@@ -19,7 +19,13 @@ export const bindingTable: BindingInfo[] = [
     {
         publisher: "AMR_CORE",
         name: "heartbeat",
-        queueOpts: { durable: true, exclusive: false, quorm: true },
+        queueOpts: { durable: true, exclusive: false, quorm: false },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    {
+        publisher: "AMR_CORE",
+        name: "pose",
+        queueOpts: { durable: true, exclusive: false, quorm: false },
         exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
     }
 ]

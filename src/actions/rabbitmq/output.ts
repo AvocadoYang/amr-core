@@ -1,24 +1,23 @@
 const PREFIX = "RABBIT";
 
 
-export const HEARTBEAT = `${PREFIX}/HEARTBEAT` as const;
-export const heartbeat = (data: {
-    heart_beat: number;
+export const RB_IS_CONNECTED = `${PREFIX}/RB_IS_CONNECTED` as const;
+export const isConnected = (data: {
+    isConnected: boolean;
 }) => {
     return {
-        type: HEARTBEAT,
+        type: RB_IS_CONNECTED,
         ...data
     }
 };
 
+type AllCreator = 
+    | typeof isConnected
 
-type AllTransaction = 
-    | typeof heartbeat
+export type AllOutput = ReturnType<AllCreator>;
 
-export type AllOutput = ReturnType<AllTransaction>;
-
-export type Output<T extends AllOutput['type'] | AllTransaction = AllOutput['type'], A extends AllOutput = AllOutput> = A extends { type: T }
+export type Output<T extends AllOutput['type'] | AllCreator = AllOutput['type'], A extends AllOutput = AllOutput> = A extends { type: T }
     ? A
-    : A extends { type: ReturnType<T extends AllTransaction ? T : never>['type'] }
+    : A extends { type: ReturnType<T extends AllCreator ? T : never>['type'] }
     ? A
     : never

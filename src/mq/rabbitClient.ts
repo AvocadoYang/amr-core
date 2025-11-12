@@ -1,12 +1,16 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { interval, Subject, Subscription } from "rxjs";
+import { filter, interval, Subject, Subscription } from "rxjs";
 import config from "~/configs"
 import * as faker from 'faker';
 import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormalError } from "~/logger/rabbitLogger";
-import { AllOutput } from "~/actions/rabbitmq/output";
+import { Transaction } from "~/actions/rabbitmq/transactions";
 import { bindingTable } from "./bindingTable";
+import { isConnected, Output } from "~/actions/rabbitmq/output";
+import { sendHeartbeat } from "./transactionsWrapper";
+import { AllRes } from "./type/res";
+import { AllReq } from "./type/req";
 
 export default class RabbitClient {
     private url: string;
@@ -16,8 +20,10 @@ export default class RabbitClient {
     private isClosing = false;
     public debugLogger: winston.Logger;
     private bindingLogger: winston.Logger;
-    private output$: Subject<{ data: AllOutput }>;
+    private transactionOutput$: Subject<AllRes | AllReq>;
+    private output$: Subject<Output>
     private heartbeat: number = 1;
+    private heartbeatSwitch: boolean = false;
 
 
     public transactionMap: Map<string, { id: string, timer?: NodeJS.Timeout, count: number }> = new Map();
@@ -27,7 +33,9 @@ export default class RabbitClient {
     constructor(
         option: { retryTime?: number } = {}
     ) {
+        this.transactionOutput$ = new Subject();
         this.output$ = new Subject();
+        this.machineID = config.MAC;
         this.debugLogger = RabbitLoggerDebug(false);
         this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 8000
@@ -42,18 +50,20 @@ export default class RabbitClient {
                     type: "rabbitmq service",
                     status: err.message
                 });
+                this.channel = null;
             });
 
             this.connection.on("close", () => {
-                if (!this.isClosing) {
                     SysLoggerNormalWarning.warn("Connection closed. Reconnecting in 8s...", {
                         type: "rabbitmq service"
                     });
                     if(this.heartbeat$ && !this.heartbeat$.closed){
                         this.heartbeat$.unsubscribe();
                     };
+                    this.output$.next(isConnected({ isConnected: false}))
+                    this.channel = null;
                     setTimeout(() => this.connect(), this.retryTime);
-                }
+                
             });
             
             this.channel = await this.connection.createChannel();
@@ -130,23 +140,25 @@ export default class RabbitClient {
         });
     }
 
-    public sendToQueue(queueName: string, message: string) {
-        const msg = JSON.stringify({ sender: this.machineID, msg: message });
-        if (!this.channel) throw new Error("Channel is not available");
+    public sendToReqQueue(queueName: string, message: string) {
+        const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "REQ" });
+        // if (!this.channel) throw new Error("Channel is not available");
+        if (!this.channel) return;
         this.channel.sendToQueue(queueName, Buffer.from(msg));
         this.debugLogger.info(` Sent message to "${queueName}"`, {
-            type: "send",
+            type: "publish",
             status: JSON.parse(message)
         });
     }
 
-    public setTransactionTimmer(msg: { id: string, sender: string, flag: "REQ" | "RES", msg: string }) {
-        try {
-            const existing = this.transactionMap.get(msg.id);
-            const count = existing ? 0 : 1;
-        } catch (err) {
-
-        }
+    public sendToResQueue(queueName: string, message: string) {
+        const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "Res" });
+        if (!this.channel) throw new Error("Channel is not available");
+        this.channel.sendToQueue(queueName, Buffer.from(msg));
+        this.debugLogger.info(` Sent message to "${queueName}"`, {
+            type: "publish",
+            status: JSON.parse(message)
+        });
     }
 
     public async reqPublish(exchangeName: string, routingKey: string, message: string) {
@@ -190,29 +202,35 @@ export default class RabbitClient {
         }
     }
 
-    public async consume(queueName: string, onMessage: (msg: { data: AllOutput }) => void) {
+    public setTransactionTimmer(msg: { id: string, sender: string, flag: "REQ" | "RES", msg: string }) {
+        try {
+            const existing = this.transactionMap.get(msg.id);
+            const count = existing ? 0 : 1;
+        } catch (err) {
+
+        }
+    }
+
+    public async consume<A>(queueName: string, onMessage: (msg: A ) => void) {
         if (!this.channel) throw new Error("Channel is not available");
         await this.channel.consume(queueName, (msg) => {
             if (msg) {
                 try {
                     const content = msg.content.toString();
                     const data = JSON.parse(content);
-                        const exchangeName = msg.fields.exchange.replace('/REQ', '/RES');
-                        if (data.flag == 'RES' && this.transactionMap.has(data.id)) {
-                            this.transactionMap.delete(data.id);
+                        if (data.flag == 'RES') {
                             this.debugLogger.info(`Receive response message`, {
                                 type: "receive",
                                 status: JSON.parse(data.msg)
                             })
                         } else {
-                            this.debugLogger.info(`Receive message`, {
+                            this.debugLogger.info(`Receive request message`, {
                                 type: "receive",
                                 status: JSON.parse(data.msg)
                             });
                         }
 
-                        this.resPublish(exchangeName, "", JSON.stringify({ id: data.id, return_code: 0 }));
-                        onMessage(JSON.parse(data.msg));
+                        onMessage({flag: data.flag, ...JSON.parse(data.msg)});
                 } catch (err) {
                     RabbitLoggerNormalError.error("Failed to parse message", {
                         type: "parse error",
@@ -236,31 +254,39 @@ export default class RabbitClient {
             };
             switch(publisher){
                 case "QAMS":
-                    await this.consume(`${name}/${config.MAC}/REQ`,(data: { data: AllOutput})=>{
-                        this.output$.next(data)
+                    await this.consume(`${name}/${config.MAC}/REQ`,(data: AllReq)=>{
+                        this.transactionOutput$.next(data)
                     });
                     break;
                 case "AMR_CORE":
-                    await this.consume(`${name}/${config.MAC}/RES`,(data: { data: AllOutput})=>{
-                        this.output$.next(data)
+                    await this.consume(`${name}/${config.MAC}/RES`,(data: AllRes)=>{
+                        this.transactionOutput$.next(data)
                     })
             };
             if(name == "heartbeat"){
-                this.heartbeat$ = interval(5000).subscribe(() => {
+                this.heartbeat$ = interval(5000).pipe(filter(() => this.heartbeatSwitch)).subscribe(() => {
                     this.heartbeat += 1;
                     if(this.heartbeat > 9999) this.heartbeat = 1;
-                    const sMsg = JSON.stringify( { id: faker.datatype.uuid(), heartbeat: this.heartbeat})
-                    this.sendToQueue(`${name}/${config.MAC}/REQ`,sMsg)
+                    this.sendToReqQueue(`${name}/${config.MAC}/REQ`, sendHeartbeat(this.heartbeat));
                 })
             }
         });
+        this.output$.next(isConnected({ isConnected: true}));
 
     }
 
-    public subscribe(cb: (action: {  data: AllOutput }) => void) {
+
+    public onTransaction(cb: (action: AllReq | AllRes ) => void) {
+        return this.transactionOutput$.subscribe(cb);
+    }
+
+    public subscribe(cb: (action: Output) => void){
         return this.output$.subscribe(cb);
     }
 
+    public switchHeartbeat(isOpen: boolean){
+        this.heartbeatSwitch = isOpen
+    }
 
 
 

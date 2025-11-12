@@ -2,33 +2,24 @@ import config from '../configs'
 import { cleanEnv, str } from "envalid";
 import dotenv from "dotenv";
 import * as ROS from '../ros'
-import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
+import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
 import axios from "axios";
 import { object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { bindingTable } from '~/mq/bindingTable';
+import { isConnected, Output } from '~/actions/networkManager/output';
 
-dotenv.config();
-cleanEnv(process.env, {
-  NODE_CONFIG_ENV: str({
-    choices: ["development_xnex", "ruifang_testing_area", "px_ruifang"],
-    default: "px_ruifang",
-  }),
-  MODE: str({
-    choices: ["debug", "product"],
-    default: "product",
-  }),
-});
 
 class NetWorkManager {
     private ros_bridge_error_log = true
     private ros_bridge_close_log = true
     private fleet_connect_log = true
     private amrId: string = '';
+    private output$: Subject<Output>;
     private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
     constructor(){
-        this.rosConnect();
+        this.output$ = new Subject();
     }
 
     public async fleetConnect(){
@@ -50,11 +41,12 @@ class NetWorkManager {
                 throw new ValidationError(err, (err as YupValidationError).message)
             });
             if(return_code === "0000"){
-              SysLoggerNormal.info(`connect to fleet manager ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`,{
-                type: "fleet manager",
+              SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`,{
+                type: "QAMS",
               });
               this.amrId = amrId;
               this.fleet_connect_log = true;
+              this.output$.next(isConnected({ isConnected: true }));
               break;
             }else{
               throw new CustomerError(return_code, "custom error");
@@ -63,35 +55,32 @@ class NetWorkManager {
           if(this.fleet_connect_log){
             switch(error.type){
               case "yup":
-                SysLoggerNormalError.error("can't connect with fleet manager, retry after 5s..",{
-                  group: "system",
-                  type: "fleet manager",
+                SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..",{
+                  type: "QAMS",
                   status: error.msg,
                 });
                 break;
               case "custom":
-                SysLoggerNormalError.error("can't connect with fleet manager, retry after 5s..",{
-                  group: "system",
-                  type: "fleet manager",
+                SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..",{
+                  type: "QAMS",
                   status: { return_code: error.statusCode, description: error.message},
                 });
                 break;
               default:
-                SysLoggerNormalError.error("unknown error, retry after 5s..",{
-                  group: "system",
-                  type: "fleet manager",
-                  status: error.message,
+                SysLoggerNormalError.error(`${error.message}, retry after 5s..`,{
+                  type: "QAMS",
                 });
                 break;
             }
             this.fleet_connect_log = false;
           }
+          // this.output$.next(isConnected({ isConnected: false }));
           await new Promise((resolve) => setTimeout(resolve, 5000))
         }
       }
     }
 
-    private rosConnect(){
+    public rosConnect(){
         ROS.init();
         ROS.connected$.subscribe(() => {
             SysLoggerNormal.info(`connect with ROS bridge`, {
@@ -155,6 +144,10 @@ class NetWorkManager {
             ROS.reconnect();
           });
      
+    }
+
+    public subscribe(cb: (action: Output) => void){
+      return this.output$.subscribe(cb);
     }
 
     public getAmrId(){
