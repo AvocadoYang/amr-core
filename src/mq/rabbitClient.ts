@@ -11,6 +11,7 @@ import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { sendHeartbeat } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
 import { AllReq } from "./type/req";
+import { CMD_ID } from "./type/cmdId";
 
 export default class RabbitClient {
     private url: string;
@@ -140,22 +141,22 @@ export default class RabbitClient {
         });
     }
 
-    public sendToReqQueue(queueName: string, message: string) {
+    public sendToReqQueue(queueName: string, message: string, cmd_id: string) {
         const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "REQ" });
         // if (!this.channel) throw new Error("Channel is not available");
         if (!this.channel) return;
         this.channel.sendToQueue(queueName, Buffer.from(msg));
-        this.debugLogger.info(` Sent message to "${queueName}"`, {
+        this.debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
             type: "publish",
             status: JSON.parse(message)
         });
     }
 
-    public sendToResQueue(queueName: string, message: string) {
-        const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "Res" });
+    public sendToResQueue(queueName: string, message: string, cmd_id: string) {
+        const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "RES" });
         if (!this.channel) throw new Error("Channel is not available");
         this.channel.sendToQueue(queueName, Buffer.from(msg));
-        this.debugLogger.info(` Sent message to "${queueName}"`, {
+        this.debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
             type: "publish",
             status: JSON.parse(message)
         });
@@ -267,7 +268,7 @@ export default class RabbitClient {
                 this.heartbeat$ = interval(5000).pipe(filter(() => this.heartbeatSwitch)).subscribe(() => {
                     this.heartbeat += 1;
                     if(this.heartbeat > 9999) this.heartbeat = 1;
-                    this.sendToReqQueue(`${name}/${config.MAC}/REQ`, sendHeartbeat(this.heartbeat));
+                    this.sendToReqQueue(`${name}/${config.MAC}/REQ`, sendHeartbeat(this.heartbeat), CMD_ID.HEARTBEAT);
                 })
             }
         });
@@ -288,6 +289,9 @@ export default class RabbitClient {
         this.heartbeatSwitch = isOpen
     }
 
+    public setHeartbeat(heartbeat: number){
+        this.heartbeat = heartbeat;
+    }
 
 
     public async close() {

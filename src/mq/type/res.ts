@@ -12,8 +12,12 @@ interface Heartbeat extends Base<CMD_ID.HEARTBEAT>{
     heartbeat: number;
 }
 
+interface Feedback extends Base<CMD_ID.FEEDBACK>{}
+
+interface ReadStatus extends Base<CMD_ID.READ_STATUS>{}
 
 
 
 
-export type AllRes = Heartbeat
+
+export type AllRes = Heartbeat | Feedback | ReadStatus;

@@ -27,5 +27,36 @@ export const bindingTable: BindingInfo[] = [
         name: "pose",
         queueOpts: { durable: true, exclusive: false, quorm: false },
         exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
-    }
+    },
+    {
+        publisher: "QAMS",
+        name: "writeStatus",
+        queueOpts: { durable: true, exclusive: false, quorm: true },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    {
+        publisher: "AMR_CORE",
+        name: "missionFeedback",
+        queueOpts: { durable: true, exclusive: false, quorm: false },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    {
+        publisher: "AMR_CORE",
+        name: "readStatus",
+        queueOpts: { durable: true, exclusive: false, quorm: true },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    {
+        publisher: "QAMS",
+        name: "cancelMission",
+        queueOpts: { durable: true, exclusive: false, quorm: true },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    {
+        publisher: "AMR_CORE",
+        name: "errorInfo",
+        queueOpts: { durable: true, exclusive: false, quorm: true },
+        exchangeOpts: { type: "fanout", options: { durable: true, autoDelete: true, } }
+    },
+    
 ]

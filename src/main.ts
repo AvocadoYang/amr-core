@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import config from './configs'
 import { cleanEnv, str } from "envalid";
-import { NetWorkManager } from "./service";
+import { MissionManager, NetWorkManager, Status } from "./service";
 import { RBClient } from "./mq";
 import * as ROS from './ros'
 import { BehaviorSubject, catchError, from, interval, map, of, switchMap, tap } from "rxjs";
@@ -12,6 +12,7 @@ import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
 import { sendPose } from "./mq/transactionsWrapper";
+import { MISSION_INFO } from "./actions/mission/output";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -31,12 +32,17 @@ class AmrCore {
   private lastHeartbeat: number = 0;
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
+  private ms: MissionManager;
+  private st: Status;
 
   private lastPose: SimplePose = { x: 0, y: 0, yaw: 0}
 
   constructor(){
     this.netWorkManager = new NetWorkManager();
     this.rb = new RBClient();
+    this.ms = new MissionManager(this.rb);
+    this.st = new Status(this.rb);
+
 
     this.netWorkManager.subscribe((action) => {
       switch(action.type){
@@ -57,17 +63,38 @@ class AmrCore {
         default:
           break;
       }
+    });
+
+    this.ms.subscribe((action) => {
+      switch(action.type){
+        case MISSION_INFO:
+          break;
+        default:
+          break;
+      }
     })
 
     this.rb.onTransaction((action) => {
       switch(action.cmd_id){
         case CMD_ID.HEARTBEAT:
           this.lastHeartbeat = Date.now();
+          this.rb.setHeartbeat(action.heartbeat);
           break;
         default:
           break;
       }
     });
+
+    
+    
+  }
+  
+  public async init(){
+    await this.rb.connect();
+    this.netWorkManager.rosConnect();
+    await this.netWorkManager.fleetConnect();
+
+    /** ROS subscribe */
 
     ROS.pose$.subscribe((pose) => {
       if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
@@ -78,21 +105,9 @@ class AmrCore {
         y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
       };
       const Pose = { x:pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
-      this.rb.sendToReqQueue(`pose/${config.MAC}/REQ`, sendPose(Pose));
+      this.rb.sendToReqQueue(`pose/${config.MAC}/REQ`, sendPose(Pose), CMD_ID.POSE);
       this.lastPose = pose;
     });
-    
-    
-  }
-  
-  public async init(){
-    await this.netWorkManager.fleetConnect();
-    await this.rb.connect();
-    this.netWorkManager.rosConnect();
-    interval(100).pipe(map(() => ({ x: 1.2, y:1.3, yaw: 30}))).subscribe((pose) =>{
-      this.rb.sendToReqQueue(`pose/${config.MAC}/REQ`, sendPose(pose));
-      this.lastPose = pose;
-    })
   }
 
   public monitorHeartbeat() {
@@ -137,9 +152,7 @@ class AmrCore {
     await this.netWorkManager.fleetConnect();
   }
 
-  private createROSListener(){
 
-  }
 }
 
 
@@ -148,6 +161,8 @@ const amrCore = new AmrCore();
 (async () => { 
   await amrCore.init();
   amrCore.monitorHeartbeat();
+
+  
    
 } )()
 
