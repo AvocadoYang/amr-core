@@ -8,10 +8,13 @@ import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormalError } 
 import { Transaction } from "~/actions/rabbitmq/transactions";
 import { bindingTable } from "./bindingTable";
 import { isConnected, Output } from "~/actions/rabbitmq/output";
-import { sendHeartbeat } from "./transactionsWrapper";
-import { AllRes } from "./type/res";
+import { RequestMsgType, ResponseMsgType, sendHeartbeat } from "./transactionsWrapper";
+import { AllRes, HEARTBEAT, Heartbeat } from "./type/res";
 import { AllReq } from "./type/req";
 import { CMD_ID } from "./type/cmdId";
+import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions } from "./type/type";
+import { Control } from "./type/control";
+import { formatDate } from "~/helpers/system";
 
 export default class RabbitClient {
     private url: string;
@@ -21,26 +24,39 @@ export default class RabbitClient {
     private isClosing = false;
     public debugLogger: winston.Logger;
     private bindingLogger: winston.Logger;
-    private transactionOutput$: Subject<AllRes | AllReq>;
+    private resTransactionOutput$: Subject<AllRes>;
+    private reqTransactionOutput$: Subject<AllReq>;
     private output$: Subject<Output>
     private heartbeat: number = 1;
     private heartbeatSwitch: boolean = false;
+    private amrId: string ="";
 
 
-    public transactionMap: Map<string, { id: string, timer?: NodeJS.Timeout, count: number }> = new Map();
+    public transactionMap: Map<string, { id: string, count: number }> = new Map();
 
     private retryTime: number;
     private heartbeat$: Subscription;
     constructor(
         option: { retryTime?: number } = {}
     ) {
-        this.transactionOutput$ = new Subject();
+        this.resTransactionOutput$ = new Subject();
+        this.reqTransactionOutput$ = new Subject();
         this.output$ = new Subject();
         this.machineID = config.MAC;
         this.debugLogger = RabbitLoggerDebug(false);
         this.bindingLogger = RabbitLoggerBindingDebug(false);
-        this.retryTime = option.retryTime ?? 8000
+        this.retryTime = option.retryTime ?? 3000
         this.url = `amqp://kenmec:kenmec@${config.MISSION_CONTROL_HOST}:5672`
+
+        interval(3000).pipe(filter(() =>{
+            return this.heartbeatSwitch
+        })).subscribe(()=>{
+            const routeKey = `amr.io.${config.MAC}.handshake.heartbeat`
+            this.reqPublish(IO_EX, routeKey, sendHeartbeat(this.heartbeat), {
+                expiration: "10000"
+            })
+        })
+        
     }
 
     public async connect() {
@@ -55,7 +71,7 @@ export default class RabbitClient {
             });
 
             this.connection.on("close", () => {
-                    SysLoggerNormalWarning.warn("Connection closed. Reconnecting in 8s...", {
+                    SysLoggerNormalWarning.warn("Connection closed. Reconnecting in 3s...", {
                         type: "rabbitmq service"
                     });
                     if(this.heartbeat$ && !this.heartbeat$.closed){
@@ -162,46 +178,76 @@ export default class RabbitClient {
         });
     }
 
-    public async reqPublish(exchangeName: string, routingKey: string, message: string) {
+    public async reqPublish(
+        exchangeName: string, 
+        routingKey: string, 
+        message: RequestMsgType, 
+        options?: PublishOptions
+    ) {
+        const id = faker.datatype.uuid();
+        const jMsg = {
+            id,
+            sender: "AMR_CORE",
+            serialNum: this.machineID,
+            flag: "REQ",
+            timestamp: formatDate(),
+            payload: {id, ...message, amrId: this.amrId}
+        };
+    
+        const sMsg = JSON.stringify(jMsg);
+        const buffer = Buffer.from(sMsg);
+    
         try {
-            const jMsg = { id: faker.datatype.uuid(), sender: this.machineID, flag: "REQ", msg: message }
-            const sMsg = JSON.stringify(jMsg);
-            if (!this.channel) throw new Error("Rabbit channel is not available");
-            this.channel.publish(exchangeName, routingKey, Buffer.from(sMsg), {
-                expiration: "10000"
-            });
-            this.transactionMap.set(jMsg.id, { id: jMsg.id, count: 0 });
-            this.debugLogger.info(`Published message to exchange "${exchangeName}"`, {
+            await this.publishWithRetry(exchangeName, routingKey, buffer, options);
+    
+            // 發送成功才記錄 transaction
+            this.transactionMap.set(id, { id, count: 0 });
+    
+            this.debugLogger.info(`Published REQ`, {
                 type: "publish",
-                status: JSON.parse(message)
+                status: message
             });
-
+    
         } catch (err) {
             RabbitLoggerNormalError.error(`${err.message}`, {
                 type: "rabbitmq service"
-            })
+            });
         }
     }
+    
+    public async resPublish(
+        exchangeName: string,
+        routingKey: string,
+        message: ResponseMsgType,
+        options?: PublishOptions
+    ) {
+        const sMsg = JSON.stringify({
+            id: message.id,
+            sender: "AMR_CORE",
+            serialNum: this.machineID,
+            flag: "RES",
+            timestamp: formatDate(),
+            payload: message
+        });
 
-    public async resPublish(exchangeName: string, routingKey: string, message: string) {
+    
+        const buffer = Buffer.from(sMsg);
+    
         try {
-            const msg = JSON.stringify({ sender: this.machineID, flag: "RES", msg: message });
-            if (!this.channel) throw new Error("Rabbit channel is not available");
-            this.channel.publish(exchangeName, routingKey, Buffer.from(msg), {
-                expiration: "10000"
-            });
-
-            this.debugLogger.info(`Published message to exchange "${exchangeName}"`, {
+            await this.publishWithRetry(exchangeName, routingKey, buffer, options);
+    
+            this.debugLogger.info(`Published RES`, {
                 type: "publish",
-                status: JSON.parse(message)
+                status: message
             });
-
+    
         } catch (err) {
             RabbitLoggerNormalError.error(`${err.message}`, {
                 type: "rabbitmq service"
-            })
+            });
         }
     }
+    
 
     public setTransactionTimmer(msg: { id: string, sender: string, flag: "REQ" | "RES", msg: string }) {
         try {
@@ -219,19 +265,21 @@ export default class RabbitClient {
                 try {
                     const content = msg.content.toString();
                     const data = JSON.parse(content);
-                        if (data.flag == 'RES') {
-                            this.debugLogger.info(`Receive response message`, {
-                                type: "receive",
-                                status: JSON.parse(data.msg)
+                    const { payload } = data;
+                    if (data.flag == 'RES') {
+                        this.debugLogger.info(`Receive response message`, {
+                            type: "receive",
+                            status: payload
                             })
-                        } else {
+                    } else {
                             this.debugLogger.info(`Receive request message`, {
                                 type: "receive",
-                                status: JSON.parse(data.msg)
+                                status: payload
                             });
-                        }
+                    }
 
-                        onMessage({flag: data.flag, ...JSON.parse(data.msg)});
+                    onMessage(data);
+    
                 } catch (err) {
                     RabbitLoggerNormalError.error("Failed to parse message", {
                         type: "parse error",
@@ -245,40 +293,54 @@ export default class RabbitClient {
     }
 
     public async init() {
-        bindingTable.forEach(async( info) =>{
-            const { queueOpts, exchangeOpts, name, publisher } = info;
-            for(let flag of ["REQ", "RES"]){
-                const q = await this.createQueue(
-                    `${name}/${config.MAC}/${flag}`,
-                    queueOpts
-                )
-            };
-            switch(publisher){
-                case "QAMS":
-                    await this.consume(`${name}/${config.MAC}/REQ`,(data: AllReq)=>{
-                        this.transactionOutput$.next(data)
-                    });
-                    break;
-                case "AMR_CORE":
-                    await this.consume(`${name}/${config.MAC}/RES`,(data: AllRes)=>{
-                        this.transactionOutput$.next(data)
-                    })
-            };
-            if(name == "heartbeat"){
-                this.heartbeat$ = interval(5000).pipe(filter(() => this.heartbeatSwitch)).subscribe(() => {
-                    this.heartbeat += 1;
-                    if(this.heartbeat > 9999) this.heartbeat = 1;
-                    this.sendToReqQueue(`${name}/${config.MAC}/REQ`, sendHeartbeat(this.heartbeat), CMD_ID.HEARTBEAT);
-                })
+        await this.createExchange(REQ_EX, "topic", { durable: true });
+        await this.createExchange(RES_EX, "topic", { durable: true });
+        await this.createExchange(IO_EX, "topic", { durable: true });
+        await this.createExchange(CONTROL_EX, "topic", { durable: true});
+
+
+        const reqQName = `amr.${config.MAC}.req.queue`;
+        await this.createQueue(reqQName, { durable: true});
+        await this.bindQueue(reqQName, REQ_EX, `amr.${config.MAC}.req.*`);
+
+        const controlQName = `amr.${config.MAC}.control.queue`;
+        await this.createQueue(controlQName, { durable: true});
+        await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control`);
+
+        await this.createQueue(HANDSHAKE_IO_QUEUE, { durable: true});
+
+        const responseQName = `amr.${config.MAC}.message.res.queue`;
+        await this.createQueue(responseQName, { durable: true});
+        await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
+
+
+        this.consume<Control>(controlQName, (msg) => {
+            if(!msg) return;
+            try{
+                console.log(msg)
+            }catch(err){
+
             }
         });
-        this.output$.next(isConnected({ isConnected: true}));
 
+        this.consume<AllReq>(reqQName, (msg) =>{
+            this.reqTransactionOutput$.next(msg);
+        })
+
+        this.consume<AllRes>(responseQName, (msg) => {
+            this.resTransactionOutput$.next(msg);
+        })
+        
+        this.output$.next(isConnected({ isConnected: true}));
+    }
+
+    public onReqTransaction(cb: (action: AllReq ) => void) {
+        return this.reqTransactionOutput$.subscribe(cb);
     }
 
 
-    public onTransaction(cb: (action: AllReq | AllRes ) => void) {
-        return this.transactionOutput$.subscribe(cb);
+    public onResTransaction(cb: (action: AllRes ) => void) {
+        return this.resTransactionOutput$.subscribe(cb);
     }
 
     public subscribe(cb: (action: Output) => void){
@@ -289,10 +351,13 @@ export default class RabbitClient {
         this.heartbeatSwitch = isOpen
     }
 
+    public setAmrId(amrId: string){
+        this.amrId = amrId;
+    }
+
     public setHeartbeat(heartbeat: number){
         this.heartbeat = heartbeat;
     }
-
 
     public async close() {
         this.isClosing = true;
@@ -303,5 +368,44 @@ export default class RabbitClient {
             type: "rabbitmq service"
         })
 
+    }
+
+    private async publishWithRetry(
+        exchange: string,
+        key: string,
+        buffer: Buffer,
+        options: PublishOptions = {}
+    ): Promise<void> {
+    
+        const {
+            expiration,
+            retries = 3,
+            retryDelay = 3000,
+        } = options;
+    
+        let attempts = 0;
+    
+        while (attempts < retries) {
+            try {
+                if (!this.channel) throw new Error("Rabbit channel is not available");
+                const publishOptions = expiration
+                ? { expiration }
+                : undefined;
+    
+                this.channel.publish(exchange, key, buffer, publishOptions);
+    
+                return;
+            } catch (err) {
+                attempts++;
+    
+                if (attempts >= retries) {
+                    throw new Error(
+                        `Failed to publish after ${attempts} attempts: ${err.message}`
+                    );
+                }
+    
+                await new Promise((r) => setTimeout(r, retryDelay));
+            }
+        }
     }
 }

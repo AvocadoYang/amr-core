@@ -1,46 +1,98 @@
-import * as faker from 'faker';
 import { CMD_ID } from './type/cmdId';
-import { error } from 'console';
+import { ReturnCode } from './type/returnCode';
+
 
 export const sendHeartbeat = (heartbeat: number) =>{
-    return JSON.stringify({
+    return {
         cmd_id: CMD_ID.HEARTBEAT,
-        id: faker.datatype.uuid(),
         heartbeat
-    })
+    }
 }
 
 export const sendPose = (pose: { x: number, y: number, yaw: number}) => {
-    return JSON.stringify({
+    return {
         cmd_id: CMD_ID.POSE,
-        id: faker.datatype.uuid(),
-        ...pose
-    })
+        ...pose,
+    }
 }
 
 export const sendFeedBack = (feedback: string) => {
-    return JSON.stringify({
+    return {
         cmd_id: CMD_ID.FEEDBACK,
-        id: faker.datatype.uuid(),
         feedback
-    })
+    }
 }
 
-export const sendReadStatus = (read: string) => {
-    return JSON.stringify({
+export const sendReadStatus = (data: {read: {
+    feedback_id: string, // 我們的uid
+    action_status: number,
+    result_status: number,
+    result_message: string, 
+}}) => {
+    return {
         cmd_id: CMD_ID.READ_STATUS,
-        id: faker.datatype.uuid(),
-        msg: read
-    })
+        ...data
+    }
 }
 
 export const sendErrorInfo = (errorInfo: {
     warning_msg: string[];
     warning_id: string[];
 }) => {
-    return JSON.stringify({
+    return {
         cmd_id: CMD_ID.ERROR_INFO,
-        id: faker.datatype.uuid(),
         ...errorInfo
-    })
+    }
 }
+
+export const sendIOInfo = (io: string) => {
+    return {
+        cmd_id: CMD_ID.IO_INFO,
+        io
+    }
+}
+
+export const sendCurrentId = (currentId: string) =>{
+    return {
+        cmd_id: CMD_ID.CURRENT_ID,
+        currentId
+    }
+}
+
+export const sendPoseAccurate = (isLocalized: boolean) => {
+    return {
+        cmd_id: CMD_ID.CHECK_POSITION,
+        isAccurate: isLocalized
+    }
+}
+
+export const sendCargoVerity = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.CARGO_VERITY,
+        checkResult: msg
+    }
+}
+
+type AllReqType = 
+    typeof sendHeartbeat |
+    typeof sendReadStatus |
+    typeof sendFeedBack |
+    typeof sendPose | 
+    typeof sendErrorInfo |
+    typeof sendIOInfo |
+    typeof sendCurrentId |
+    typeof sendPoseAccurate |
+    typeof sendCargoVerity
+
+export type RequestMsgType = ReturnType<AllReqType>  
+
+
+/** ============================= response below =============================================== */
+
+export const sendBaseResponse = (data: { cmd_id: CMD_ID, return_code: ReturnCode, id: string, amrId: string}) => {
+    return data;
+}
+
+
+type AllResType = typeof sendBaseResponse;
+export type ResponseMsgType = ReturnType<AllResType>;

@@ -4,9 +4,11 @@ import config from "../configs";
 import { Output, sendReachGoal, setMissionInfo } from "~/actions/mission/output";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
-import { CMD_ID } from "~/mq/type/cmdId";
-import { sendFeedBack, sendReadStatus } from "~/mq/transactionsWrapper";
+import { CMD_ID, fakeFeedBack } from "~/mq/type/cmdId";
+import { sendBaseResponse, sendFeedBack, sendReadStatus } from "~/mq/transactionsWrapper";
 import { group } from "console";
+import { ReturnCode } from "~/mq/type/returnCode";
+import { IO_EX, RES_EX } from "~/mq/type/type";
 
 export default class Mission {
     private output$: Subject<Output>
@@ -14,16 +16,17 @@ export default class Mission {
     private missionType: string = "";
     private lastSendGoalId: string = "";
     private targetLoc: string = ""
+    private amrId: string = ""
     constructor(
         private rb: RBClient
     ){
         this.output$ = new Subject();
-        this.rb.onTransaction((action) => {
-            const { id, cmd_id} = action;
-            switch(action.cmd_id){
+        this.rb.onReqTransaction((action) => {
+            const { payload } = action;
+            const { id, cmd_id} = payload;
+            switch(payload.cmd_id){
                 case CMD_ID.WRITE_STATUS:
-
-                    const { status } = action;
+                    const { status } = payload;
                     const { operation } = status.Body;
                     const misType = operation.type;
 
@@ -41,20 +44,19 @@ export default class Mission {
                     this.missionType = misType;
                     this.lastSendGoalId = status.Id;
                     this.targetLoc = misType === "move" ? operation.locationId.toString(): "";
-                    this.rb.sendToResQueue(`writeStatus/${config.MAC}/RES`, JSON.stringify({
-                        return_code: "0000",
-                        id,
-                        cmd_id
-                    }), CMD_ID.WRITE_CANCEL)
-                    break;
-                case CMD_ID.FEEDBACK:
-                    console.log(action, '@@@@@@@@')
-                    break;
-                case CMD_ID.READ_STATUS:
-                    console.log(action, '@@@@@@@@@')
+                    this.rb.resPublish(
+                        RES_EX, 
+                        `amr.res.${config.MAC}.promise`,
+                         sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId: this.amrId, id  })
+                        );
                     break;
                 case CMD_ID.WRITE_CANCEL:
-                    ROS.cancelCarStatusAnyway(this.lastSendGoalId)
+                      ROS.cancelCarStatusAnyway(payload.feedback_id);
+                    this.rb.resPublish(
+                        RES_EX,
+                        `amr.res.${config.MAC}.promise`,
+                        sendBaseResponse({ cmd_id , return_code: ReturnCode.success, amrId: this.amrId, id  })
+                      )
                     this.missionType = "";
                     this.targetLoc = "";
                     this.lastSendGoalId = "";
@@ -97,7 +99,7 @@ export default class Mission {
                 this.executing = false;
                 return;
             }
-            
+
             this.output$.next(setMissionInfo({
                 missionType: this.missionType,
                 lastSendGoalId: this.lastSendGoalId,
@@ -105,9 +107,13 @@ export default class Mission {
             }));
 
             this.executing = true;
-            
-            this.rb.sendToReqQueue(`missionFeedback/${config.MAC}/REQ`, sendFeedBack(feedback.feedback_json), CMD_ID.FEEDBACK);
+        
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000"})
         });
+
+        // interval(200).subscribe(() => {
+        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(JSON.stringify(fakeFeedBack)), { expiration: "2000"})
+        // })
 
 
         ROS.getReadStatus$.subscribe((readStatus) => {
@@ -145,15 +151,36 @@ export default class Mission {
                 this.output$.next(sendReachGoal({ targetLoc: this.targetLoc}));
             };
 
-            this.rb.sendToReqQueue(`readStatus/${config.MAC}/REQ`, JSON.stringify(newState), CMD_ID.READ_STATUS);
+            this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(newState), {
+              persistent: true
+          });
 
             this.missionType = "";
             this.targetLoc = "";
             this.executing = false;
         });
+
+        // setInterval(() => {
+        //     const fake = {
+        //         read: {
+        //             feedback_id: "test", // 我們的uid
+        //             action_status: 123,
+        //             result_status: 123,
+        //             result_message: "test", 
+        //         }
+        //     }
+        //     this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(fake), {
+        //         persistent: true
+        //     });
+        // }, 10000)
     }
 
     public subscribe(cb: (action: Output) => void){
           return this.output$.subscribe(cb);
       }
+
+      public setAmrId(amrId: string){
+        this.amrId = amrId;
+    }
+
 }

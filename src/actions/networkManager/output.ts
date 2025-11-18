@@ -4,6 +4,7 @@ const PREFIX = "NETWORK_MANAGER";
 export const IS_CONNECTED = `${PREFIX}/HEARTBEAT` as const;
 export const isConnected = (data: {
     isConnected: boolean;
+    amrId: string;
 }) => {
     return {
         type: IS_CONNECTED,

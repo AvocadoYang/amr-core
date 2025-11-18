@@ -11,8 +11,10 @@ import { CMD_ID } from "./mq/type/cmdId";
 import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
-import { sendPose } from "./mq/transactionsWrapper";
+import { sendBaseResponse, sendPose } from "./mq/transactionsWrapper";
 import { MISSION_INFO } from "./actions/mission/output";
+import { IO_EX, RES_EX } from "./mq/type/type";
+import { ReturnCode } from "./mq/type/returnCode";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -27,15 +29,14 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
-  private isConnectWithQAMS$ = new BehaviorSubject<boolean>(false);;
+  private isConnectWithQAMS$ = new BehaviorSubject<boolean>(false);
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeat: number = 0;
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
   private ms: MissionManager;
   private st: Status;
-
-  private lastPose: SimplePose = { x: 0, y: 0, yaw: 0}
+  private amrId: string;
 
   constructor(){
     this.netWorkManager = new NetWorkManager();
@@ -48,6 +49,9 @@ class AmrCore {
       switch(action.type){
         case IS_CONNECTED:
           this.isConnectWithQAMS$.next(action.isConnected);
+          this.amrId = action.amrId;
+          this.rb.setAmrId(action.amrId)
+          this.ms.setAmrId(action.amrId)
           this.lastHeartbeat = Date.now();
           break;
         default:
@@ -74,11 +78,18 @@ class AmrCore {
       }
     })
 
-    this.rb.onTransaction((action) => {
-      switch(action.cmd_id){
+    this.rb.onResTransaction((action) => {
+      const { payload } = action;
+      
+      switch(payload.cmd_id){
         case CMD_ID.HEARTBEAT:
           this.lastHeartbeat = Date.now();
-          this.rb.setHeartbeat(action.heartbeat);
+          this.rb.setHeartbeat(payload.heartbeat);
+          break;
+        case CMD_ID.READ_STATUS:
+          break;
+        case CMD_ID.CARGO_VERITY:
+          console.log(action, '@@@@@@@')
           break;
         default:
           break;
@@ -94,20 +105,6 @@ class AmrCore {
     this.netWorkManager.rosConnect();
     await this.netWorkManager.fleetConnect();
 
-    /** ROS subscribe */
-
-    ROS.pose$.subscribe((pose) => {
-      if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
-        logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
-      }
-      const machineOffset = {
-        x: -Math.sin((pose.yaw * Math.PI) / 180) * 0,
-        y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
-      };
-      const Pose = { x:pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
-      this.rb.sendToReqQueue(`pose/${config.MAC}/REQ`, sendPose(Pose), CMD_ID.POSE);
-      this.lastPose = pose;
-    });
   }
 
   public monitorHeartbeat() {

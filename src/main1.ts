@@ -422,6 +422,7 @@ function bootstrap() {
   SOCKET.updatePosition$.subscribe((data) => {
     ROS.updatePosition({ data: data.isUpdate });
   });
+  
   ROS.getIOInfo$.subscribe((data) => {
     SOCKET.sendIOInfo(data);
   });

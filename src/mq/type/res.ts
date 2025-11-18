@@ -1,23 +1,40 @@
 import { CMD_ID } from "./cmdId";
+import { ReturnCode } from "./returnCode";
 
 
 interface Base<A> {
-    cmd_id: A;
     id: string;
-    return_code: string;
+    sender: string;
+    serialNum: string;
     flag: "RES";
+    amrId?: string;
+    payload: A 
 };
 
-interface Heartbeat extends Base<CMD_ID.HEARTBEAT>{
-    heartbeat: number;
+
+export type Heartbeat = {
+    heartbeat: number,
+    cmd_id: CMD_ID.HEARTBEAT,
+    id: string,
+    return_code: ReturnCode
 }
 
-interface Feedback extends Base<CMD_ID.FEEDBACK>{}
-
-interface ReadStatus extends Base<CMD_ID.READ_STATUS>{}
+export type HEARTBEAT = Base<Heartbeat>;
 
 
+export type ReadStatus = {
+    return_code: ReturnCode;
+    id: string;
+    cmd_id: CMD_ID.READ_STATUS
+}
+export type READ_STATUS = Base<ReadStatus>
+
+export type CargoVerity = {
+    return_code: ReturnCode;
+    id: string;
+    cmd_id: CMD_ID.CARGO_VERITY
+}
+export type CARGO_VERITY = Base<CargoVerity>;
 
 
-
-export type AllRes = Heartbeat | Feedback | ReadStatus;
+export type AllRes = HEARTBEAT | READ_STATUS | CARGO_VERITY;

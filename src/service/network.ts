@@ -33,7 +33,6 @@ class NetWorkManager {
           const { data } = await axios.post(
             `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`,{
               serialNumber: config.MAC,
-              bindingTable,
               timeout: 5000
             });
 
@@ -46,7 +45,7 @@ class NetWorkManager {
               });
               this.amrId = amrId;
               this.fleet_connect_log = true;
-              this.output$.next(isConnected({ isConnected: true }));
+              this.output$.next(isConnected({ isConnected: true, amrId }));
               break;
             }else{
               throw new CustomerError(return_code, "custom error");
