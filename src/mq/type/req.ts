@@ -10,6 +10,15 @@ interface Base<A> {
     payload: A
 }
 
+export type Heartbeat = {
+    cmd_id: CMD_ID.HEARTBEAT,
+    amrId: string,
+    id: string,
+    heartbeat: number,
+    timestamp: number
+}
+export type HEARTBEAT = Base<Heartbeat>;
+
 export type WriteStatus = {
     cmd_id: CMD_ID.WRITE_STATUS
     amrId: string,
@@ -57,4 +66,11 @@ export type ForceReset = {
 export type FORCE_RESET = Base<ForceReset> 
 
 
-export type AllReq = WRITE_CANCEL | WRITE_STATUS | UPDATE_POSE | EMERGENCY_STOP | FORCE_RESET;
+
+export type AllReq =
+    HEARTBEAT    |
+    WRITE_CANCEL | 
+    WRITE_STATUS | 
+    UPDATE_POSE | 
+    EMERGENCY_STOP | 
+    FORCE_RESET;

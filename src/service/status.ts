@@ -11,31 +11,33 @@ import { interval, throttleTime } from 'rxjs';
 
 
 class Status {
-    private lastPose: SimplePose = { x: 0, y: 0, yaw: 0}
+    private lastPose: SimplePose = { x: 0, y: 0, yaw: 0};
+    private amrId: string;
     constructor(
          private rb: RBClient
     ){
 
         this.rb.onReqTransaction((action) => {
             const { payload, serialNum} = action;
-            const { id, cmd_id} = payload;
+            const { id, cmd_id } = payload;
             switch(payload.cmd_id){
                 case CMD_ID.UPDATE_MAP:
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
                     this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                         sendBaseResponse({ cmd_id, id, amrId: payload.amrId, return_code: ReturnCode.success}))
+                         sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success}))
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
+                    console.log( sendBaseResponse({ cmd_id, id, amrId: payload.amrId, return_code: ReturnCode.success}), '!!!!!!!!1')
                     this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`, 
-                        sendBaseResponse({ cmd_id, id, amrId: payload.amrId, return_code: ReturnCode.success})
+                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success})
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
                     this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`, 
-                        sendBaseResponse({ cmd_id, id, amrId: payload.amrId, return_code: ReturnCode.success})
+                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success})
                     )
                 default:
                     break;
@@ -92,13 +94,13 @@ class Status {
 
 
     private mock(){
-               // interval(200).subscribe(() =>{
+        //        interval(200).subscribe(() =>{
         //   this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`,  sendPose({ x: 1, y:2, yaw: 3}), {
         //     expiration: "3000"
         //   })
         // })
 
-          // interval(4000).subscribe(() => {
+        //   interval(4000).subscribe(() => {
         //     const jMsg = {
         //         warning_msg: ["1", "2"],
         //         warning_id: ["3", "4"]
@@ -106,7 +108,7 @@ class Status {
         //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg));
         // })
 
-            // interval(100).subscribe(() =>{
+        //     interval(100).subscribe(() =>{
         //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(JSON.stringify(fakeIoInfo)), {
         //         expiration: "1000"
         //     });
@@ -132,6 +134,10 @@ class Status {
         //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(JSON.stringify(data)));
         // })
 
+    }
+
+    public setAmrId(amrId: string){
+        this.amrId = amrId;
     }
 
     

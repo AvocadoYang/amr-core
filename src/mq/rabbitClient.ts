@@ -9,7 +9,7 @@ import { Transaction } from "~/actions/rabbitmq/transactions";
 import { bindingTable } from "./bindingTable";
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendHeartbeat } from "./transactionsWrapper";
-import { AllRes, HEARTBEAT, Heartbeat } from "./type/res";
+import { AllRes } from "./type/res";
 import { AllReq } from "./type/req";
 import { CMD_ID } from "./type/cmdId";
 import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions } from "./type/type";
@@ -28,7 +28,6 @@ export default class RabbitClient {
     private reqTransactionOutput$: Subject<AllReq>;
     private output$: Subject<Output>
     private heartbeat: number = 1;
-    private heartbeatSwitch: boolean = false;
     private amrId: string ="";
 
 
@@ -47,15 +46,6 @@ export default class RabbitClient {
         this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 3000
         this.url = `amqp://kenmec:kenmec@${config.MISSION_CONTROL_HOST}:5672`
-
-        interval(3000).pipe(filter(() =>{
-            return this.heartbeatSwitch
-        })).subscribe(()=>{
-            const routeKey = `amr.io.${config.MAC}.handshake.heartbeat`
-            this.reqPublish(IO_EX, routeKey, sendHeartbeat(this.heartbeat), {
-                expiration: "10000"
-            })
-        })
         
     }
 
@@ -193,6 +183,7 @@ export default class RabbitClient {
             timestamp: formatDate(),
             payload: {id, ...message, amrId: this.amrId}
         };
+        // console.log(jMsg)
     
         const sMsg = JSON.stringify(jMsg);
         const buffer = Buffer.from(sMsg);
@@ -314,14 +305,7 @@ export default class RabbitClient {
         await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
 
 
-        this.consume<Control>(controlQName, (msg) => {
-            if(!msg) return;
-            try{
-                console.log(msg)
-            }catch(err){
-
-            }
-        });
+        this.consume<Control>(controlQName, (msg) => {});
 
         this.consume<AllReq>(reqQName, (msg) =>{
             this.reqTransactionOutput$.next(msg);
@@ -345,10 +329,6 @@ export default class RabbitClient {
 
     public subscribe(cb: (action: Output) => void){
         return this.output$.subscribe(cb);
-    }
-
-    public switchHeartbeat(isOpen: boolean){
-        this.heartbeatSwitch = isOpen
     }
 
     public setAmrId(amrId: string){

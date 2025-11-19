@@ -12,14 +12,6 @@ interface Base<A> {
 };
 
 
-export type Heartbeat = {
-    heartbeat: number,
-    cmd_id: CMD_ID.HEARTBEAT,
-    id: string,
-    return_code: ReturnCode
-}
-
-export type HEARTBEAT = Base<Heartbeat>;
 
 
 export type ReadStatus = {
@@ -37,4 +29,4 @@ export type CargoVerity = {
 export type CARGO_VERITY = Base<CargoVerity>;
 
 
-export type AllRes = HEARTBEAT | READ_STATUS | CARGO_VERITY;
+export type AllRes = READ_STATUS | CARGO_VERITY;

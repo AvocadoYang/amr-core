@@ -30,7 +30,6 @@ import {
   BehaviorSubject,
   throttleTime,
 } from "rxjs";
-import chalk from "chalk";
 import logger from "./logger";
 import * as ROS from "./ros";
 import * as SOCKET from "./socket";
@@ -39,7 +38,6 @@ import { isDifferentPose, SimplePose, TrafficGoal } from "./helpers/geometry";
 import { formatPose } from "./helpers";
 import {
   Mission_Payload,
-  Pause_Payload,
   isLocationIdAndIsAllow,
 } from "./types/fleetInfo";
 import {

@@ -11,7 +11,7 @@ import { CMD_ID } from "./mq/type/cmdId";
 import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
-import { sendBaseResponse, sendPose } from "./mq/transactionsWrapper";
+import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
 import { MISSION_INFO } from "./actions/mission/output";
 import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
@@ -31,7 +31,8 @@ cleanEnv(process.env, {
 class AmrCore {
   private isConnectWithQAMS$ = new BehaviorSubject<boolean>(false);
   private isConnectWithRabbitMQ: boolean = false;
-  private lastHeartbeat: number = 0;
+  private lastHeartbeatTime: number = 0;
+  private lastHeartbeatCount: number = 0;
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
   private ms: MissionManager;
@@ -50,9 +51,10 @@ class AmrCore {
         case IS_CONNECTED:
           this.isConnectWithQAMS$.next(action.isConnected);
           this.amrId = action.amrId;
-          this.rb.setAmrId(action.amrId)
-          this.ms.setAmrId(action.amrId)
-          this.lastHeartbeat = Date.now();
+          this.rb.setAmrId(action.amrId);
+          this.ms.setAmrId(action.amrId);
+          this.st.setAmrId(action.amrId);
+          this.lastHeartbeatTime = Date.now();
           break;
         default:
           break;
@@ -76,16 +78,36 @@ class AmrCore {
         default:
           break;
       }
+    });
+
+    this.rb.onReqTransaction((action) => {
+      const { payload } = action;
+      switch(payload.cmd_id){
+        case CMD_ID.HEARTBEAT:
+          const { heartbeat, id} = payload;
+          this.lastHeartbeatTime = Date.now();
+          this.lastHeartbeatCount = payload.heartbeat;
+          let resHeartbeat = heartbeat+1;
+          if (resHeartbeat > 9999) {
+            resHeartbeat = 0;
+          }
+          this.rb.resPublish(RES_EX, `amr.res.${config.MAC}.volatile`,
+             sendHeartBeatResponse({ 
+              id, 
+              heartbeat: resHeartbeat,
+              return_code: ReturnCode.success, 
+              amrId: this.amrId})
+            )
+          break;
+        default:
+          break;
+      }
     })
 
     this.rb.onResTransaction((action) => {
       const { payload } = action;
       
       switch(payload.cmd_id){
-        case CMD_ID.HEARTBEAT:
-          this.lastHeartbeat = Date.now();
-          this.rb.setHeartbeat(payload.heartbeat);
-          break;
         case CMD_ID.READ_STATUS:
           break;
         case CMD_ID.CARGO_VERITY:
@@ -95,8 +117,6 @@ class AmrCore {
           break;
       }
     });
-
-    
     
   }
   
@@ -104,7 +124,6 @@ class AmrCore {
     await this.rb.connect();
     this.netWorkManager.rosConnect();
     await this.netWorkManager.fleetConnect();
-
   }
 
   public monitorHeartbeat() {
@@ -116,17 +135,15 @@ class AmrCore {
               group: "transaction",
               type: "heartbeat",
             });
-            this.rb.switchHeartbeat(true);
 
             return interval(1000).pipe(
               tap(() => {
                 const now = Date.now();
-                if (now - this.lastHeartbeat > 6000) {
+                if (now - this.lastHeartbeatTime > 3000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
                     type: "heartbeat",
                   });
-                  this.rb.switchHeartbeat(false);
                   this.isConnectWithQAMS$.next(false);
                 }
               })
@@ -140,8 +157,7 @@ class AmrCore {
             );
           }
         })
-      )
-      .subscribe();
+      ).subscribe();
   }
 
   private async retryConnectWithDelay(delayMs: number) {
@@ -158,8 +174,5 @@ const amrCore = new AmrCore();
 (async () => { 
   await amrCore.init();
   amrCore.monitorHeartbeat();
-
-  
-   
 } )()
 
