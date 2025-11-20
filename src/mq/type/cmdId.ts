@@ -1,4 +1,3 @@
-
 export enum CMD_ID {
   HEARTBEAT = "HB",
   POSE = "PS",
@@ -7,18 +6,20 @@ export enum CMD_ID {
   READ_STATUS = "RS",
   WRITE_CANCEL = "WC",
   ERROR_INFO = "EI",
-  REGISTER = "RG",
-  ARRIVE = "AR",
-  AWAY = "AW",
   UPDATE_MAP = "UM",
   IO_INFO = "IO",
   CURRENT_ID = "CI",
   EMERGENCY_STOP = "ET",
   FORCE_RESET = "FR",
   CHECK_POSITION = "CP",
-  CARGO_VERITY = "CV"
+  CARGO_VERITY = "CV",
+  REGISTER = "RG",
+  SHORTEST_PATH = "SP",
+  ALLOW_PATH = "AL",
+  REACH_GOAL = "RG",
+  ARRIVE_LOC = "AL",
+  LEAVE_LOC = "LL"
 }
-
 export const fakeFeedBack = {
   task_process: 1,
   navigation_status: true,

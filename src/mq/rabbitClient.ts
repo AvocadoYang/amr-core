@@ -13,7 +13,7 @@ import { AllRes } from "./type/res";
 import { AllReq } from "./type/req";
 import { CMD_ID } from "./type/cmdId";
 import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions } from "./type/type";
-import { Control } from "./type/control";
+import { AllControl } from "./type/control";
 import { formatDate } from "~/helpers/system";
 
 export default class RabbitClient {
@@ -24,22 +24,20 @@ export default class RabbitClient {
     private isClosing = false;
     public debugLogger: winston.Logger;
     private bindingLogger: winston.Logger;
-    private resTransactionOutput$: Subject<AllRes>;
-    private reqTransactionOutput$: Subject<AllReq>;
+    private resTransactionOutput$: Subject<AllRes> = new Subject();
+    private reqTransactionOutput$: Subject<AllReq> = new Subject();
+    private controlTransactionOutput$: Subject<AllControl> = new Subject();
     private output$: Subject<Output>
-    private heartbeat: number = 1;
+  
     private amrId: string ="";
 
 
     public transactionMap: Map<string, { id: string, count: number }> = new Map();
 
     private retryTime: number;
-    private heartbeat$: Subscription;
     constructor(
         option: { retryTime?: number } = {}
     ) {
-        this.resTransactionOutput$ = new Subject();
-        this.reqTransactionOutput$ = new Subject();
         this.output$ = new Subject();
         this.machineID = config.MAC;
         this.debugLogger = RabbitLoggerDebug(false);
@@ -64,9 +62,7 @@ export default class RabbitClient {
                     SysLoggerNormalWarning.warn("Connection closed. Reconnecting in 3s...", {
                         type: "rabbitmq service"
                     });
-                    if(this.heartbeat$ && !this.heartbeat$.closed){
-                        this.heartbeat$.unsubscribe();
-                    };
+                  
                     this.output$.next(isConnected({ isConnected: false}))
                     this.channel = null;
                     setTimeout(() => this.connect(), this.retryTime);
@@ -183,7 +179,6 @@ export default class RabbitClient {
             timestamp: formatDate(),
             payload: {id, ...message, amrId: this.amrId}
         };
-        // console.log(jMsg)
     
         const sMsg = JSON.stringify(jMsg);
         const buffer = Buffer.from(sMsg);
@@ -296,7 +291,7 @@ export default class RabbitClient {
 
         const controlQName = `amr.${config.MAC}.control.queue`;
         await this.createQueue(controlQName, { durable: true});
-        await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control`);
+        await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
 
         await this.createQueue(HANDSHAKE_IO_QUEUE, { durable: true});
 
@@ -305,7 +300,9 @@ export default class RabbitClient {
         await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
 
 
-        this.consume<Control>(controlQName, (msg) => {});
+        this.consume<AllControl>(controlQName, (msg) => {
+            this.controlTransactionOutput$.next(msg);
+        });
 
         this.consume<AllReq>(reqQName, (msg) =>{
             this.reqTransactionOutput$.next(msg);
@@ -327,6 +324,10 @@ export default class RabbitClient {
         return this.resTransactionOutput$.subscribe(cb);
     }
 
+    public onControlTransaction(cb: (action: AllControl) => void){
+        return this.controlTransactionOutput$.subscribe(cb);
+    }
+
     public subscribe(cb: (action: Output) => void){
         return this.output$.subscribe(cb);
     }
@@ -335,9 +336,6 @@ export default class RabbitClient {
         this.amrId = amrId;
     }
 
-    public setHeartbeat(heartbeat: number){
-        this.heartbeat = heartbeat;
-    }
 
     public async close() {
         this.isClosing = true;

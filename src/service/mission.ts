@@ -1,7 +1,7 @@
 import { interval, Subject } from "rxjs";
 import * as ROS from '../ros'
 import config from "../configs";
-import { Output, sendReachGoal, setMissionInfo } from "~/actions/mission/output";
+import { Output, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
 import { CMD_ID, fakeFeedBack } from "~/mq/type/cmdId";
@@ -44,6 +44,7 @@ export default class Mission {
                     this.missionType = misType;
                     this.lastSendGoalId = status.Id;
                     this.targetLoc = misType === "move" ? operation.locationId.toString(): "";
+                    if(misType === "move") sendTargetLoc({ targetLoc: this.targetLoc });
                     this.rb.resPublish(
                         RES_EX, 
                         `amr.res.${config.MAC}.promise`,
@@ -111,11 +112,6 @@ export default class Mission {
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000"})
         });
 
-        // interval(200).subscribe(() => {
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(JSON.stringify(fakeFeedBack)), { expiration: "2000"})
-        // })
-
-
         ROS.getReadStatus$.subscribe((readStatus) => {
             if(!this.executing){
                 TCLoggerNormalWarning.warn(`No mission is currently in progress.`, {
@@ -148,7 +144,7 @@ export default class Mission {
               });
 
             if(this.missionType == "move"){
-                this.output$.next(sendReachGoal({ targetLoc: this.targetLoc}));
+              //sendTargetLoc
             };
 
             this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(newState), {
@@ -160,19 +156,29 @@ export default class Mission {
             this.executing = false;
         });
 
-        // setInterval(() => {
-        //     const fake = {
-        //         read: {
-        //             feedback_id: "test", // 我們的uid
-        //             action_status: 123,
-        //             result_status: 123,
-        //             result_message: "test", 
-        //         }
-        //     }
-        //     this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(fake), {
-        //         persistent: true
-        //     });
-        // }, 10000)
+      }
+      
+      private mock(){
+
+        // interval(200).subscribe(() => {
+        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(JSON.stringify(fakeFeedBack)), { expiration: "2000"})
+        // })
+
+
+      // setInterval(() => {
+      //     const fake = {
+      //         read: {
+      //             feedback_id: "test", // 我們的uid
+      //             action_status: 123,
+      //             result_status: 123,
+      //             result_message: "test", 
+      //         }
+      //     }
+      //     this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(fake), {
+      //         persistent: true
+      //     });
+      // }, 10000)
+
     }
 
     public subscribe(cb: (action: Output) => void){

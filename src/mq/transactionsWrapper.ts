@@ -73,6 +73,28 @@ export const sendCargoVerity = (msg: string) => {
     }
 }
 
+export const sendReachGoal = (locationId: string) => {
+    return {
+        cmd_id: CMD_ID.REACH_GOAL,
+        locationId
+    }
+}
+
+export const sendIsArrive = (isArrive: boolean, locationId: string) => {
+    return {
+        cmd_id: CMD_ID.ARRIVE_LOC,
+        isArrive, 
+        locationId
+    }
+}
+
+export const sendLeaveLoc = (locationId: string) => {
+    return {
+        cmd_id: CMD_ID.LEAVE_LOC,
+        locationId
+    }
+}
+
 type AllReqType = 
     typeof sendHeartbeat |
     typeof sendReadStatus |
@@ -82,7 +104,9 @@ type AllReqType =
     typeof sendIOInfo |
     typeof sendCurrentId |
     typeof sendPoseAccurate |
-    typeof sendCargoVerity
+    typeof sendCargoVerity |
+    typeof sendReachGoal |
+    typeof sendIsArrive
 
 export type RequestMsgType = ReturnType<AllReqType>  
 

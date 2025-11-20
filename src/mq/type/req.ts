@@ -30,8 +30,6 @@ export type WriteStatus = {
 export type WRITE_STATUS = Base<WriteStatus>;
 
 
-
-
 export type WriteCancel = {
     cmd_id: CMD_ID.WRITE_CANCEL,
     id: string,

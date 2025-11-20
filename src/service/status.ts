@@ -8,16 +8,19 @@ import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import logger from '~/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
 import { interval, throttleTime } from 'rxjs';
+import { MapType } from '~/types/map';
+import axios from 'axios';
 
 
 class Status {
     private lastPose: SimplePose = { x: 0, y: 0, yaw: 0};
     private amrId: string;
     constructor(
-         private rb: RBClient
+         private rb: RBClient,
+         private map: MapType 
     ){
 
-        this.rb.onReqTransaction((action) => {
+        this.rb.onReqTransaction(async (action) => {
             const { payload, serialNum} = action;
             const { id, cmd_id } = payload;
             switch(payload.cmd_id){
@@ -25,7 +28,9 @@ class Status {
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
                     this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                         sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success}))
+                         sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success}));
+                    const { data } = await  axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+                    this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);

@@ -26,6 +26,11 @@ import {
 import * as SOCKET from "../socket";
 import logger from "~/logger";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
+import { RBClient } from "~/mq";
+import { RES_EX } from "~/mq/type/type";
+import { sendBaseResponse } from "~/mq/transactionsWrapper";
+import { ReturnCode } from "~/mq/type/returnCode";
+import { CMD_ID } from "~/mq/type/cmdId";
 
 const ros = new ROSLIB.Ros({ encoding: "utf8" } as any); // cast for removing warning
 
@@ -278,6 +283,115 @@ export const allowTargetTest = (nextLocation: {
     });
   }, 2000);
 };
+
+export const sendShortestPath = (() => {
+  const service = new ROSLIB.Service({
+    ros,
+    name: "/fleet_manager/shortest_path",
+    serviceType: `kenmec_${process.env.CAR}_socket/shortest_path`,
+  });
+
+  return (rb: RBClient, data: {shortestPath: string[], id: string, amrId: string}) => {
+    const { shortestPath, id, amrId } = data;
+    TCLoggerNormal.info("send shortest path", {
+      group: "traffic",
+      type: "shortest path [req]",
+      status: shortestPath
+    });
+    service.callService(
+      {
+        shortestPath: shortestPath,
+      },
+      (data) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (data.result as boolean) {
+          rb.resPublish(
+            RES_EX,
+            `amr.res.${config.MAC}.promise`,
+              sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.SHORTEST_PATH, id }),
+              { expiration: "10000"}
+          )
+          TCLoggerNormal.info(`receive shortest path response from ros service`, {
+            group: "traffic",
+            type: "shortest path [res]",
+            status: { serviceName: service.name, res: data}
+          });
+          return;
+        };
+      },
+      (error: string) => {
+        TCLoggerNormalError.error(`Service request is failed `, {
+          group: "traffic",
+          type: "shortest path",
+          status: error
+        });
+        rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise`,
+            sendBaseResponse({
+               amrId, return_code: ReturnCode.shortestPathServiceFailed,
+                cmd_id: CMD_ID.SHORTEST_PATH,
+                 id 
+            }),
+            {expiration: "10000"}
+        )
+      }
+    );
+  }
+})();
+
+export const sendIsAllowTarget = (() => {
+  const service = new ROSLIB.Service({
+    ros,
+    name: "/fleet_manager/allow_path",
+    serviceType: `kenmec_${process.env.CAR}_socket/TrafficStatus`,
+  });
+  return (rb:RBClient, nextLocation: { locationId: string, isAllow: boolean , amrId: string, id: string}) => {
+    const { locationId, isAllow, amrId, id} = nextLocation;
+    service.callService(
+      { locationId, isAllow },
+      (res) => {
+        if ((res as { result: boolean }).result) {
+          rb.resPublish(
+            RES_EX,
+            `amr.res.${config.MAC}.promise`,
+              sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.ALLOW_PATH, id }),
+              { expiration: "10000"}
+          )
+          return;
+        }
+        rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise`,
+            sendBaseResponse({
+               amrId, return_code: ReturnCode.isAllowServiceFailed,
+                cmd_id: CMD_ID.ALLOW_PATH,
+                 id 
+            }),
+            {expiration: "10000"}
+        )
+      },
+      (error: string) => {
+        TCLoggerNormalError.error(`Service request is failed `, {
+          group: "traffic",
+          type: "isAllow",
+          status: error
+        });
+        rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise`,
+            sendBaseResponse({
+               amrId, return_code: ReturnCode.isAllowServiceFailed,
+                cmd_id: CMD_ID.ALLOW_PATH,
+                 id 
+            }),
+            {expiration: "10000"}
+        )
+      }
+    );
+  }
+})();
+
 
 export const allowTarget = (() => {
   const service = new ROSLIB.Service({

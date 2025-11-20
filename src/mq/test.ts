@@ -13,7 +13,6 @@ const CONTROL_EX = "amr.control.topic"; // optional dedicated control exchange
 const MISSION_RES_QUEUE = "mission.res.queue";
 const STATUS_RES_QUEUE = "status.res.queue";
 const EVENTS_QUEUE = "amr.events.queue";
-const REGISTER_QUEUE = "qams.register.queue";
 
 // Simple UUID (no dependency)
 function uuid() {

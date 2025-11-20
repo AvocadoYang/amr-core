@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import config from './configs'
 import { cleanEnv, str } from "envalid";
-import { MissionManager, NetWorkManager, Status } from "./service";
+import { MissionManager, MoveControl, NetWorkManager, Status } from "./service";
 import { RBClient } from "./mq";
 import * as ROS from './ros'
 import { BehaviorSubject, catchError, from, interval, map, of, switchMap, tap } from "rxjs";
@@ -12,9 +12,11 @@ import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
 import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
-import { MISSION_INFO } from "./actions/mission/output";
+import { MISSION_INFO, TARGET_LOC } from "./actions/mission/output";
 import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
+import {  MapType } from "./types/map";
+import axios from "axios";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -37,24 +39,31 @@ class AmrCore {
   private rb: RBClient;
   private ms: MissionManager;
   private st: Status;
+  private mc: MoveControl;
   private amrId: string;
+  private map: MapType = { locations: [], roads: [], zones: [], regions: []};
 
   constructor(){
     this.netWorkManager = new NetWorkManager();
     this.rb = new RBClient();
     this.ms = new MissionManager(this.rb);
-    this.st = new Status(this.rb);
+    this.st = new Status(this.rb, this.map);
+    this.mc = new MoveControl(this.rb, this.map)
 
 
-    this.netWorkManager.subscribe((action) => {
+    this.netWorkManager.subscribe(async (action) => {
+      const { amrId }= action;
       switch(action.type){
         case IS_CONNECTED:
           this.isConnectWithQAMS$.next(action.isConnected);
           this.amrId = action.amrId;
-          this.rb.setAmrId(action.amrId);
-          this.ms.setAmrId(action.amrId);
-          this.st.setAmrId(action.amrId);
+          this.rb.setAmrId(amrId);
+          this.ms.setAmrId(amrId);
+          this.st.setAmrId(amrId);
+          this.mc.setAmrId(amrId)
           this.lastHeartbeatTime = Date.now();
+          const { data } = await  axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+          this.map = data;
           break;
         default:
           break;
@@ -74,6 +83,9 @@ class AmrCore {
     this.ms.subscribe((action) => {
       switch(action.type){
         case MISSION_INFO:
+          break;
+        case TARGET_LOC:
+          this.mc
           break;
         default:
           break;
@@ -96,7 +108,7 @@ class AmrCore {
               id, 
               heartbeat: resHeartbeat,
               return_code: ReturnCode.success, 
-              amrId: this.amrId})
+              amrId: this.amrId}), {expiration : "2000"}
             )
           break;
         default:
@@ -139,7 +151,7 @@ class AmrCore {
             return interval(1000).pipe(
               tap(() => {
                 const now = Date.now();
-                if (now - this.lastHeartbeatTime > 3000) {
+                if (now - this.lastHeartbeatTime > 5000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
                     type: "heartbeat",

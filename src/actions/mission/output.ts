@@ -13,20 +13,20 @@ export const setMissionInfo = (data: {
     }
 };
 
-export const REACH_GOAL = `${PREFIX}/REACH_GOAL` as const;
-export const sendReachGoal = (data:{
+export const TARGET_LOC = `${PREFIX}/REACH_GOAL` as const;
+export const sendTargetLoc = (data:{
     targetLoc: string
 }) => {
     return {
-        type: REACH_GOAL,
+        type: TARGET_LOC,
         ...data,
     }
-} 
+}
 
 
 type AllTransaction = 
     | typeof setMissionInfo
-    | typeof sendReachGoal
+    | typeof sendTargetLoc
 
 export type AllOutput = ReturnType<AllTransaction>;
 
