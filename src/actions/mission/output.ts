@@ -5,7 +5,7 @@ export const MISSION_INFO = `${PREFIX}/MISSION_INFO` as const;
 export const setMissionInfo = (data: {
     missionType: string;
     lastSendGoalId: string;
-    targetLoc:string;
+    targetLoc: string;
 }) => {
     return {
         type: MISSION_INFO,
@@ -13,8 +13,31 @@ export const setMissionInfo = (data: {
     }
 };
 
+export const CANCEL_MISSION = `${PREFIX}/CANCEL_MISSION` as const;
+export const sendCancelMission = (data: {
+    missionId: string;
+}) => {
+    return {
+        type: CANCEL_MISSION,
+        ...data
+    }
+}
+
+export const START_MISSION = `${PREFIX}/START_MISSION` as const;
+export const sendStartMission = () => {
+    return {
+        type: START_MISSION
+    }
+}
+export const END_MISSION = `${PREFIX}/END_MISSION` as const;
+export const sendEndMission = () => {
+    return {
+        type: END_MISSION
+    }
+}
+
 export const TARGET_LOC = `${PREFIX}/REACH_GOAL` as const;
-export const sendTargetLoc = (data:{
+export const sendTargetLoc = (data: {
     targetLoc: string
 }) => {
     return {
@@ -24,9 +47,12 @@ export const sendTargetLoc = (data:{
 }
 
 
-type AllTransaction = 
+type AllTransaction =
     | typeof setMissionInfo
     | typeof sendTargetLoc
+    | typeof sendCancelMission
+    | typeof sendStartMission
+    | typeof sendEndMission
 
 export type AllOutput = ReturnType<AllTransaction>;
 

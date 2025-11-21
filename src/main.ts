@@ -12,10 +12,10 @@ import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
 import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
-import { MISSION_INFO, TARGET_LOC } from "./actions/mission/output";
+import { CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
 import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
-import {  MapType } from "./types/map";
+import { MapType } from "./types/map";
 import axios from "axios";
 
 dotenv.config();
@@ -41,9 +41,9 @@ class AmrCore {
   private st: Status;
   private mc: MoveControl;
   private amrId: string;
-  private map: MapType = { locations: [], roads: [], zones: [], regions: []};
+  private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
-  constructor(){
+  constructor() {
     this.netWorkManager = new NetWorkManager();
     this.rb = new RBClient();
     this.ms = new MissionManager(this.rb);
@@ -52,8 +52,8 @@ class AmrCore {
 
 
     this.netWorkManager.subscribe(async (action) => {
-      const { amrId }= action;
-      switch(action.type){
+      const { amrId } = action;
+      switch (action.type) {
         case IS_CONNECTED:
           this.isConnectWithQAMS$.next(action.isConnected);
           this.amrId = action.amrId;
@@ -62,7 +62,7 @@ class AmrCore {
           this.st.setAmrId(amrId);
           this.mc.setAmrId(amrId)
           this.lastHeartbeatTime = Date.now();
-          const { data } = await  axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+          const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
           this.map = data;
           break;
         default:
@@ -71,21 +71,30 @@ class AmrCore {
     });
 
     this.rb.subscribe((action) => {
-      switch(action.type){
+      switch (action.type) {
         case RB_IS_CONNECTED:
           this.isConnectWithRabbitMQ = action.isConnected;
-        break;
+          break;
         default:
           break;
       }
     });
 
     this.ms.subscribe((action) => {
-      switch(action.type){
+      switch (action.type) {
         case MISSION_INFO:
           break;
         case TARGET_LOC:
-          this.mc
+          this.mc.setTargetLoc(action.targetLoc);
+          break;
+        case CANCEL_MISSION:
+          this.mc.cancelMissionSignal();
+          break;
+        case START_MISSION:
+          this.mc.startWorking();
+          break
+        case END_MISSION:
+          this.mc.stopWorking();
           break;
         default:
           break;
@@ -94,22 +103,23 @@ class AmrCore {
 
     this.rb.onReqTransaction((action) => {
       const { payload } = action;
-      switch(payload.cmd_id){
+      switch (payload.cmd_id) {
         case CMD_ID.HEARTBEAT:
-          const { heartbeat, id} = payload;
+          const { heartbeat, id } = payload;
           this.lastHeartbeatTime = Date.now();
           this.lastHeartbeatCount = payload.heartbeat;
-          let resHeartbeat = heartbeat+1;
+          let resHeartbeat = heartbeat + 1;
           if (resHeartbeat > 9999) {
             resHeartbeat = 0;
           }
           this.rb.resPublish(RES_EX, `amr.res.${config.MAC}.volatile`,
-             sendHeartBeatResponse({ 
-              id, 
+            sendHeartBeatResponse({
+              id,
               heartbeat: resHeartbeat,
-              return_code: ReturnCode.success, 
-              amrId: this.amrId}), {expiration : "2000"}
-            )
+              return_code: ReturnCode.success,
+              amrId: this.amrId
+            }), { expiration: "2000" }
+          )
           break;
         default:
           break;
@@ -118,8 +128,8 @@ class AmrCore {
 
     this.rb.onResTransaction((action) => {
       const { payload } = action;
-      
-      switch(payload.cmd_id){
+
+      switch (payload.cmd_id) {
         case CMD_ID.READ_STATUS:
           break;
         case CMD_ID.CARGO_VERITY:
@@ -129,10 +139,10 @@ class AmrCore {
           break;
       }
     });
-    
+
   }
-  
-  public async init(){
+
+  public async init() {
     await this.rb.connect();
     this.netWorkManager.rosConnect();
     await this.netWorkManager.fleetConnect();
@@ -183,8 +193,8 @@ class AmrCore {
 
 const amrCore = new AmrCore();
 
-(async () => { 
+(async () => {
   await amrCore.init();
   amrCore.monitorHeartbeat();
-} )()
+})()
 

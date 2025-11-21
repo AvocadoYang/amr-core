@@ -1,0 +1,90 @@
+{
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit",
+      "source.fixAll.markdownlint": "explicit"
+    },
+    "[javascript]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[javascriptreact]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescript]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "vscode.typescript-language-features"
+    },
+    "[jsonc]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[json]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[yaml]": {
+      "editor.formatOnSave": true,
+      "editor.defaultFormatter": "redhat.vscode-yaml"
+    },
+    "cSpell.ignorePaths": [
+      "yarn.lock",
+      "node_modules",
+      ".vscode/extensions.json"
+    ],
+    "cSpell.words": [
+      "agvc",
+      "agvs",
+      "amrs",
+      "bbox",
+      "copyfiles",
+      "cosθ",
+      "envalid",
+      "esbenp",
+      "kenmec",
+      "logtail",
+      "markdownlint",
+      "microservices",
+      "nestjs",
+      "palletport",
+      "prebuild",
+      "preinstall",
+      "Rebooking",
+      "replanner",
+      "respawn",
+      "roslib",
+      "ruifang",
+      "soapenv",
+      "stopall",
+      "transfering",
+      "tscpaths",
+      "tweenjs",
+      "typesafe",
+      "uids",
+      "unbook",
+      "xnex",
+      "xrange",
+      "xstate",
+      "Modbus",
+      "modbus",
+      "anfa",
+      "ultrasoumd",
+      "rviz",
+      "deactive",
+      "BLCS",
+      "ROSBRIDGE",
+      "ANWA",
+      "fkey",
+      "cuid",
+      "autoincrement",
+      "cooldown",
+      "palletizer",
+      "QAMS"
+    ],
+    "files.exclude": {
+      "**/dist": false,
+      "**/node_modules": false
+    },
+    "cmake.configureOnOpen": false
+  }
+  

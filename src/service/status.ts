@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import config from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendPose, sendPoseAccurate } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { IO_EX, RES_EX } from '~/mq/type/type';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
@@ -13,36 +13,37 @@ import axios from 'axios';
 
 
 class Status {
-    private lastPose: SimplePose = { x: 0, y: 0, yaw: 0};
+    private lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
     private amrId: string;
     constructor(
-         private rb: RBClient,
-         private map: MapType 
-    ){
+        private rb: RBClient,
+        private map: MapType
+    ) {
 
         this.rb.onReqTransaction(async (action) => {
-            const { payload, serialNum} = action;
+            const { payload, serialNum } = action;
             const { id, cmd_id } = payload;
-            switch(payload.cmd_id){
+            switch (payload.cmd_id) {
                 case CMD_ID.UPDATE_MAP:
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
                     this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                         sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success}));
-                    const { data } = await  axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success }), { expiration: "2000" });
+                    const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
-                    console.log( sendBaseResponse({ cmd_id, id, amrId: payload.amrId, return_code: ReturnCode.success}), '!!!!!!!!1')
-                    this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`, 
-                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success})
+                    this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success }),
+                        { expiration: "2000" }
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
-                    this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`, 
-                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success})
+                    this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.amrId, return_code: ReturnCode.success }),
+                        { expiration: "2000" }
                     )
                 default:
                     break;
@@ -50,7 +51,7 @@ class Status {
         })
 
         /** ROS subscribe */
-        
+
         ROS.pose$.subscribe((pose) => {
             if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
                 logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
@@ -59,19 +60,19 @@ class Status {
                 x: -Math.sin((pose.yaw * Math.PI) / 180) * 0,
                 y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
             };
-            const Pose = { x:pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
-              this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`,  sendPose(Pose), {
+            const Pose = { x: pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`, sendPose(Pose), {
                 expiration: "3000"
             })
-              this.lastPose = pose;
+            this.lastPose = pose;
         });
-            
-        ROS.getAmrError$.subscribe((msg: { data: string}) => {
+
+        ROS.getAmrError$.subscribe((msg: { data: string }) => {
             const jMsg = JSON.parse(msg.data) as {
                 warning_msg: string[];
                 warning_id: string[];
-              };
-              this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg));
+            };
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg));
         });
 
         ROS.getIOInfo$.subscribe((data) => {
@@ -84,21 +85,27 @@ class Status {
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
             })
-          });
-
-        ROS.currentPoseAccurate$.subscribe((msg) => {
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`,sendPoseAccurate(msg))
         });
 
-       ROS.getVerityCargo$.subscribe((msg) => {
+        ROS.currentPoseAccurate$.subscribe((msg) => {
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg))
+        });
+
+        ROS.is_registered.subscribe(msg => {
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg))
+        });
+
+        ROS.getVerityCargo$.subscribe((msg) => {
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
-        })
+        });
+
+
 
         this.mock();
     }
 
 
-    private mock(){
+    private mock() {
         //        interval(200).subscribe(() =>{
         //   this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`,  sendPose({ x: 1, y:2, yaw: 3}), {
         //     expiration: "3000"
@@ -141,11 +148,11 @@ class Status {
 
     }
 
-    public setAmrId(amrId: string){
+    public setAmrId(amrId: string) {
         this.amrId = amrId;
     }
 
-    
+
 }
 
 
