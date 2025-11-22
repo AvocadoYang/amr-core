@@ -83,6 +83,8 @@ class AmrCore {
     this.ms.subscribe((action) => {
       switch (action.type) {
         case MISSION_INFO:
+          const { type, ...data } = action;
+          this.netWorkManager.updateMissionStatus(data);
           break;
         case TARGET_LOC:
           this.mc.setTargetLoc(action.targetLoc);

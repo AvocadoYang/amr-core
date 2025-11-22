@@ -5,7 +5,7 @@ export const MISSION_INFO = `${PREFIX}/MISSION_INFO` as const;
 export const setMissionInfo = (data: {
     missionType: string;
     lastSendGoalId: string;
-    targetLoc: string;
+    lastTransactionId: string
 }) => {
     return {
         type: MISSION_INFO,

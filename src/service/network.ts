@@ -9,6 +9,7 @@ import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { bindingTable } from '~/mq/bindingTable';
 import { isConnected, Output } from '~/actions/networkManager/output';
+import { sendCancelMission, setMissionInfo } from '~/actions/mission/output';
 
 
 class NetWorkManager {
@@ -18,6 +19,11 @@ class NetWorkManager {
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
+
+  private lastSendGoalId: string = "";
+  private lastTransactionId: string = "";
+  private lastMissionType: string = "";
+
   constructor() {
     this.output$ = new Subject();
   }
@@ -151,6 +157,12 @@ class NetWorkManager {
 
   public getAmrId() {
     return this.amrId;
+  }
+
+  public updateMissionStatus(action: { missionType: string, lastSendGoalId: string, lastTransactionId: string }) {
+    this.lastMissionType = action.missionType;
+    this.lastSendGoalId = action.lastSendGoalId;
+    this.lastTransactionId = action.lastTransactionId;
   }
 }
 

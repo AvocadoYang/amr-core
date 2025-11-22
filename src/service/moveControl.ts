@@ -306,8 +306,10 @@ class MoveControl {
   }
 
   public cancelMissionSignal() {
-    this.cancelMission$.next(true);
-    this.stopWorking();
+    if (this.isWorking) {
+      this.cancelMission$.next(true);
+      this.stopWorking();
+    }
   }
 
   private abnormalProcess(receiveLoc, nowPermittedLoc) {

@@ -15,12 +15,14 @@ export default class Mission {
   private executing: boolean = false;
   private missionType: string = "";
   private lastSendGoalId: string = "";
-  private targetLoc: string = ""
+  private targetLoc: string = "";
+  private lastTransactionId: string = "";
   private amrId: string = ""
   constructor(
     private rb: RBClient
   ) {
     this.output$ = new Subject();
+
     this.rb.onReqTransaction((action) => {
       const { payload } = action;
       const { id, cmd_id, amrId } = payload;
@@ -38,15 +40,20 @@ export default class Mission {
                 : { mid: status.Id },
           });
 
-          ROS.writeStatus(status);
-
-          this.missionType = misType;
-          this.lastSendGoalId = status.Id;
-          this.targetLoc = misType === "move" ? operation.locationId.toString() : "";
           if (misType === "move") {
             this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
             this.output$.next(sendStartMission());
-          }
+          };
+
+          this.updateStatue({
+            missionType: misType,
+            lastSendGoadId: status.Id,
+            targetLoc: misType === "move" ? operation.locationId.toString() : "",
+            lastTransactionId: id
+          })
+
+          ROS.writeStatus(status);
+
           this.rb.resPublish(
             RES_EX,
             `amr.res.${config.MAC}.promise.writeStatus`,
@@ -55,15 +62,16 @@ export default class Mission {
           break;
         case CMD_ID.WRITE_CANCEL:
           this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
+
+          this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
+
           ROS.cancelCarStatusAnyway(payload.feedback_id);
           this.rb.resPublish(
             RES_EX,
             `amr.res.${config.MAC}.promise.writeCancel`,
             sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId, id })
-          )
-          this.missionType = "";
-          this.targetLoc = "";
-          this.lastSendGoalId = "";
+          );
+
           break;
         default:
           break;
@@ -102,13 +110,7 @@ export default class Mission {
         this.targetLoc = "";
         this.executing = false;
         return;
-      }
-
-      this.output$.next(setMissionInfo({
-        missionType: this.missionType,
-        lastSendGoalId: this.lastSendGoalId,
-        targetLoc: this.targetLoc
-      }));
+      };
 
       this.executing = true;
 
@@ -182,6 +184,20 @@ export default class Mission {
     //     });
     // }, 10000)
 
+  }
+
+  private updateStatue(data: { missionType: string, lastSendGoadId: string, targetLoc: string, lastTransactionId: string }) {
+
+    this.missionType = data.missionType;
+    this.lastSendGoalId = data.lastSendGoadId;
+    this.targetLoc = data.targetLoc;
+    this.lastTransactionId = data.lastTransactionId;
+
+    this.output$.next(setMissionInfo({
+      missionType: this.missionType,
+      lastSendGoalId: this.lastSendGoalId,
+      lastTransactionId: this.lastTransactionId
+    }));
   }
 
   public subscribe(cb: (action: Output) => void) {
