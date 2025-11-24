@@ -9,6 +9,8 @@ import config from "../configs";
 import { sendBaseResponse, sendIsArrive, sendLeaveLoc, sendReachGoal } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { group } from "console";
+import { AllControl } from "~/mq/type/control";
+import { AllRes } from "~/mq/type/res";
 
 class MoveControl {
   private amrId: string = "";
@@ -29,81 +31,11 @@ class MoveControl {
     private map: MapType
   ) {
     this.rb.onControlTransaction((action) => {
-      try {
-        const { payload } = action;
-        const { id, cmd_id, amrId } = payload;
-        switch (cmd_id) {
-          case CMD_ID.REGISTER:
-            this.rb.resPublish(
-              RES_EX,
-              `amr.res.${config.MAC}.volatile`,
-              sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
-            );
-            this.registerSub$.next(true);
-            break;
-          case CMD_ID.SHORTEST_PATH:
-            const { shortestPath, init } = payload;
-            if (init) {
-              this.registering = true;
-              this.permitted.push(shortestPath[0]);
-              setTimeout(() => {
-                ROS.sendShortestPath(this.rb, { shortestPath, id, amrId })
-              }, 1000);
-            } else {
-              ROS.sendShortestPath(this.rb, {
-                shortestPath,
-                id,
-                amrId
-              });
-            }
-            break;
-          case CMD_ID.ALLOW_PATH:
-            const { isAllow, locationId } = payload;
-            if (this.registering) {
-              rb.resPublish(
-                RES_EX,
-                `amr.res.${config.MAC}.volatile`,
-                sendBaseResponse({
-                  amrId, return_code: ReturnCode.success,
-                  cmd_id: CMD_ID.ALLOW_PATH,
-                  id
-                }),
-                { expiration: "3000" }
-              )
-            };
-
-            TCLoggerNormal.info("receive isAllow message", {
-              group: "traffic",
-              type: "isAllow",
-              status: { isAllow, locationId }
-            });
-
-            this.isAllowSub$.next({ isAllow, locationId });
-            ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
-            break;
-          default:
-            break;
-        };
-      } catch (err) {
-
-      }
+      this.controlProcess(action);
     });
 
     this.rb.onResTransaction((action) => {
-      const { payload } = action;
-      switch (payload.cmd_id) {
-        case CMD_ID.ARRIVE_LOC:
-          console.log(action, '@@@@')
-          break;
-        case CMD_ID.LEAVE_LOC:
-          console.log(action, '@@@@')
-          break;
-        case CMD_ID.REACH_GOAL:
-          console.log(action, '@@@@')
-          break;
-        default:
-          break;
-      }
+      this.resProcess(action);
     });
 
     ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
@@ -245,6 +177,84 @@ class MoveControl {
     this.mock();
   }
 
+  private controlProcess(action: AllControl) {
+    try {
+      const { payload } = action;
+      const { id, cmd_id, amrId } = payload;
+      switch (cmd_id) {
+        case CMD_ID.REGISTER:
+          this.rb.resPublish(
+            RES_EX,
+            `amr.res.${config.MAC}.volatile`,
+            sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
+          );
+          this.registerSub$.next(true);
+          break;
+        case CMD_ID.SHORTEST_PATH:
+          const { shortestPath, init } = payload;
+          if (init) {
+            this.registering = true;
+            this.permitted.push(shortestPath[0]);
+            setTimeout(() => {
+              ROS.sendShortestPath(this.rb, { shortestPath, id, amrId })
+            }, 1000);
+          } else {
+            ROS.sendShortestPath(this.rb, {
+              shortestPath,
+              id,
+              amrId
+            });
+          }
+          break;
+        case CMD_ID.ALLOW_PATH:
+          const { isAllow, locationId } = payload;
+          if (this.registering) {
+            this.rb.resPublish(
+              RES_EX,
+              `amr.res.${config.MAC}.volatile`,
+              sendBaseResponse({
+                amrId, return_code: ReturnCode.success,
+                cmd_id: CMD_ID.ALLOW_PATH,
+                id
+              }),
+              { expiration: "3000" }
+            )
+          };
+
+          TCLoggerNormal.info("receive isAllow message", {
+            group: "traffic",
+            type: "isAllow",
+            status: { isAllow, locationId }
+          });
+
+          this.isAllowSub$.next({ isAllow, locationId });
+          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
+          break;
+        default:
+          break;
+      };
+    } catch (err) {
+
+    }
+  }
+
+  private resProcess(action: AllRes) {
+    const { payload } = action;
+    switch (payload.cmd_id) {
+      case CMD_ID.ARRIVE_LOC:
+        console.log(action, '@@@@')
+        break;
+      case CMD_ID.LEAVE_LOC:
+        console.log(action, '@@@@')
+        break;
+      case CMD_ID.REACH_GOAL:
+        console.log(action, '@@@@')
+        break;
+      default:
+        break;
+    }
+  }
+
   public setAmrId(amrId: string) {
     this.amrId = amrId;
   }
@@ -325,6 +335,12 @@ class MoveControl {
       this.permitted.pop();
       this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
     };
+  }
+
+  public resetStatus() {
+    this.occupy.length = 0;
+    this.permitted.length = 0;
+    this.occupy.push(this.lastCurrentId);
   }
 
 

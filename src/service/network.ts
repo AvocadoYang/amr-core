@@ -31,7 +31,7 @@ class NetWorkManager {
   public async fleetConnect() {
     const schema = object({
       applicant: string().required(),
-      amrId: string().nullable(),
+      amrId: string(),
       return_code: string().required()
     })
     while (true) {
@@ -39,19 +39,22 @@ class NetWorkManager {
         const { data } = await axios.post(
           `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
           serialNumber: config.MAC,
+          lastSendGoalId: this.lastSendGoalId,
+          lastTransaction: this.lastTransactionId,
+          lastMissionType: this.lastMissionType,
           timeout: 5000
         });
 
         const { return_code, amrId } = await schema.validate(data).catch((err) => {
           throw new ValidationError(err, (err as YupValidationError).message)
         });
-        if (return_code === "0000") {
+        if (return_code === "0000" || return_code === "0002") {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;
-          this.output$.next(isConnected({ isConnected: true, amrId }));
+          this.output$.next(isConnected({ isConnected: true, amrId, return_code }));
           break;
         } else {
           throw new CustomerError(return_code, "custom error");

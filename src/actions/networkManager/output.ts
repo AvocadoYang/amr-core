@@ -5,6 +5,7 @@ export const IS_CONNECTED = `${PREFIX}/HEARTBEAT` as const;
 export const isConnected = (data: {
     isConnected: boolean;
     amrId: string;
+    return_code: string;
 }) => {
     return {
         type: IS_CONNECTED,
@@ -13,7 +14,7 @@ export const isConnected = (data: {
 };
 
 
-type AllTransaction = 
+type AllTransaction =
     | typeof isConnected
 
 export type AllOutput = ReturnType<AllTransaction>;

@@ -139,6 +139,19 @@ export const sendHeartBeatResponse = (data: {
     }
 }
 
+export const sendWriteStatusResponse = (data: {
+    return_code: ReturnCode,
+    id: string,
+    amrId: string,
+    lastSendGoalId: string,
+    missionType: string
+}) => {
+    return {
+        cmd_id: CMD_ID.WRITE_STATUS,
+        ...data
+    }
+}
 
-type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse;
+
+type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse | typeof sendWriteStatusResponse;
 export type ResponseMsgType = ReturnType<AllResType>;

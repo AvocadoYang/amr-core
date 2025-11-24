@@ -17,6 +17,7 @@ import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
+import { RabbitLoggerNormal } from "./logger/rabbitLogger";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -55,6 +56,14 @@ class AmrCore {
       const { amrId } = action;
       switch (action.type) {
         case IS_CONNECTED:
+          if (action.return_code == "0002") {
+            RabbitLoggerNormal.info(`reset mission && traffic status`, {
+              type: "reset",
+              status: { return_code: action.return_code }
+            });
+            this.ms.resetMission();
+            this.mc.resetStatus();
+          }
           this.isConnectWithQAMS$.next(action.isConnected);
           this.amrId = action.amrId;
           this.rb.setAmrId(amrId);
@@ -163,7 +172,7 @@ class AmrCore {
             return interval(1000).pipe(
               tap(() => {
                 const now = Date.now();
-                if (now - this.lastHeartbeatTime > 5000) {
+                if (now - this.lastHeartbeatTime > 3000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
                     type: "heartbeat",

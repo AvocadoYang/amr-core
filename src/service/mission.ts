@@ -4,11 +4,11 @@ import config from "../configs";
 import { Output, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
-import { CMD_ID, fakeFeedBack } from "~/mq/type/cmdId";
-import { sendBaseResponse, sendFeedBack, sendReadStatus } from "~/mq/transactionsWrapper";
-import { group } from "console";
+import { CMD_ID } from "~/mq/type/cmdId";
+import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { IO_EX, RES_EX } from "~/mq/type/type";
+import { AllReq } from "~/mq/type/req";
 
 export default class Mission {
   private output$: Subject<Output>
@@ -24,59 +24,9 @@ export default class Mission {
     this.output$ = new Subject();
 
     this.rb.onReqTransaction((action) => {
-      const { payload } = action;
-      const { id, cmd_id, amrId } = payload;
-      switch (payload.cmd_id) {
-        case CMD_ID.WRITE_STATUS:
-          const { status } = payload;
-          const { operation } = status.Body;
-          const misType = operation.type;
-          TCLoggerNormal.info(`receive mission (${misType})`, {
-            group: "mission",
-            type: "new mission",
-            status:
-              misType === "move"
-                ? { mid: status.Id, dest: operation.locationId.toString() }
-                : { mid: status.Id },
-          });
-
-          if (misType === "move") {
-            this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
-            this.output$.next(sendStartMission());
-          };
-
-          this.updateStatue({
-            missionType: misType,
-            lastSendGoadId: status.Id,
-            targetLoc: misType === "move" ? operation.locationId.toString() : "",
-            lastTransactionId: id
-          })
-
-          ROS.writeStatus(status);
-
-          this.rb.resPublish(
-            RES_EX,
-            `amr.res.${config.MAC}.promise.writeStatus`,
-            sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId, id })
-          );
-          break;
-        case CMD_ID.WRITE_CANCEL:
-          this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
-
-          this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
-
-          ROS.cancelCarStatusAnyway(payload.feedback_id);
-          this.rb.resPublish(
-            RES_EX,
-            `amr.res.${config.MAC}.promise.writeCancel`,
-            sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId, id })
-          );
-
-          break;
-        default:
-          break;
-      }
+      this.reqProcess(action);
     });
+
 
 
     /** 任務中回傳值 Action Feedback
@@ -105,10 +55,6 @@ export default class Mission {
             type: "ros handshake",
           }
         );
-        this.missionType = "";
-        this.lastSendGoalId = "";
-        this.targetLoc = "";
-        this.executing = false;
         return;
       };
 
@@ -155,13 +101,94 @@ export default class Mission {
       this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.readStatus`, sendReadStatus(newState), {
         persistent: true
       });
+      this.updateStatue({ missionType: "", targetLoc: "" });
 
-      this.missionType = "";
-      this.targetLoc = "";
       this.executing = false;
     });
 
   }
+
+  private reqProcess(action: AllReq) {
+    const { payload } = action;
+    const { id, cmd_id, amrId } = payload;
+    switch (payload.cmd_id) {
+      case CMD_ID.WRITE_STATUS:
+        const { status } = payload;
+        const { operation } = status.Body;
+        const misType = operation.type;
+        TCLoggerNormal.info(`receive mission (${misType})`, {
+          group: "mission",
+          type: "new mission",
+          status:
+            misType === "move"
+              ? { mid: status.Id, dest: operation.locationId.toString() }
+              : { mid: status.Id },
+        });
+
+        if (misType === "move") {
+          this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
+          this.output$.next(sendStartMission());
+        };
+
+        this.updateStatue({
+          missionType: misType,
+          lastSendGoadId: status.Id,
+          targetLoc: misType === "move" ? operation.locationId.toString() : "",
+          lastTransactionId: id
+        })
+
+        ROS.writeStatus(status);
+
+        this.rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise.writeStatus`,
+          sendWriteStatusResponse({ return_code: ReturnCode.success, amrId, id, lastSendGoalId: status.Id, missionType: misType })
+        );
+        break;
+      case CMD_ID.WRITE_CANCEL:
+        this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
+
+        this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
+
+        ROS.cancelCarStatusAnyway(payload.feedback_id);
+        this.rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise.writeCancel`,
+          sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId, id })
+        );
+
+        break;
+      default:
+        break;
+    }
+  }
+
+  private updateStatue(data: { missionType?: string, lastSendGoadId?: string, targetLoc?: string, lastTransactionId?: string }) {
+    this.missionType = data.missionType ?? this.missionType;
+    this.lastSendGoalId = data.lastSendGoadId ?? this.lastSendGoalId;
+    this.targetLoc = data.targetLoc ?? this.targetLoc;
+    this.lastTransactionId = data.lastTransactionId ?? this.lastTransactionId;
+
+    this.output$.next(setMissionInfo({
+      missionType: this.missionType,
+      lastSendGoalId: this.lastSendGoalId,
+      lastTransactionId: this.lastTransactionId
+    }));
+  };
+
+  public resetMission() {
+    ROS.cancelCarStatusAnyway(this.lastSendGoalId);
+    this.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" })
+  }
+
+  public subscribe(cb: (action: Output) => void) {
+    return this.output$.subscribe(cb);
+  }
+
+  public setAmrId(amrId: string) {
+    this.amrId = amrId;
+  }
+
 
   private mock() {
 
@@ -184,28 +211,6 @@ export default class Mission {
     //     });
     // }, 10000)
 
-  }
-
-  private updateStatue(data: { missionType: string, lastSendGoadId: string, targetLoc: string, lastTransactionId: string }) {
-
-    this.missionType = data.missionType;
-    this.lastSendGoalId = data.lastSendGoadId;
-    this.targetLoc = data.targetLoc;
-    this.lastTransactionId = data.lastTransactionId;
-
-    this.output$.next(setMissionInfo({
-      missionType: this.missionType,
-      lastSendGoalId: this.lastSendGoalId,
-      lastTransactionId: this.lastTransactionId
-    }));
-  }
-
-  public subscribe(cb: (action: Output) => void) {
-    return this.output$.subscribe(cb);
-  }
-
-  public setAmrId(amrId: string) {
-    this.amrId = amrId;
   }
 
 }
