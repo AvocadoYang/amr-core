@@ -28,6 +28,11 @@ export default class RabbitClient {
     private reqTransactionOutput$: Subject<AllReq> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
     private output$: Subject<Output>
+
+    private controlCache: { timestamp: number, type: "CONTROL", msg: AllControl }[] = [];
+    private requestCache: { timestamp: number, type: "REQUEST", msg: AllReq }[] = [];
+    private responseCache: { timestamp: number, type: "RESPONSE", msg: AllRes }[] = [];
+
     private pendingMessages: {
         exchange: string;
         key: string;
@@ -35,13 +40,13 @@ export default class RabbitClient {
         options: PublishOptions;
         flag: "REQ" | "RES"
     }[] = [];
-    private amrId: string = "";
 
 
     public transactionMap: Map<string, { id: string, count: number }> = new Map();
 
     private retryTime: number;
     constructor(
+        private info: { amrId: string, isConnect: boolean },
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
@@ -49,7 +54,7 @@ export default class RabbitClient {
         this.debugLogger = RabbitLoggerDebug(false);
         this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 3000
-        this.url = `amqp://kenmec:kenmec@${config.MISSION_CONTROL_HOST}:5672`
+        this.url = `amqp://kenmec:kenmec@${config.RABBIT_MQ_HOST}:5672`
 
     }
 
@@ -185,7 +190,7 @@ export default class RabbitClient {
             serialNum: this.machineID,
             flag,
             timestamp: formatDate(),
-            payload: { id, ...message, amrId: this.amrId }
+            payload: { id, ...message, amrId: this.info.amrId }
         };
 
         const sMsg = JSON.stringify(jMsg);
@@ -310,15 +315,28 @@ export default class RabbitClient {
 
 
         this.consume<AllControl>(controlQName, (msg) => {
-            this.controlTransactionOutput$.next(msg);
+            if (!this.info.isConnect) {
+                this.controlCache.push({ timestamp: Date.now(), type: "CONTROL", msg });
+            } else {
+                this.controlTransactionOutput$.next(msg);
+            }
         });
 
         this.consume<AllReq>(reqQName, (msg) => {
-            this.reqTransactionOutput$.next(msg);
+            if (!this.info.isConnect) {
+                this.requestCache.push({ timestamp: Date.now(), type: "REQUEST", msg });
+            } else {
+                this.reqTransactionOutput$.next(msg);
+
+            }
         })
 
         this.consume<AllRes>(responseQName, (msg) => {
-            this.resTransactionOutput$.next(msg);
+            if (!this.info.isConnect) {
+                this.responseCache.push({ timestamp: Date.now(), type: "RESPONSE", msg })
+            } else {
+                this.resTransactionOutput$.next(msg);
+            }
         })
 
         this.output$.next(isConnected({ isConnected: true }));
@@ -339,10 +357,6 @@ export default class RabbitClient {
 
     public subscribe(cb: (action: Output) => void) {
         return this.output$.subscribe(cb);
-    }
-
-    public setAmrId(amrId: string) {
-        this.amrId = amrId;
     }
 
 
@@ -408,6 +422,35 @@ export default class RabbitClient {
                 await new Promise((r) => setTimeout(r, retryDelay));
             }
         }
+    }
+
+    public flushCache(isSync: boolean) {
+        RabbitLoggerNormal.info("flush cache", {
+            type: "cache",
+            status: { isSync }
+        })
+        if (isSync) {
+            const msg = [...this.controlCache, ...this.requestCache, ...this.responseCache]
+                .flat()
+                .sort((a, b) => a.timestamp - b.timestamp);
+            msg.forEach((data) => {
+                switch (data.type) {
+                    case "CONTROL":
+                        this.controlTransactionOutput$.next(data.msg);
+                        break;
+                    case "REQUEST":
+                        this.reqTransactionOutput$.next(data.msg);
+                        break;
+                    case "RESPONSE":
+                        this.resTransactionOutput$.next(data.msg);
+                        break;
+                }
+            });
+        }
+
+        this.controlCache.length = 0;
+        this.requestCache.length = 0;
+        this.responseCache.length = 0;
     }
 
     private async flushPendingMessages() {

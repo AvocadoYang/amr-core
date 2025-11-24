@@ -17,9 +17,10 @@ export default class Mission {
   private lastSendGoalId: string = "";
   private targetLoc: string = "";
   private lastTransactionId: string = "";
-  private amrId: string = ""
+
   constructor(
-    private rb: RBClient
+    private rb: RBClient,
+    private info: { amrId: string, isConnect: boolean }
   ) {
     this.output$ = new Subject();
 
@@ -185,9 +186,6 @@ export default class Mission {
     return this.output$.subscribe(cb);
   }
 
-  public setAmrId(amrId: string) {
-    this.amrId = amrId;
-  }
 
 
   private mock() {

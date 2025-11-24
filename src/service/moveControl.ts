@@ -13,7 +13,6 @@ import { AllControl } from "~/mq/type/control";
 import { AllRes } from "~/mq/type/res";
 
 class MoveControl {
-  private amrId: string = "";
   private lastCurrentId = ""
   private isWorking: boolean = false;
   private permitted: string[] = [];
@@ -28,6 +27,7 @@ class MoveControl {
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
   constructor(
     private rb: RBClient,
+    private info: { amrId: string, isConnect: boolean },
     private map: MapType
   ) {
     this.rb.onControlTransaction((action) => {
@@ -255,9 +255,6 @@ class MoveControl {
     }
   }
 
-  public setAmrId(amrId: string) {
-    this.amrId = amrId;
-  }
 
   public setTargetLoc(locationId: string) {
     this.targetLoc = locationId;

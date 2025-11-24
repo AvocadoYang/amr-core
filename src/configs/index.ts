@@ -13,6 +13,8 @@ console.log(
 
 const schema = object({
   MISSION_CONTROL_HOST: string().required(),
+  RABBIT_MQ_HOST: string().required(),
+  AMR: string().required(),
   MISSION_CONTROL_PORT: number().integer().min(0).max(65535).required(),
   ROS_BRIDGE_URL: string().required(),
   IFACE_NAME: string().required(),

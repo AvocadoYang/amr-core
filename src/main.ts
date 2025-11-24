@@ -41,15 +41,15 @@ class AmrCore {
   private ms: MissionManager;
   private st: Status;
   private mc: MoveControl;
-  private amrId: string;
+  private info: { amrId: string, isConnect: boolean } = { amrId: "", isConnect: false }
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
+    this.rb = new RBClient(this.info);
     this.netWorkManager = new NetWorkManager();
-    this.rb = new RBClient();
-    this.ms = new MissionManager(this.rb);
-    this.st = new Status(this.rb, this.map);
-    this.mc = new MoveControl(this.rb, this.map)
+    this.ms = new MissionManager(this.rb, this.info);
+    this.st = new Status(this.rb, this.info, this.map);
+    this.mc = new MoveControl(this.rb, this.info, this.map)
 
 
     this.netWorkManager.subscribe(async (action) => {
@@ -61,15 +61,14 @@ class AmrCore {
               type: "reset",
               status: { return_code: action.return_code }
             });
+            this.rb.flushCache(false);
             this.ms.resetMission();
             this.mc.resetStatus();
           }
+          this.info.amrId = action.amrId;
+          this.info.isConnect = true;
           this.isConnectWithQAMS$.next(action.isConnected);
-          this.amrId = action.amrId;
-          this.rb.setAmrId(amrId);
-          this.ms.setAmrId(amrId);
-          this.st.setAmrId(amrId);
-          this.mc.setAmrId(amrId)
+          this.rb.flushCache(true)
           this.lastHeartbeatTime = Date.now();
           const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
           this.map = data;
@@ -128,7 +127,7 @@ class AmrCore {
               id,
               heartbeat: resHeartbeat,
               return_code: ReturnCode.success,
-              amrId: this.amrId
+              amrId: this.info.amrId
             }), { expiration: "2000" }
           )
           break;
@@ -182,6 +181,7 @@ class AmrCore {
               })
             );
           } else {
+            this.info.isConnect = false;
             return from(this.retryConnectWithDelay(1500)).pipe(
               catchError((err) => {
                 TCLoggerNormalWarning.warn(`reconnect failed: ${err}`);
