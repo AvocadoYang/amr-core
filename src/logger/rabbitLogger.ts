@@ -7,8 +7,8 @@ import { kenmecLogs } from '~/helpers/system';
 const LOG_LEVEL = 'info';
 const AMR_ID_COLOR = chalk.green;
 const NORMAL = chalk.hex('#deffc8');
-const DEBUG = chalk.hex('#bad1ff');
-const WRANG = chalk.hex('#fea739');
+const WRANG = chalk.hex('#fecf89');
+const DEBUG = chalk.hex('#fdcdee');
 const ERROR = chalk.hex("#ff5e5e");
 const SILENT = false;
 

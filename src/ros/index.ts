@@ -4,6 +4,7 @@ import {
   EMPTY,
   Observable,
   fromEventPattern,
+  interval,
   mapTo,
   merge,
   share,
@@ -272,24 +273,12 @@ export const getArriveTarget$ = (() => {
   );
 })();
 
-export const allowTargetTest = (nextLocation: {
-  locationId: string;
-  isAllow: boolean;
-}) => {
-  setTimeout(() => {
-    SOCKET.sendIsArriveLocation({
-      locationId: nextLocation.locationId,
-      isArrive: true,
-    });
-  }, 2000);
-};
 
 export const sendShortestPath = (() => {
   const service = new ROSLIB.Service({
     ros,
     name: "/fleet_manager/shortest_path",
     serviceType: `kenmec_${config.AMR}_socket/shortest_path`,
-
   });
 
   return (rb: RBClient, data: { shortestPath: string[], id: string, amrId: string }) => {
@@ -299,13 +288,13 @@ export const sendShortestPath = (() => {
       type: "shortest path [req]",
       status: shortestPath
     });
-    console.log(shortestPath,)
     service.callService(
       {
-        shortestPath: shortestPath.map((loc) => { return loc.toString() }),
+        shortestPath: shortestPath,
       },
       (data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        console.log(data, '@@@@@@@@@@@@@');
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
@@ -452,6 +441,7 @@ export const writeStatus = (() => {
     });
   };
 })();
+
 
 // 插車回傳任務狀況
 export const getReadStatus$ = (() => {

@@ -15,7 +15,7 @@ export enum CMD_ID {
   CARGO_VERITY = "CV",
   REGISTER = "RG",
   SHORTEST_PATH = "SP",
-  ALLOW_PATH = "AL",
+  ALLOW_PATH = "AP",
   REACH_GOAL = "RG",
   ARRIVE_LOC = "AL",
   LEAVE_LOC = "LL",

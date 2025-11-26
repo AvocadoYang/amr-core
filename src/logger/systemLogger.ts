@@ -8,10 +8,11 @@ import { kenmecLogs } from '~/helpers/system';
 const LOG_LEVEL = 'info';
 const AMR_ID_COLOR = chalk.hex('#ffe7ff');
 const NORMAL = chalk.hex('#deffc8');
-const WRANG = chalk.hex('#f17109');
+const WRANG = chalk.hex('#fecf89');
+const DEBUG = chalk.hex('#fdcdee');
+const ERROR = chalk.hex("#ff5e5e");
 const HAND_SHAKE = chalk.hex('#bad1ff');
 const RX = chalk.hex('#daacff');
-const ERROR = chalk.red;
 const SILENT = false;
 
 const getPath = (fileName) => {

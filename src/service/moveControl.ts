@@ -11,6 +11,7 @@ import { ReturnCode } from "~/mq/type/returnCode";
 import { group } from "console";
 import { AllControl } from "~/mq/type/control";
 import { AllRes } from "~/mq/type/res";
+import WsServer from "./ws";
 
 class MoveControl {
   private lastCurrentId = ""
@@ -27,6 +28,7 @@ class MoveControl {
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
   constructor(
     private rb: RBClient,
+    private ws: WsServer,
     private info: { amrId: string, isConnect: boolean },
     private map: MapType
   ) {
@@ -50,15 +52,11 @@ class MoveControl {
         });
       }),
       switchMap(() => {
-        return ROS.getArriveTarget$.pipe(take(1), takeUntil(this.cancelMission$));
+        return this.ws.isArriveObs.pipe(take(1), takeUntil(this.cancelMission$))
       })
-    ).subscribe((isArriveRes) => {
-      const resData = (isArriveRes as { data: string }).data;
-
-      const parseData = JSON.parse(resData) as { isArrive: boolean, locationId: string };
+    ).subscribe(({ locationId: receiveLoc, ack }) => {
 
       const nowPermittedLoc = this.permitted[0];
-      const { locationId: receiveLoc } = parseData;
 
       if (receiveLoc !== nowPermittedLoc) {
         this.abnormalProcess(receiveLoc, nowPermittedLoc);
@@ -71,50 +69,46 @@ class MoveControl {
             type: "register",
           }
         );
-        return;
+        return ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc });
       }
 
       this.occupy.push(nowPermittedLoc);
       this.permitted.pop();
 
-      this.emitArriveLoc(parseData);
-      this.emitReachGoal(parseData.locationId);
+      this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
+      this.emitReachGoal(nowPermittedLoc);
       TCLoggerNormal.info(
-        `register success: Arrive location ${isArriveRes.data}`,
+        `register success: Arrive location: ${nowPermittedLoc}`,
         {
           group: "traffic",
           type: "register",
         }
       );
       this.registering = false;
-    });
+    })
+
 
 
     this.isAllowSub$.pipe(
       filter(({ isAllow }) => { return isAllow }),
       switchMap(() => {
-        return ROS.getArriveTarget$.pipe(take(1), takeUntil(this.cancelMission$))
+        return this.ws.isArriveObs.pipe(take(1), takeUntil(this.cancelMission$))
       })
-    ).subscribe((arrive) => {
-      const jData = JSON.parse((arrive as { data: string }).data);
-      TCLoggerNormal.info(`receive arrive location ${jData.locationId}`, {
+    ).subscribe(({ locationId: receiveLoc, ack }) => {
+      TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
         group: "traffic",
         type: "isArrive",
       });
-
       const nowPermittedLoc = this.permitted[0];
-      const { locationId: receiveLoc } = jData;
-
       if (receiveLoc !== nowPermittedLoc) {
         this.abnormalProcess(receiveLoc, nowPermittedLoc)
         if (nowPermittedLoc == this.targetLoc) {
           this.emitReachGoal(this.targetLoc);
         }
-        return;
+        return ack({ return_code: ReturnCode.IS_AWAY_ERROR, locationId: nowPermittedLoc });
       }
       this.occupy.push(nowPermittedLoc);
       this.permitted.pop();
-
     });
 
     this.isAllowSub$.pipe(
@@ -127,11 +121,9 @@ class MoveControl {
         });
       }),
       switchMap(() => {
-        return ROS.getLeaveLocation$.pipe(take(1), takeUntil(this.cancelMission$));
+        return this.ws.isAwayObs.pipe(take(1), takeUntil(this.cancelMission$))
       })
-    ).subscribe((leave) => {
-      const jData = JSON.parse(leave.data) as { locationId: string };
-      const { locationId: receiveLoc } = jData;
+    ).subscribe(({ locationId: receiveLoc, ack }) => {
       TCLoggerNormal.info(
         `receive leave location ${receiveLoc}`,
         {
@@ -139,13 +131,14 @@ class MoveControl {
           type: "isAway"
         }
       );
+
       if (!this.occupy.length) {
         TCLoggerNormalWarning.warn(`occupied array is empty`, {
           group: "traffic",
           type: "isAway",
           status: { occupy: this.occupy, permitted: this.permitted }
         });
-        return;
+        return ack({ locationId: "", return_code: ReturnCode.IS_AWAY_ERROR });
       }
       const nowOccupiedLoc = this.occupy[0];
       if (receiveLoc !== nowOccupiedLoc) {
@@ -155,7 +148,7 @@ class MoveControl {
             type: "isAway",
             status: { permitted: this.permitted, occupy: this.occupy }
           });
-          return;
+          return ack({ locationId: nowOccupiedLoc, return_code: ReturnCode.IS_AWAY_ERROR });;
         }
       };
       for (let i = this.occupy.length - 1; i >= 0; i--) {
@@ -164,8 +157,9 @@ class MoveControl {
         }
       };
       this.emitLeaveLoc(nowOccupiedLoc);
+    })
 
-    });
+
 
     this.cancelMission$.subscribe(() => {
       while (this.permitted.length) this.permitted.pop();

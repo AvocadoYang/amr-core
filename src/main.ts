@@ -1,9 +1,8 @@
 import dotenv from "dotenv";
 import config from './configs'
 import { cleanEnv, str } from "envalid";
-import { MissionManager, MoveControl, NetWorkManager, Status } from "./service";
+import { MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
-import * as ROS from './ros'
 import { BehaviorSubject, catchError, from, interval, map, of, switchMap, tap } from "rxjs";
 import { IS_CONNECTED } from "./actions/networkManager/output";
 import { TCLoggerNormal, TCLoggerNormalWarning } from "./logger/trafficCenterLogger";
@@ -18,6 +17,7 @@ import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
 import { RabbitLoggerNormal } from "./logger/rabbitLogger";
+import { SysLoggerNormal } from "./logger/systemLogger";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -39,6 +39,7 @@ class AmrCore {
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
   private ms: MissionManager;
+  private ws: WsServer;
   private st: Status;
   private mc: MoveControl;
   private info: { amrId: string, isConnect: boolean } = { amrId: "", isConnect: false }
@@ -46,10 +47,11 @@ class AmrCore {
 
   constructor() {
     this.rb = new RBClient(this.info);
+    this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager();
     this.ms = new MissionManager(this.rb, this.info);
     this.st = new Status(this.rb, this.info, this.map);
-    this.mc = new MoveControl(this.rb, this.info, this.map)
+    this.mc = new MoveControl(this.rb, this.ws, this.info, this.map)
 
 
     this.netWorkManager.subscribe(async (action) => {
@@ -163,8 +165,7 @@ class AmrCore {
       .pipe(
         switchMap((connected) => {
           if (connected) {
-            TCLoggerNormal.info(`connect with QAMS, start heartbeat detection`, {
-              group: "transaction",
+            SysLoggerNormal.info(`connect with QAMS, start heartbeat detection`, {
               type: "heartbeat",
             });
 

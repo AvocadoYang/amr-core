@@ -97,6 +97,7 @@ class NetWorkManager {
       this.ros_bridge_error_log = true;
       this.ros_bridge_close_log = true;
       this.reconnectCount$.next(this.reconnectCount$.value + 1);
+      // ROS.testTop();
     });
 
 
