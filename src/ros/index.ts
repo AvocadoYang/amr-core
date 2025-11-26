@@ -298,7 +298,7 @@ export const sendShortestPath = (() => {
           rb.resPublish(
             RES_EX,
             `amr.res.${config.MAC}.promise.shortestPath`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.SHORTEST_PATH, id }),
+            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.SHORTEST_PATH, id }),
             { expiration: "10000" }
           )
           TCLoggerNormal.info(`receive shortest path response from ros service`, {
@@ -345,7 +345,7 @@ export const sendIsAllowTarget = (() => {
           rb.resPublish(
             RES_EX,
             `amr.res.${config.MAC}.promise.isAllow`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.ALLOW_PATH, id }),
+            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.ALLOW_PATH, id }),
             { expiration: "10000" }
           )
           return;

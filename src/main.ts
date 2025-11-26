@@ -136,7 +136,7 @@ class AmrCore {
             sendHeartBeatResponse({
               id,
               heartbeat: resHeartbeat,
-              return_code: ReturnCode.success,
+              return_code: ReturnCode.SUCCESS,
               amrId: this.info.amrId
             }), { expiration: "2000" }
           )

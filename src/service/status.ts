@@ -28,21 +28,21 @@ class Status {
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
                     this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.success }), { expiration: "2000" });
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }), { expiration: "2000" });
                     const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
                     this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.success }),
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
                     this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.success }),
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
                 default:

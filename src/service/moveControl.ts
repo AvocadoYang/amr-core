@@ -59,9 +59,14 @@ class MoveControl {
       const nowPermittedLoc = this.permitted[0];
 
       if (receiveLoc !== nowPermittedLoc) {
-        this.abnormalProcess(receiveLoc, nowPermittedLoc);
+        const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc);
+        if (!isSuccess) {
+          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc })
+          return
+        }
         this.emitReachGoal(nowPermittedLoc);
         this.registering = false;
+        ack({ return_code: ReturnCode.SUCCESS })
         TCLoggerNormal.info(
           `register success: Arrive location ${nowPermittedLoc}`,
           {
@@ -69,7 +74,6 @@ class MoveControl {
             type: "register",
           }
         );
-        return ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc });
       }
 
       this.occupy.push(nowPermittedLoc);
@@ -101,14 +105,23 @@ class MoveControl {
       });
       const nowPermittedLoc = this.permitted[0];
       if (receiveLoc !== nowPermittedLoc) {
-        this.abnormalProcess(receiveLoc, nowPermittedLoc)
+        const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc)
+        if (!isSuccess) {
+          ack({ return_code: ReturnCode.IS_AWAY_ERROR, locationId: nowPermittedLoc });
+          return;
+        }
         if (nowPermittedLoc == this.targetLoc) {
           this.emitReachGoal(this.targetLoc);
         }
-        return ack({ return_code: ReturnCode.IS_AWAY_ERROR, locationId: nowPermittedLoc });
+      } else {
+        this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
+        if (nowPermittedLoc == this.targetLoc) {
+          this.emitReachGoal(this.targetLoc);
+        }
+        this.occupy.push(nowPermittedLoc);
+        this.permitted.pop();
       }
-      this.occupy.push(nowPermittedLoc);
-      this.permitted.pop();
+      ack({ return_code: ReturnCode.SUCCESS, locationId: nowPermittedLoc })
     });
 
     this.isAllowSub$.pipe(
@@ -180,7 +193,7 @@ class MoveControl {
           this.rb.resPublish(
             RES_EX,
             `amr.res.${config.MAC}.volatile`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.success, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
+            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
           );
           this.registerSub$.next(true);
           break;
@@ -207,7 +220,7 @@ class MoveControl {
               RES_EX,
               `amr.res.${config.MAC}.volatile`,
               sendBaseResponse({
-                amrId, return_code: ReturnCode.success,
+                amrId, return_code: ReturnCode.SUCCESS,
                 cmd_id: CMD_ID.ALLOW_PATH,
                 id
               }),
@@ -320,12 +333,13 @@ class MoveControl {
         type: "isArrive",
         status: { permitted: this.permitted, occupy: this.occupy }
       })
-      return;
+      return false;
     } else {
       this.occupy.push(nowPermittedLoc);
       this.permitted.pop();
       this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
     };
+    return true
   }
 
   public resetStatus() {

@@ -1,5 +1,5 @@
 export enum ReturnCode {
-    success = "0000",
+    SUCCESS = "0000",
     UNDELIVERABLE = "1111",
 
     shortestPathServiceFailed = "0001",
