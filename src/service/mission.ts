@@ -143,7 +143,7 @@ export default class Mission {
         this.rb.resPublish(
           RES_EX,
           `amr.res.${config.MAC}.promise.writeStatus`,
-          sendWriteStatusResponse({ return_code: ReturnCode.success, amrId, id, lastSendGoalId: status.Id, missionType: misType })
+          sendWriteStatusResponse({ return_code: ReturnCode.SUCCESS, amrId, id, lastSendGoalId: status.Id, missionType: misType })
         );
         break;
       case CMD_ID.WRITE_CANCEL:
@@ -155,7 +155,7 @@ export default class Mission {
         this.rb.resPublish(
           RES_EX,
           `amr.res.${config.MAC}.promise.writeCancel`,
-          sendBaseResponse({ cmd_id, return_code: ReturnCode.success, amrId, id })
+          sendBaseResponse({ cmd_id, return_code: ReturnCode.SUCCESS, amrId, id })
         );
 
         break;
