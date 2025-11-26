@@ -61,7 +61,8 @@ class MoveControl {
       if (receiveLoc !== nowPermittedLoc) {
         const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc);
         if (!isSuccess) {
-          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc })
+          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc });
+          this.permitted.pop()
           return
         }
         this.emitReachGoal(nowPermittedLoc);
