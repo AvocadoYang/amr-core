@@ -289,7 +289,7 @@ class MoveControl {
       }
     }).filter(({ locationId }) => locationId == a || locationId == b);
 
-    if (ComparLocs.length < 2) throw Error("can't found loc");
+    if (ComparLocs.length < 2) return false;
 
     const [locA, locB] = ComparLocs;
     const { x: x1, y: y1 } = locA;
