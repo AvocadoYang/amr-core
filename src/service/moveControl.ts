@@ -58,7 +58,10 @@ class MoveControl {
         return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
-
+      TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
+        group: "traffic",
+        type: "isArrive",
+      });
       const nowPermittedLoc = this.permitted[0];
 
       if (receiveLoc !== nowPermittedLoc) {
@@ -120,6 +123,7 @@ class MoveControl {
         }
       } else {
         this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
+        console.log(this.targetLoc, '@@@@@@@@@@@@@@@@@@@')
         if (nowPermittedLoc == this.targetLoc) {
           this.emitReachGoal(this.targetLoc);
         }
