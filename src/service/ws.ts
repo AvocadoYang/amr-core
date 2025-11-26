@@ -37,14 +37,14 @@ class WsServer {
             locationId: string,
             ack: (...args: any[]) => void;
         }>((next) => socket.on("is_arrive", (msg, ack) => {
-            next({ ...msg, ack });
+            next({ ...JSON.parse(msg), ack });
         }))
 
         this.isAwayObs = fromEventPattern<{
             locationId: string,
             ack: (...args: any[]) => void;
         }>((next) => socket.on("is_away", (msg, ack) => {
-            next({ ...msg, ack });
+            next({ ...JSON.parse(msg), ack });
         }))
 
         this.output$.next(true)
