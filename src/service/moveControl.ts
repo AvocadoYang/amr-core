@@ -78,7 +78,6 @@ class MoveControl {
             type: "register",
           }
         );
-        this.closeArriveLoc$.next(true);
       }
 
       this.occupy.push(nowPermittedLoc);
@@ -93,6 +92,7 @@ class MoveControl {
           type: "register",
         }
       );
+      this.closeArriveLoc$.next(true);
       this.registering = false;
     })
 
@@ -131,7 +131,7 @@ class MoveControl {
     });
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow, locationId }) => { return isAllow && locationId == this.targetLoc }),
+      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc }),
       tap(({ locationId }) => {
         TCLoggerNormal.info("create leave location obs", {
           group: "traffic",
@@ -243,6 +243,7 @@ class MoveControl {
             type: "isAllow",
             status: { isAllow, locationId }
           });
+          this.permitted.push(locationId)
 
           this.isAllowSub$.next({ isAllow, locationId });
           ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
