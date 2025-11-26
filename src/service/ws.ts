@@ -17,7 +17,13 @@ class WsServer {
                 type: "connect"
             })
             this.onConnection(socket)
-        })
+        });
+
+        io.on("disconnect", () => {
+            this.output$.next(false)
+        });
+
+
         io.listen(8111);
 
         SysLoggerNormal.info("create ws server on port 8111...", {

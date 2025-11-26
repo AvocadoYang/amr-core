@@ -59,7 +59,7 @@ class AmrCore {
         await amrCore.init();
         amrCore.monitorHeartbeat();
       }
-    })
+    });
 
 
     this.netWorkManager.subscribe(async (action) => {

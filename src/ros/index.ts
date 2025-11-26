@@ -294,7 +294,6 @@ export const sendShortestPath = (() => {
       },
       (data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        console.log(data, '@@@@@@@@@@@@@');
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
