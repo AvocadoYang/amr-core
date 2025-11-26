@@ -1,5 +1,5 @@
 import { group } from 'console';
-import { from, fromEventPattern, Observable } from 'rxjs';
+import { from, fromEventPattern, Observable, Subject } from 'rxjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { SysLoggerNormal } from '~/logger/systemLogger';
 import { TCLoggerNormal } from '~/logger/trafficCenterLogger';
@@ -7,6 +7,7 @@ import { TCLoggerNormal } from '~/logger/trafficCenterLogger';
 class WsServer {
     public isAwayObs: Observable<{ locationId: string, ack: (...args: any[]) => void }>;
     public isArriveObs: Observable<{ locationId: string, ack: (...args: any[]) => void }>;
+    public output$: Subject<boolean> = new Subject();
     constructor() {
         const io = new SocketIOServer();
 
@@ -40,15 +41,13 @@ class WsServer {
             next({ ...msg, ack });
         }))
 
-        // socket.on("is_away", (data: string, ack) => {
-        //     const jMsg = JSON.parse(data);
-        //     console.log(jMsg);
+        this.output$.next(true)
 
-        //     ack({
-        //         return_code: "0000",
-        //         locationId: jMsg.locationId
-        //     })
-        // })
+
+    }
+
+    public subscribe(cb: (action: boolean) => void) {
+        this.output$.subscribe(cb)
     }
 }
 

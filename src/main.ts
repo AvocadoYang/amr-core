@@ -51,7 +51,15 @@ class AmrCore {
     this.netWorkManager = new NetWorkManager();
     this.ms = new MissionManager(this.rb, this.info);
     this.st = new Status(this.rb, this.info, this.map);
-    this.mc = new MoveControl(this.rb, this.ws, this.info, this.map)
+    this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
+
+
+    this.ws.subscribe(async (isConnect) => {
+      if (isConnect) {
+        await amrCore.init();
+        amrCore.monitorHeartbeat();
+      }
+    })
 
 
     this.netWorkManager.subscribe(async (action) => {
@@ -205,8 +213,4 @@ class AmrCore {
 
 const amrCore = new AmrCore();
 
-(async () => {
-  await amrCore.init();
-  amrCore.monitorHeartbeat();
-})()
 
