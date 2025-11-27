@@ -29,7 +29,7 @@ class MoveControl {
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
   private closeArriveLoc$: Subject<string> = new Subject();
 
-  private closeAwayLoc$: Subject<boolean> = new Subject();
+  private closeAwayLoc$: Subject<string> = new Subject();
   constructor(
     private rb: RBClient,
     private ws: WsServer,
@@ -121,7 +121,7 @@ class MoveControl {
 
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow }) => { return isAllow && !this.registering }),
+      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
       switchMap(() => {
         return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
       })
@@ -142,7 +142,6 @@ class MoveControl {
         }
       } else {
         this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
-        console.log(this.targetLoc, '@@@@@@@@@@@@@@@@@@@')
         if (nowPermittedLoc == this.targetLoc) {
           this.emitReachGoal(this.targetLoc);
         }
@@ -155,29 +154,30 @@ class MoveControl {
 
     this.isAllowSub$.pipe(
       filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
-      tap(({ locationId }) => {
+      concatMap(({ locationId }) => {
         TCLoggerNormal.info("create leave location obs", {
           group: "traffic",
           type: "create leave obs",
           status: { waitLeave: locationId },
         });
-      }),
-      concatMap(({ locationId }) => {
         return this.ws.isAwayObs
           .pipe(
+            tap(({ locationId }) => {
+              TCLoggerNormal.info(
+                `receive leave location ${locationId}`,
+                {
+                  group: "traffic",
+                  type: "isAway"
+                }
+              );
+            }),
+            filter(({ locationId: awayPoint }) => awayPoint == locationId),
             takeUntil(
-              merge(this.cancelMission$, this.closeAwayLoc$)),
-            filter(({ locationId: awayPoint }) => awayPoint == locationId)
+              merge(this.cancelMission$, this.closeAwayLoc$.pipe(filter((loc) => loc == locationId)))
+            )
           )
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
-      TCLoggerNormal.info(
-        `receive leave location ${receiveLoc}`,
-        {
-          group: "traffic",
-          type: "isAway"
-        }
-      );
 
       if (!this.occupy.length) {
         TCLoggerNormalWarning.warn(`occupied array is empty`, {
@@ -206,7 +206,7 @@ class MoveControl {
       };
       ack({ return_code: ReturnCode.SUCCESS, locationId: nowOccupiedLoc })
       this.emitLeaveLoc(nowOccupiedLoc);
-      this.closeAwayLoc$.next(true)
+      this.closeAwayLoc$.next(nowOccupiedLoc)
 
     })
 

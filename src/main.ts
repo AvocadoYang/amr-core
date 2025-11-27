@@ -227,7 +227,6 @@ class AmrCore {
             );
           } else {
             this.info.isConnect = false;
-            console.log('???????????@@@@@@@@@@@@@')
             return from(this.retryConnectWithDelay(1500)).pipe(
               catchError((err) => {
                 TCLoggerNormalWarning.warn(`reconnect failed: ${err}`);
