@@ -16,8 +16,10 @@ import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
+import * as ROS from './ros'
 import { RabbitLoggerNormal } from "./logger/rabbitLogger";
-import { SysLoggerNormal } from "./logger/systemLogger";
+import { SysLoggerNormal, SysLoggerNormalWarning } from "./logger/systemLogger";
+import { IS_REGISTERED } from "./actions/status/output";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -32,6 +34,7 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
+
   private isConnectWithQAMS$ = new BehaviorSubject<boolean>(false);
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeatTime: number = 0;
@@ -66,19 +69,36 @@ class AmrCore {
       const { amrId } = action;
       switch (action.type) {
         case IS_CONNECTED:
-          if (action.return_code == "0002") {
-            RabbitLoggerNormal.info(`reset mission && traffic status`, {
-              type: "reset",
-              status: { return_code: action.return_code }
+          const return_code = action.return_code
+          if (return_code === ReturnCode.SUCCESS) {
+            this.rb.flushCache({ continue: true });
+          } else if (
+            (return_code === ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL) || (return_code === ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER)
+          ) {
+            if (this.ms.lastSendGoalId) {
+              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
+              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+              this.mc.resetStatus(action.trafficStatus);
+            };
+            this.rb.flushCache({ continue: false });
+          } else if (
+            return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
+          } {
+            SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
+              type: "register",
             });
-            this.rb.flushCache(false);
-            this.ms.resetMission();
-            this.mc.resetStatus();
-          }
+            if (this.ms.lastSendGoalId) {
+              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
+              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+              this.mc.resetStatus(action.trafficStatus);
+            };
+            this.rb.flushCache({ continue: false });
+          };
+
+
           this.info.amrId = action.amrId;
           this.info.isConnect = true;
           this.isConnectWithQAMS$.next(action.isConnected);
-          this.rb.flushCache(true)
           this.lastHeartbeatTime = Date.now();
           const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
           this.map = data;
@@ -87,6 +107,7 @@ class AmrCore {
           break;
       }
     });
+
 
     this.rb.subscribe((action) => {
       switch (action.type) {
@@ -159,6 +180,16 @@ class AmrCore {
           break;
       }
     });
+
+    this.st.subscribe((action) => {
+      switch (action.type) {
+        case IS_REGISTERED:
+          this.netWorkManager.amrIsRegistered = action.isRegistered;
+          break;
+        default:
+          break
+      }
+    })
 
   }
 

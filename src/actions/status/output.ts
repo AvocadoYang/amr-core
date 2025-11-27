@@ -1,22 +1,21 @@
-const PREFIX = "NETWORK_MANAGER";
+const PREFIX = "STATUS_MANAGER";
 
 
-export const IS_CONNECTED = `${PREFIX}/HEARTBEAT` as const;
-export const isConnected = (data: {
-    isConnected: boolean;
-    amrId: string;
-    return_code: string;
-    trafficStatus: { occupied: string[], permitted: string[] }
+export const IS_REGISTERED = `${PREFIX}/IS_REGISTERED` as const;
+export const setIsRegistered = (data: {
+    isRegistered: boolean
 }) => {
     return {
-        type: IS_CONNECTED,
+        type: IS_REGISTERED,
         ...data
     }
 };
 
 
+
+
 type AllTransaction =
-    | typeof isConnected
+    | typeof setIsRegistered
 
 export type AllOutput = ReturnType<AllTransaction>;
 

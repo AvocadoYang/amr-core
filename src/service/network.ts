@@ -4,15 +4,19 @@ import dotenv from "dotenv";
 import * as ROS from '../ros'
 import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
 import axios from "axios";
-import { object, string, ValidationError, ValidationError as YupValidationError } from "yup";
+import { array, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { bindingTable } from '~/mq/bindingTable';
 import { isConnected, Output } from '~/actions/networkManager/output';
 import { sendCancelMission, setMissionInfo } from '~/actions/mission/output';
+import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 
 
 class NetWorkManager {
+
+  public amrIsRegistered: boolean = false;
+
   private ros_bridge_error_log = true
   private ros_bridge_close_log = true
   private fleet_connect_log = true
@@ -32,7 +36,9 @@ class NetWorkManager {
     const schema = object({
       applicant: string().required(),
       amrId: string(),
-      return_code: string().required()
+      return_code: string().required(),
+      occupied: array(string()).required(),
+      permitted: array(string()).required(),
     })
     while (true) {
       try {
@@ -42,19 +48,22 @@ class NetWorkManager {
           lastSendGoalId: this.lastSendGoalId,
           lastTransaction: this.lastTransactionId,
           lastMissionType: this.lastMissionType,
+          amrIsRegistered: this.amrIsRegistered,
           timeout: 5000
         });
 
-        const { return_code, amrId } = await schema.validate(data).catch((err) => {
+        const { return_code, amrId, occupied, permitted } = await schema.validate(data).catch((err) => {
           throw new ValidationError(err, (err as YupValidationError).message)
         });
-        if (return_code === "0000" || return_code === "0002") {
+
+
+        if (registerReturnCode.includes(return_code as ReturnCode)) {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;
-          this.output$.next(isConnected({ isConnected: true, amrId, return_code }));
+          this.output$.next(isConnected({ isConnected: true, amrId, return_code, trafficStatus: { occupied, permitted } }));
           break;
         } else {
           throw new CustomerError(return_code, "custom error");

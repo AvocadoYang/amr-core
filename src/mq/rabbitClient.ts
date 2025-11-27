@@ -429,7 +429,8 @@ export default class RabbitClient {
         }
     }
 
-    public flushCache(isSync: boolean) {
+    public flushCache(data: { continue: boolean }) {
+        const { continue: isSync } = data;
         RabbitLoggerNormal.info("flush cache", {
             type: "cache",
             status: { isSync }
