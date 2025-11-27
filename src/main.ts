@@ -3,7 +3,7 @@ import config from './configs'
 import { cleanEnv, str } from "envalid";
 import { MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
-import { BehaviorSubject, catchError, from, interval, map, of, switchMap, tap } from "rxjs";
+import { BehaviorSubject, catchError, from, interval, map, of, Subject, switchMap, tap } from "rxjs";
 import { IS_CONNECTED } from "./actions/networkManager/output";
 import { TCLoggerNormal, TCLoggerNormalWarning } from "./logger/trafficCenterLogger";
 import { CMD_ID } from "./mq/type/cmdId";
@@ -35,7 +35,7 @@ cleanEnv(process.env, {
 
 class AmrCore {
 
-  private isConnectWithQAMS$ = new BehaviorSubject<boolean>(false);
+  private isConnectWithQAMS$ = new Subject<boolean>();
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeatTime: number = 0;
   private lastHeartbeatCount: number = 0;
@@ -98,6 +98,7 @@ class AmrCore {
 
           this.info.amrId = action.amrId;
           this.info.isConnect = true;
+
           this.isConnectWithQAMS$.next(action.isConnected);
           this.lastHeartbeatTime = Date.now();
           const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
@@ -112,6 +113,7 @@ class AmrCore {
     this.rb.subscribe((action) => {
       switch (action.type) {
         case RB_IS_CONNECTED:
+
           this.isConnectWithRabbitMQ = action.isConnected;
           break;
         default:
@@ -184,6 +186,7 @@ class AmrCore {
     this.st.subscribe((action) => {
       switch (action.type) {
         case IS_REGISTERED:
+          // console.log(action, '@@@@@@@@@@2')
           this.netWorkManager.amrIsRegistered = action.isRegistered;
           break;
         default:
@@ -196,7 +199,9 @@ class AmrCore {
   public async init() {
     await this.rb.connect();
     this.netWorkManager.rosConnect();
-    await this.netWorkManager.fleetConnect();
+    setTimeout(() => {
+      this.netWorkManager.fleetConnect();
+    }, 2000)
   }
 
   public monitorHeartbeat() {
@@ -222,6 +227,7 @@ class AmrCore {
             );
           } else {
             this.info.isConnect = false;
+            console.log('???????????@@@@@@@@@@@@@')
             return from(this.retryConnectWithDelay(1500)).pipe(
               catchError((err) => {
                 TCLoggerNormalWarning.warn(`reconnect failed: ${err}`);
@@ -235,6 +241,7 @@ class AmrCore {
 
   private async retryConnectWithDelay(delayMs: number) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
+
     await this.netWorkManager.fleetConnect();
   }
 
