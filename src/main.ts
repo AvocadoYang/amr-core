@@ -11,7 +11,7 @@ import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
 import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
-import { CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
+import { AMR_HAS_MISSION, CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
 import { IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
@@ -39,6 +39,7 @@ class AmrCore {
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeatTime: number = 0;
   private lastHeartbeatCount: number = 0;
+  private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean } = { amrHasMission: false, amrIsRegistered: false };
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
   private ms: MissionManager;
@@ -51,7 +52,7 @@ class AmrCore {
   constructor() {
     this.rb = new RBClient(this.info);
     this.ws = new WsServer();
-    this.netWorkManager = new NetWorkManager();
+    this.netWorkManager = new NetWorkManager(this.amrStatus);
     this.ms = new MissionManager(this.rb, this.info);
     this.st = new Status(this.rb, this.info, this.map);
     this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
@@ -69,40 +70,33 @@ class AmrCore {
       const { amrId } = action;
       switch (action.type) {
         case IS_CONNECTED:
-          const return_code = action.return_code
-          if (return_code === ReturnCode.SUCCESS) {
-            this.rb.flushCache({ continue: true });
-          } else if (
-            (return_code === ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL) || (return_code === ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER)
-          ) {
-            if (this.ms.lastSendGoalId) {
-              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-              this.mc.resetStatus(action.trafficStatus);
+          try {
+            const return_code = action.return_code
+            if (return_code === ReturnCode.SUCCESS) {
+              this.rb.flushCache({ continue: true });
+            } else {
+              if (this.ms.lastSendGoalId) {
+                ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
+                this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+                this.mc.resetStatus(action.trafficStatus);
+              };
+              if (this.amrStatus.amrHasMission) {
+                ROS.cancelCarStatusAnyway("##");
+              }
+              this.rb.flushCache({ continue: false })
             };
-            this.rb.flushCache({ continue: false });
-          } else if (
-            return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM
-          ) {
-            SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
-              type: "register",
-            });
-            if (this.ms.lastSendGoalId) {
-              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-              this.mc.resetStatus(action.trafficStatus);
-            };
-            this.rb.flushCache({ continue: false });
-          };
 
+            this.info.amrId = action.amrId;
+            this.info.isConnect = true;
 
-          this.info.amrId = action.amrId;
-          this.info.isConnect = true;
-
-          this.isConnectWithQAMS$.next(action.isConnected);
-          this.lastHeartbeatTime = Date.now();
-          const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
-          this.map = data;
+            this.isConnectWithQAMS$.next(action.isConnected);
+            this.lastHeartbeatTime = Date.now();
+            const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+            this.map = data;
+          } catch (err) {
+            console.log(err)
+            this.isConnectWithQAMS$.next(false);
+          }
           break;
         default:
           break;
@@ -113,7 +107,6 @@ class AmrCore {
     this.rb.subscribe((action) => {
       switch (action.type) {
         case RB_IS_CONNECTED:
-
           this.isConnectWithRabbitMQ = action.isConnected;
           break;
         default:
@@ -138,6 +131,9 @@ class AmrCore {
           break
         case END_MISSION:
           this.mc.stopWorking();
+          break;
+        case AMR_HAS_MISSION:
+          this.amrStatus.amrHasMission = action.hasMission;
           break;
         default:
           break;
@@ -186,8 +182,7 @@ class AmrCore {
     this.st.subscribe((action) => {
       switch (action.type) {
         case IS_REGISTERED:
-          // console.log(action, '@@@@@@@@@@2')
-          this.netWorkManager.amrIsRegistered = action.isRegistered;
+          this.amrStatus.amrIsRegistered = action.isRegistered;
           break;
         default:
           break

@@ -23,6 +23,16 @@ export const sendCancelMission = (data: {
     }
 }
 
+export const AMR_HAS_MISSION = `${PREFIX}/AMR_HAS_MISSION` as const;
+export const sendAmrHasMission = (data: {
+    hasMission: boolean
+}) => {
+    return {
+        type: AMR_HAS_MISSION,
+        ...data
+    }
+}
+
 export const START_MISSION = `${PREFIX}/START_MISSION` as const;
 export const sendStartMission = () => {
     return {
@@ -53,6 +63,7 @@ type AllTransaction =
     | typeof sendCancelMission
     | typeof sendStartMission
     | typeof sendEndMission
+    | typeof sendAmrHasMission
 
 export type AllOutput = ReturnType<AllTransaction>;
 

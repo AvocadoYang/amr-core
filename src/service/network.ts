@@ -15,8 +15,6 @@ import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 
 class NetWorkManager {
 
-  public amrIsRegistered: boolean = false;
-
   private ros_bridge_error_log = true
   private ros_bridge_close_log = true
   private fleet_connect_log = true
@@ -28,7 +26,9 @@ class NetWorkManager {
   private lastTransactionId: string = "";
   private lastMissionType: string = "";
 
-  constructor() {
+  constructor(
+    private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+  ) {
     this.output$ = new Subject();
   }
 
@@ -39,6 +39,7 @@ class NetWorkManager {
       return_code: string().required(),
       occupied: array(string()).required(),
       permitted: array(string()).required(),
+      message: string().required()
     })
     while (true) {
       try {
@@ -49,11 +50,11 @@ class NetWorkManager {
           lastSendGoalId: this.lastSendGoalId,
           lastTransaction: this.lastTransactionId,
           lastMissionType: this.lastMissionType,
-          amrIsRegistered: this.amrIsRegistered,
+          amrIsRegistered: this.amrStatus.amrIsRegistered,
           timeout: 5000
         });
 
-        const { return_code, amrId, occupied, permitted } = await schema.validate(data).catch((err) => {
+        const { return_code, amrId, occupied, permitted, message } = await schema.validate(data).catch((err) => {
           throw new ValidationError(err, (err as YupValidationError).message)
         });
 
@@ -61,7 +62,7 @@ class NetWorkManager {
         if (registerReturnCode.includes(return_code as ReturnCode)) {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
-            returnCode: return_code
+            status: { return_code, message, occupied, permitted }
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;

@@ -71,7 +71,12 @@ class MoveControl {
             }, 1000);
           }),
           switchMap(({ locationId }) => {
-            return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$.pipe(filter((arriveLoc) => arriveLoc == locationId)))))
+            return this.ws.isArriveObs.pipe(
+              takeUntil(
+                merge(
+                  this.cancelMission$,
+                  this.closeArriveLoc$.pipe(filter((arriveLoc) => arriveLoc == locationId), tap(() => { console.log("complete arrive") }))
+                )))
           })
         )
       })
@@ -237,6 +242,7 @@ class MoveControl {
           break;
         case CMD_ID.SHORTEST_PATH:
           const { shortestPath, init } = payload;
+
           if (init) {
             this.initShortestPath = shortestPath;
           } else {
@@ -249,6 +255,11 @@ class MoveControl {
           break;
         case CMD_ID.ALLOW_PATH:
           const { isAllow, locationId } = payload;
+          TCLoggerNormal.info("receive isAllow message", {
+            group: "traffic",
+            type: "isAllow",
+            status: { isAllow, locationId }
+          });
           if (this.registering) {
             this.rb.resPublish(
               RES_EX,
@@ -260,17 +271,12 @@ class MoveControl {
               }),
               { expiration: "3000" }
             )
+          } else {
+            this.permitted.push(locationId)
+            ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
           };
-
-          TCLoggerNormal.info("receive isAllow message", {
-            group: "traffic",
-            type: "isAllow",
-            status: { isAllow, locationId }
-          });
-          this.permitted.push(locationId)
-
           this.isAllowSub$.next({ isAllow, locationId });
-          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
+
           break;
         default:
           break;
