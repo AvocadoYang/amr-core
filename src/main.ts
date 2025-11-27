@@ -82,8 +82,8 @@ class AmrCore {
             };
             this.rb.flushCache({ continue: false });
           } else if (
-            return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
-          } {
+            return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM
+          ) {
             SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
               type: "register",
             });
