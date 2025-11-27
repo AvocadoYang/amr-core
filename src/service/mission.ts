@@ -13,10 +13,10 @@ import { AllReq } from "~/mq/type/req";
 export default class Mission {
   private output$: Subject<Output>
   private executing: boolean = false;
-  private missionType: string = "";
-  private lastSendGoalId: string = "";
-  private targetLoc: string = "";
-  private lastTransactionId: string = "";
+  public missionType: string = "";
+  public lastSendGoalId: string = "";
+  public targetLoc: string = "";
+  public lastTransactionId: string = "";
 
   constructor(
     private rb: RBClient,
@@ -138,13 +138,14 @@ export default class Mission {
           lastTransactionId: id
         })
 
-        ROS.writeStatus(status);
 
         this.rb.resPublish(
           RES_EX,
           `amr.res.${config.MAC}.promise.writeStatus`,
           sendWriteStatusResponse({ return_code: ReturnCode.SUCCESS, amrId, id, lastSendGoalId: status.Id, missionType: misType })
         );
+
+        ROS.writeStatus(status);
         break;
       case CMD_ID.WRITE_CANCEL:
         this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
@@ -164,7 +165,7 @@ export default class Mission {
     }
   }
 
-  private updateStatue(data: { missionType?: string, lastSendGoadId?: string, targetLoc?: string, lastTransactionId?: string }) {
+  public updateStatue(data: { missionType?: string, lastSendGoadId?: string, targetLoc?: string, lastTransactionId?: string }) {
     this.missionType = data.missionType ?? this.missionType;
     this.lastSendGoalId = data.lastSendGoadId ?? this.lastSendGoalId;
     this.targetLoc = data.targetLoc ?? this.targetLoc;

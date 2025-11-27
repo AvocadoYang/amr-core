@@ -260,6 +260,7 @@ export default class RabbitClient {
 
     public async consume<A>(queueName: string, onMessage: (msg: A) => void) {
         if (!this.channel) throw new Error("Channel is not available");
+        const localChannel = this.channel;
         await this.channel.consume(queueName, (msg) => {
             if (msg) {
                 try {
@@ -286,7 +287,11 @@ export default class RabbitClient {
                         status: err
                     })
                 } finally {
-                    this.channel!.ack(msg);
+                    try {
+                        localChannel.ack(msg);  // 用舊 channel ack，而非 this.channel!!!
+                    } catch (e) {
+                        console.error("ack failed:", e);
+                    }
                 }
             }
         });
@@ -424,7 +429,8 @@ export default class RabbitClient {
         }
     }
 
-    public flushCache(isSync: boolean) {
+    public flushCache(data: { continue: boolean }) {
+        const { continue: isSync } = data;
         RabbitLoggerNormal.info("flush cache", {
             type: "cache",
             status: { isSync }

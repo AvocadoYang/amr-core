@@ -7,13 +7,15 @@ import { IO_EX, RES_EX } from '~/mq/type/type';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import logger from '~/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
-import { interval, throttleTime } from 'rxjs';
+import { interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
+import { Output, setIsRegistered } from '~/actions/status/output';
 
 
 class Status {
     private lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
+    private output$: Subject<Output> = new Subject();
     constructor(
         private rb: RBClient,
         private info: { amrId: string, isConnect: boolean },
@@ -92,7 +94,8 @@ class Status {
         });
 
         ROS.is_registered.subscribe(msg => {
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg))
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg));
+            this.output$.next(setIsRegistered({ isRegistered: msg }));
         });
 
         ROS.getVerityCargo$.subscribe((msg) => {
@@ -102,6 +105,10 @@ class Status {
 
 
         this.mock();
+    }
+
+    public subscribe(cb: (action: Output) => void) {
+        return this.output$.subscribe(cb);
     }
 
 

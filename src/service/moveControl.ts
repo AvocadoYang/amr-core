@@ -264,13 +264,13 @@ class MoveControl {
     const { payload } = action;
     switch (payload.cmd_id) {
       case CMD_ID.ARRIVE_LOC:
-        console.log(action, '@@@@')
+        // console.log(action, '@@@@')
         break;
       case CMD_ID.LEAVE_LOC:
-        console.log(action, '@@@@')
+        // console.log(action, '@@@@')
         break;
       case CMD_ID.REACH_GOAL:
-        console.log(action, '@@@@')
+        // console.log(action, '@@@@')
         break;
       default:
         break;
@@ -357,10 +357,12 @@ class MoveControl {
     return true
   }
 
-  public resetStatus() {
+  public resetStatus(trafficStatus: { occupied: string[], permitted: string[] }) {
+    const { occupied, permitted } = trafficStatus;
     this.occupy.length = 0;
     this.permitted.length = 0;
-    this.occupy.push(this.lastCurrentId);
+    occupied.forEach((loc) => this.occupy.push(loc));
+    permitted.forEach((loc) => this.permitted.push(loc));
   }
 
 
