@@ -60,6 +60,7 @@ class NetWorkManager {
         if (registerReturnCode.includes(return_code as ReturnCode)) {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
+            returnCode: return_code
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;

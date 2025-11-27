@@ -1,4 +1,4 @@
-import { filter, fromEventPattern, interval, merge, Subject, switchMap, take, takeUntil, tap, throttleTime } from "rxjs";
+import { concatMap, filter, fromEventPattern, interval, merge, Subject, switchMap, take, takeUntil, tap, throttleTime } from "rxjs";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
@@ -143,8 +143,13 @@ class MoveControl {
           status: { waitLeave: locationId },
         });
       }),
-      switchMap(() => {
-        return this.ws.isAwayObs.pipe(takeUntil(merge(this.cancelMission$, this.closeAwayLoc$)))
+      concatMap(({ locationId }) => {
+        return this.ws.isAwayObs
+          .pipe(
+            takeUntil(
+              merge(this.cancelMission$, this.closeAwayLoc$)),
+            filter(({ locationId: awayPoint }) => awayPoint == locationId)
+          )
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
       TCLoggerNormal.info(
