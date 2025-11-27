@@ -129,6 +129,7 @@ export default class Mission {
         });
 
         if (misType === "move") {
+          this.targetLoc = operation.locationId.toString();
           this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
           this.output$.next(sendStartMission());
         };

@@ -126,9 +126,9 @@ class MoveControl {
 
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
+      filter(({ isAllow }) => { return isAllow && !this.registering }),
       switchMap(() => {
-        return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
+        return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)), tap(() => { console.log('fnish is arrive') }))
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
       TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {

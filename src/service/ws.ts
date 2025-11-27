@@ -33,20 +33,27 @@ class WsServer {
 
     public onConnection(socket: Socket,) {
 
-        this.isArriveObs = fromEventPattern<{
-            locationId: string,
-            ack: (...args: any[]) => void;
-        }>((next) => socket.on("is_arrive", (msg, ack) => {
-            next({ ...JSON.parse(msg), ack });
-        }))
+        this.isArriveObs = fromEventPattern(
+            (next) => {
+                const handler = (msg, ack) => next({ ...JSON.parse(msg), ack });
+                socket.on("is_arrive", handler);
+                return handler;
+            },
+            (handler) => {
+                socket.off("is_arrive", handler);
+            }
+        );
 
-        this.isAwayObs = fromEventPattern<{
-            locationId: string,
-            ack: (...args: any[]) => void;
-        }>((next) => socket.on("is_away", (msg, ack) => {
-            next({ ...JSON.parse(msg), ack });
-        }))
-
+        this.isAwayObs = fromEventPattern(
+            (next) => {
+                const handler = (msg, ack) => next({ ...JSON.parse(msg), ack });
+                socket.on("is_away", handler);
+                return handler;
+            },
+            (handler) => {
+                socket.off("is_away", handler);
+            }
+        );
         this.output$.next(true)
 
 
