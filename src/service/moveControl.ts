@@ -239,11 +239,6 @@ class MoveControl {
           const { shortestPath, init } = payload;
           if (init) {
             this.initShortestPath = shortestPath;
-            // this.registering = true;
-            // this.permitted.push(shortestPath[0]);
-            setTimeout(() => {
-              ROS.sendShortestPath(this.rb, { shortestPath, id, amrId })
-            }, 1000);
           } else {
             ROS.sendShortestPath(this.rb, {
               shortestPath,
