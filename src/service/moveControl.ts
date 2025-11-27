@@ -24,9 +24,10 @@ class MoveControl {
   private registerSub$: Subject<boolean> = new Subject();
   private cancelMission$: Subject<boolean> = new Subject();
   private registering: boolean = false;
+  private initShortestPath: string[] = [];
 
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
-  private closeArriveLoc$: Subject<boolean> = new Subject();
+  private closeArriveLoc$: Subject<string> = new Subject();
 
   private closeAwayLoc$: Subject<boolean> = new Subject();
   constructor(
@@ -53,9 +54,26 @@ class MoveControl {
           group: "traffic",
           type: "register",
         });
+        this.registering = true
+        this.initShortestPath = [];
+        this.permitted.length = 0;
       }),
       switchMap(() => {
-        return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
+        return this.isAllowSub$.pipe(
+          filter(({ locationId, isAllow }) => {
+            if (!this.initShortestPath.length || !isAllow || locationId !== this.initShortestPath[0]) return false;
+            return true
+          }),
+          tap(() => {
+            this.permitted.push(this.initShortestPath[0]);
+            setTimeout(() => {
+              ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId })
+            }, 1000);
+          }),
+          switchMap(({ locationId }) => {
+            return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$.pipe(filter((arriveLoc) => arriveLoc == locationId)))))
+          })
+        )
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
       TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
@@ -95,14 +113,15 @@ class MoveControl {
           type: "register",
         }
       );
-      this.closeArriveLoc$.next(true);
+      this.closeArriveLoc$.next(nowPermittedLoc);
       this.registering = false;
+      this.initShortestPath = [];
     })
 
 
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow }) => { return isAllow }),
+      filter(({ isAllow }) => { return isAllow && !this.registering }),
       switchMap(() => {
         return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
       })
@@ -131,11 +150,11 @@ class MoveControl {
         this.permitted.pop();
       }
       ack({ return_code: ReturnCode.SUCCESS, locationId: nowPermittedLoc });
-      this.closeArriveLoc$.next(true);
+      this.closeArriveLoc$.next(nowPermittedLoc);
     });
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc }),
+      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
       tap(({ locationId }) => {
         TCLoggerNormal.info("create leave location obs", {
           group: "traffic",
@@ -219,8 +238,9 @@ class MoveControl {
         case CMD_ID.SHORTEST_PATH:
           const { shortestPath, init } = payload;
           if (init) {
-            this.registering = true;
-            this.permitted.push(shortestPath[0]);
+            this.initShortestPath = shortestPath;
+            // this.registering = true;
+            // this.permitted.push(shortestPath[0]);
             setTimeout(() => {
               ROS.sendShortestPath(this.rb, { shortestPath, id, amrId })
             }, 1000);
