@@ -90,13 +90,13 @@ class MoveControl {
       if (receiveLoc !== nowPermittedLoc) {
         const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc);
         if (!isSuccess) {
-          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc });
+          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, expect: nowPermittedLoc, receive: receiveLoc });
           this.permitted.pop()
           return;
         }
         this.emitReachGoal(nowPermittedLoc);
         this.registering = false;
-        ack({ return_code: ReturnCode.SUCCESS })
+        ack({ return_code: ReturnCode.SUCCESS, expect: nowPermittedLoc, receive: receiveLoc })
         TCLoggerNormal.info(
           `register success: Arrive location ${nowPermittedLoc}`,
           {
@@ -139,7 +139,7 @@ class MoveControl {
       if (receiveLoc !== nowPermittedLoc) {
         const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc)
         if (!isSuccess) {
-          ack({ return_code: ReturnCode.IS_AWAY_ERROR, locationId: nowPermittedLoc });
+          ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: nowPermittedLoc, receive: receiveLoc });
           return;
         }
         if (nowPermittedLoc == this.targetLoc) {
@@ -153,7 +153,7 @@ class MoveControl {
         this.occupy.push(nowPermittedLoc);
         this.permitted.pop();
       }
-      ack({ return_code: ReturnCode.SUCCESS, locationId: nowPermittedLoc });
+      ack({ return_code: ReturnCode.SUCCESS, expect: nowPermittedLoc, receive: receiveLoc });
       this.closeArriveLoc$.next(nowPermittedLoc);
     });
 
@@ -190,7 +190,7 @@ class MoveControl {
           type: "isAway",
           status: { occupy: this.occupy, permitted: this.permitted }
         });
-        ack({ locationId: "", return_code: ReturnCode.IS_AWAY_ERROR });
+        ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: "#", receive: receiveLoc });
         return;
       }
       const nowOccupiedLoc = this.occupy[0];
@@ -201,7 +201,7 @@ class MoveControl {
             type: "isAway",
             status: { permitted: this.permitted, occupy: this.occupy }
           });
-          return ack({ locationId: nowOccupiedLoc, return_code: ReturnCode.IS_AWAY_ERROR });;
+          return ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: nowOccupiedLoc, receive: receiveLoc });;
         }
       };
       for (let i = this.occupy.length - 1; i >= 0; i--) {
@@ -209,7 +209,7 @@ class MoveControl {
           this.occupy.splice(i, 1);
         }
       };
-      ack({ return_code: ReturnCode.SUCCESS, locationId: nowOccupiedLoc })
+      ack({ return_code: ReturnCode.SUCCESS, expect: nowOccupiedLoc, receive: receiveLoc })
       this.emitLeaveLoc(nowOccupiedLoc);
       this.closeAwayLoc$.next(nowOccupiedLoc)
 
