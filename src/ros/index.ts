@@ -142,49 +142,6 @@ export const getIOInfo$ = (() => {
 
 // ------------------------------------------------------------------------------ 交車主要交握
 
-// 傳送最佳路徑
-export const shortestPath = () => {
-  return (shortestPath$: Observable<{ shortestPath: string[] }>) => {
-    const service = new ROSLIB.Service({
-      ros,
-      name: "/fleet_manager/shortest_path",
-      serviceType: `kenmec_${config.AMR}_socket/shortest_path`,
-    });
-    return new Observable<{ result: boolean }>((subscriber) => {
-      shortestPath$.subscribe((shortest_Path) => {
-        TCLoggerNormal.info("send shortest path", {
-          group: "traffic",
-          type: "shortest path [req]",
-          status: shortest_Path.shortestPath
-        })
-        service.callService(
-          {
-            shortestPath: shortest_Path.shortestPath,
-          },
-          (data) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-            if (data.result as boolean) {
-              SOCKET.sendShortestIsReceived(data.result);
-            }
-
-            TCLoggerNormal.info(`receive shortest path response from ros service`, {
-              group: "traffic",
-              type: "shortest path [res]",
-              status: { serviceName: service.name, res: data }
-            })
-          },
-          (error: string) => {
-            TCLoggerNormalError.error(`Service request is failed `, {
-              group: "traffic",
-              type: "shortest path",
-              status: error
-            })
-          }
-        );
-      });
-    });
-  };
-};
 
 // 重新規劃路徑
 export const reroutePath = () => {
@@ -330,6 +287,62 @@ export const sendShortestPath = (() => {
   }
 })();
 
+
+export const sendReroutePath = (() => {
+  const service = new ROSLIB.Service({
+    ros,
+    name: "/fleet_manager/update_path",
+    serviceType: `kenmec_${config.AMR}_socket/update_path`,
+  });
+  return (rb: RBClient, data: { reroutePath: string[], id: string, amrId: string }) => {
+    const { reroutePath, id, amrId } = data;
+    TCLoggerNormal.info("send reroute path", {
+      group: "traffic",
+      type: "shortest path [req]",
+      status: reroutePath
+    });
+    service.callService(
+      {
+        shortestPath: reroutePath,
+      },
+      (data) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        if (data.result as boolean) {
+          rb.resPublish(
+            RES_EX,
+            `amr.res.${config.MAC}.promise.reroutePath`,
+            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REROUTE_PATH, id }),
+            { expiration: "10000" }
+          )
+          TCLoggerNormal.info(`receive reroute path response from ros service`, {
+            group: "traffic",
+            type: "reroute path [res]",
+            status: { serviceName: service.name, res: data }
+          });
+          return;
+        };
+      },
+      (error: string) => {
+        TCLoggerNormalError.error(`Service request is failed `, {
+          group: "traffic",
+          type: "reroute path",
+          status: error
+        });
+        rb.resPublish(
+          RES_EX,
+          `amr.res.${config.MAC}.promise.reroutePath`,
+          sendBaseResponse({
+            amrId, return_code: ReturnCode.reroutePathServiceFailed,
+            cmd_id: CMD_ID.REROUTE_PATH,
+            id
+          }),
+          { expiration: "10000" }
+        )
+      }
+    );
+  }
+})();
+
 export const sendIsAllowTarget = (() => {
   const service = new ROSLIB.Service({
     ros,
@@ -383,31 +396,8 @@ export const sendIsAllowTarget = (() => {
 })();
 
 
-export const allowTarget = (() => {
-  const service = new ROSLIB.Service({
-    ros,
-    name: "/fleet_manager/allow_path",
-    serviceType: `kenmec_${config.AMR}_socket/TrafficStatus`,
-  });
 
-  return (nextLocation: { locationId: string; isAllow: boolean }) => {
-    service.callService(
-      nextLocation,
-      (res) => {
-        if (!(res as { result: boolean }).result) {
-          return;
-        }
-      },
-      (error: string) => {
-        TCLoggerNormalError.error(`Service request is failed `, {
-          group: "traffic",
-          type: "isAllow",
-          status: error
-        })
-      }
-    );
-  };
-})();
+
 
 // 傳送寫入 主要是任務
 export const writeStatus = (() => {
@@ -439,6 +429,17 @@ export const writeStatus = (() => {
       },
     });
   };
+})();
+
+export const sendHasCargo = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${config.AMR}/is_cargo`,
+    messageType: "std_msgs/Bool",
+  })
+  return (msg: boolean) => {
+    topic.publish(msg)
+  }
 })();
 
 

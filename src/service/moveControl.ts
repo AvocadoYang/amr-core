@@ -276,7 +276,9 @@ class MoveControl {
             ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
           };
           this.isAllowSub$.next({ isAllow, locationId });
-
+          break;
+        case CMD_ID.REROUTE_PATH:
+          ROS.sendReroutePath(this.rb, { reroutePath: payload.reroutePath, id, amrId });
           break;
         default:
           break;

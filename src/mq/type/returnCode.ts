@@ -12,6 +12,7 @@ export enum ReturnCode {
     isAllowServiceFailed = "0002",
     IS_ARRIVE_ERROR = "0003",
     IS_AWAY_ERROR = "0005",
+    reroutePathServiceFailed = "0006"
 }
 
 

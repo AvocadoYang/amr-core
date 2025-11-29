@@ -53,7 +53,15 @@ class Status {
         });
 
         this.rb.onIOTransaction((action) => {
-            console.log(action);
+            const { payload } = action;
+            const { cmd_id } = payload;
+            switch (cmd_id) {
+                case CMD_ID.HAS_CARGO:
+                    ROS.sendHasCargo(payload.hasCargo);
+                    break;
+                default:
+                    break;
+            }
         })
 
         /** ROS subscribe */

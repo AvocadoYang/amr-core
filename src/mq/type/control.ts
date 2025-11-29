@@ -27,6 +27,14 @@ export type ShortestPath = {
 };
 export type SHORTEST_PATH = Base<ShortestPath>;
 
+export type ReroutePath = {
+    cmd_id: CMD_ID.REROUTE_PATH,
+    amrId: string,
+    id: string,
+    reroutePath: string[]
+}
+export type REROUTE_PATH = Base<ReroutePath>;
+
 export type IsAllowPath = {
     cmd_id: CMD_ID.ALLOW_PATH,
     amrId: string,
@@ -38,7 +46,8 @@ export type IS_ALLOW_PATH = Base<IsAllowPath>
 
 
 export type AllControl =
- REGISTER |
- SHORTEST_PATH |
- IS_ALLOW_PATH
+    REGISTER |
+    SHORTEST_PATH |
+    IS_ALLOW_PATH |
+    REROUTE_PATH
 
