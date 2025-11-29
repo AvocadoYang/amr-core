@@ -19,7 +19,9 @@ export enum CMD_ID {
   REACH_GOAL = "RG",
   ARRIVE_LOC = "AL",
   LEAVE_LOC = "LL",
-  REGISTERED = "RD"
+  REGISTERED = "RD",
+
+  HAS_CARGO = "HC"
 }
 export const fakeFeedBack = {
   task_process: 1,

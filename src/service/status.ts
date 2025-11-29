@@ -50,6 +50,10 @@ class Status {
                 default:
                     break;
             }
+        });
+
+        this.rb.onIOTransaction((action) => {
+            console.log(action);
         })
 
         /** ROS subscribe */

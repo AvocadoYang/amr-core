@@ -15,6 +15,7 @@ import { CMD_ID } from "./type/cmdId";
 import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile } from "./type/type";
 import { AllControl } from "./type/control";
 import { formatDate } from "~/helpers/system";
+import { AllIO } from "./type/ioFromQams";
 
 export default class RabbitClient {
     private url: string;
@@ -26,12 +27,14 @@ export default class RabbitClient {
     private bindingLogger: winston.Logger;
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private reqTransactionOutput$: Subject<AllReq> = new Subject();
+    private ioTransactionOutput$: Subject<AllIO> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
     private output$: Subject<Output>
 
     private controlCache: { timestamp: number, type: "CONTROL", msg: AllControl }[] = [];
     private requestCache: { timestamp: number, type: "REQUEST", msg: AllReq }[] = [];
     private responseCache: { timestamp: number, type: "RESPONSE", msg: AllRes }[] = [];
+    private ioCache: { timestamp: number, type: "IO", msg: AllIO }[] = [];
 
     private pendingMessages: {
         exchange: string;
@@ -304,6 +307,10 @@ export default class RabbitClient {
         await this.createExchange(IO_EX, "topic", { durable: true });
         await this.createExchange(CONTROL_EX, "topic", { durable: true });
 
+        const ioQFromQAMS = `amr.${config.MAC}.io.form.qams.queue`;
+        await this.createQueue(ioQFromQAMS, { durable: true });
+        await this.bindQueue(ioQFromQAMS, IO_EX, `amr.${config.MAC}.io.from.qams.*`);
+
 
         const reqQName = `amr.${config.MAC}.req.queue`;
         await this.createQueue(reqQName, { durable: true });
@@ -335,6 +342,14 @@ export default class RabbitClient {
                 this.reqTransactionOutput$.next(msg);
 
             }
+        });
+
+        this.consume<AllIO>(ioQFromQAMS, (msg) => {
+            if (!this.info.isConnect) {
+                this.ioCache.push({ timestamp: Date.now(), type: "IO", msg });
+            } else {
+                this.ioTransactionOutput$.next(msg);
+            }
         })
 
         this.consume<AllRes>(responseQName, (msg) => {
@@ -359,6 +374,10 @@ export default class RabbitClient {
 
     public onControlTransaction(cb: (action: AllControl) => void) {
         return this.controlTransactionOutput$.subscribe(cb);
+    }
+
+    public onIOTransaction(cb: (action: AllIO) => void) {
+        return this.ioTransactionOutput$.subscribe(cb)
     }
 
     public subscribe(cb: (action: Output) => void) {
@@ -437,7 +456,7 @@ export default class RabbitClient {
             status: { isSync }
         })
         if (isSync) {
-            const msg = [...this.controlCache, ...this.requestCache, ...this.responseCache]
+            const msg = [...this.controlCache, ...this.requestCache, ...this.responseCache, ...this.ioCache.slice(-30)]
                 .flat()
                 .sort((a, b) => a.timestamp - b.timestamp);
             msg.forEach((data) => {
