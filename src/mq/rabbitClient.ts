@@ -197,6 +197,7 @@ export default class RabbitClient {
         const buffer = Buffer.from(sMsg);
 
         try {
+            if (!this.info.isConnect) return;
             await this.publishWithRetry(exchangeName, routingKey, buffer, flag);
 
             // 發送成功才記錄 transaction
