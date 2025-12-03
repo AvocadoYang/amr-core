@@ -214,7 +214,12 @@ class MoveControl {
           this.registerSub$.next(true);
           break;
         case CMD_ID.SHORTEST_PATH:
-          const { shortestPath, init } = payload;
+          const { shortestPath, init, rotateFlag } = payload;
+          TCLoggerNormal.info("send shortest path", {
+            group: "traffic",
+            type: "shortest path [req]",
+            status: { shortestPath, rotateFlag }
+          });
 
           if (init) {
             this.initShortestPath = shortestPath;
@@ -251,6 +256,11 @@ class MoveControl {
           this.isAllowSub$.next({ isAllow, locationId });
           break;
         case CMD_ID.REROUTE_PATH:
+          TCLoggerNormal.info("send reroute path", {
+            group: "traffic",
+            type: "shortest path [req]",
+            status: { reroutePath: payload.reroutePath, rotateFlag: payload.rotateFlag }
+          });
           ROS.sendReroutePath(this.rb, { reroutePath: payload.reroutePath, id, amrId });
           break;
         default:

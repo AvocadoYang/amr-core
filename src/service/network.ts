@@ -43,7 +43,6 @@ class NetWorkManager {
     })
     while (true) {
       try {
-
         const { data } = await axios.post(
           `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
           serialNumber: config.MAC,

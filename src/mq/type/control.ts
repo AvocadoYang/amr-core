@@ -23,6 +23,7 @@ export type ShortestPath = {
     amrId: string,
     id: string,
     shortestPath: string[],
+    rotateFlag: number[],
     init: boolean
 };
 export type SHORTEST_PATH = Base<ShortestPath>;
@@ -31,7 +32,8 @@ export type ReroutePath = {
     cmd_id: CMD_ID.REROUTE_PATH,
     amrId: string,
     id: string,
-    reroutePath: string[]
+    reroutePath: string[],
+    rotateFlag: number[],
 }
 export type REROUTE_PATH = Base<ReroutePath>;
 

@@ -240,11 +240,6 @@ export const sendShortestPath = (() => {
 
   return (rb: RBClient, data: { shortestPath: string[], id: string, amrId: string }) => {
     const { shortestPath, id, amrId } = data;
-    TCLoggerNormal.info("send shortest path", {
-      group: "traffic",
-      type: "shortest path [req]",
-      status: shortestPath
-    });
     service.callService(
       {
         shortestPath: shortestPath,
@@ -296,11 +291,6 @@ export const sendReroutePath = (() => {
   });
   return (rb: RBClient, data: { reroutePath: string[], id: string, amrId: string }) => {
     const { reroutePath, id, amrId } = data;
-    TCLoggerNormal.info("send reroute path", {
-      group: "traffic",
-      type: "shortest path [req]",
-      status: reroutePath
-    });
     service.callService(
       {
         shortestPath: reroutePath,
