@@ -94,6 +94,7 @@ export default class Mission {
             ? { mid: this.lastSendGoalId, dest: this.targetLoc, mission: copyMsg }
             : { mid: this.lastSendGoalId, mission: copyMsg },
       });
+      this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
 
       if (this.missionType == "move") {
         //sendTargetLoc
@@ -149,8 +150,6 @@ export default class Mission {
         break;
       case CMD_ID.WRITE_CANCEL:
         this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
-
-        this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
 
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         this.rb.resPublish(

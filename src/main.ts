@@ -67,12 +67,14 @@ class AmrCore {
 
     this.netWorkManager.subscribe(async (action) => {
       const { amrId } = action;
+
       switch (action.type) {
         case IS_CONNECTED:
           const return_code = action.return_code
           if (return_code === ReturnCode.SUCCESS) {
             this.rb.flushCache({ continue: true });
-          } else if (
+          }
+          else if (
             (return_code === ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL) || (return_code === ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER)
           ) {
             if (this.ms.lastSendGoalId) {
@@ -81,7 +83,8 @@ class AmrCore {
               this.mc.resetStatus(action.trafficStatus);
             };
             this.rb.flushCache({ continue: false });
-          } else if (
+          }
+          else if (
             return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM
           ) {
             SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
@@ -227,7 +230,6 @@ class AmrCore {
             );
           } else {
             this.info.isConnect = false;
-            console.log('???????????@@@@@@@@@@@@@')
             return from(this.retryConnectWithDelay(1500)).pipe(
               catchError((err) => {
                 TCLoggerNormalWarning.warn(`reconnect failed: ${err}`);

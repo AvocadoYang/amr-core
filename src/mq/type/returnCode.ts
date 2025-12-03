@@ -2,6 +2,7 @@ export enum ReturnCode {
     SUCCESS = "0000",
     UNDELIVERABLE = "1111",
 
+    NORMAL_REGISTER = "3000",
     REGISTER_FORMAT_ERROR = "3333",
     REGISTER_ERROR_NOT_IN_SYSTEM = "3334",
     REGISTER_ERROR_AMR_NOT_REGISTER = "3332",
@@ -16,6 +17,7 @@ export enum ReturnCode {
 
 export const registerReturnCode = [
     ReturnCode.SUCCESS,
+    ReturnCode.NORMAL_REGISTER,
     ReturnCode.REGISTER_FORMAT_ERROR,
     ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM,
     ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER,

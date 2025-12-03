@@ -123,7 +123,6 @@ class MoveControl {
         }
       } else {
         this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
-        console.log(this.targetLoc, '@@@@@@@@@@@@@@@@@@@')
         if (nowPermittedLoc == this.targetLoc) {
           this.emitReachGoal(this.targetLoc);
         }
@@ -363,11 +362,15 @@ class MoveControl {
   }
 
   public resetStatus(trafficStatus: { occupied: string[], permitted: string[] }) {
-    const { occupied, permitted } = trafficStatus;
+    const { occupied: tc_occupied, permitted: tc_permitted } = trafficStatus;
+    TCLoggerNormal.info(`reset operator status`, {
+      type: "operator",
+      status: { tc_op: { occupy: tc_occupied, permitted: tc_permitted }, amr_op: { occupy: this.occupy, permitted: this.permitted } }
+    })
     this.occupy.length = 0;
     this.permitted.length = 0;
-    occupied.forEach((loc) => this.occupy.push(loc));
-    permitted.forEach((loc) => this.permitted.push(loc));
+    tc_occupied.forEach((loc) => this.occupy.push(loc));
+    tc_permitted.forEach((loc) => this.permitted.push(loc));
   }
 
 
