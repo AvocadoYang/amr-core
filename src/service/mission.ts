@@ -1,7 +1,7 @@
 import { interval, Subject } from "rxjs";
 import * as ROS from '../ros'
 import config from "../configs";
-import { Output, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
+import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
 import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
@@ -60,6 +60,7 @@ export default class Mission {
       };
 
       this.executing = true;
+      this.output$.next(sendAmrHasMission({ hasMission: true }))
 
       this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
@@ -104,6 +105,7 @@ export default class Mission {
         persistent: true
       });
       this.updateStatue({ missionType: "", targetLoc: "" });
+      this.output$.next(sendAmrHasMission({ hasMission: false }))
 
       this.executing = false;
     });
@@ -128,6 +130,7 @@ export default class Mission {
         });
 
         if (misType === "move") {
+          this.targetLoc = operation.locationId.toString();
           this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
           this.output$.next(sendStartMission());
         };
@@ -157,6 +160,7 @@ export default class Mission {
           `amr.res.${config.MAC}.promise.writeCancel`,
           sendBaseResponse({ cmd_id, return_code: ReturnCode.SUCCESS, amrId, id })
         );
+        this.output$.next(sendAmrHasMission({ hasMission: false }))
 
         break;
       default:

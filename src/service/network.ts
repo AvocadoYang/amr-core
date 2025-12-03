@@ -15,8 +15,6 @@ import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 
 class NetWorkManager {
 
-  public amrIsRegistered: boolean = false;
-
   private ros_bridge_error_log = true
   private ros_bridge_close_log = true
   private fleet_connect_log = true
@@ -28,7 +26,9 @@ class NetWorkManager {
   private lastTransactionId: string = "";
   private lastMissionType: string = "";
 
-  constructor() {
+  constructor(
+    private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+  ) {
     this.output$ = new Subject();
   }
 
@@ -50,7 +50,7 @@ class NetWorkManager {
           lastSendGoalId: this.lastSendGoalId,
           lastTransaction: this.lastTransactionId,
           lastMissionType: this.lastMissionType,
-          amrIsRegistered: this.amrIsRegistered,
+          amrIsRegistered: this.amrStatus.amrIsRegistered,
           timeout: 5000
         });
 

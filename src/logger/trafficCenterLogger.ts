@@ -43,7 +43,7 @@ const TCNormalFormatter =
       delete meta.group
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group) : group} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
         `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -71,7 +71,7 @@ const TCNormalFormatterWrong =
       delete meta.group;
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group) : group} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
         `${isLog ? WRANG('[warn]') : '[warn]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -100,7 +100,7 @@ const TCNormalFormatterError =
 
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group) : group} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
         `${isLog ? ERROR('[error]') : '[error]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length

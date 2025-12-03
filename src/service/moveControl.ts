@@ -24,11 +24,12 @@ class MoveControl {
   private registerSub$: Subject<boolean> = new Subject();
   private cancelMission$: Subject<boolean> = new Subject();
   private registering: boolean = false;
+  private initShortestPath: string[] = [];
 
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
-  private closeArriveLoc$: Subject<boolean> = new Subject();
+  private closeArriveLoc$: Subject<string> = new Subject();
 
-  private closeAwayLoc$: Subject<boolean> = new Subject();
+  private closeAwayLoc$: Subject<string> = new Subject();
   constructor(
     private rb: RBClient,
     private ws: WsServer,
@@ -53,141 +54,138 @@ class MoveControl {
           group: "traffic",
           type: "register",
         });
+        this.registering = true
+        this.initShortestPath = [];
+        this.permitted.length = 0;
       }),
       switchMap(() => {
-        return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
+        return this.isAllowSub$.pipe(
+          filter(({ locationId, isAllow }) => {
+            if (!this.initShortestPath.length || !isAllow || locationId !== this.initShortestPath[0]) return false;
+            return true
+          }),
+          tap(() => {
+            this.permitted.push(this.initShortestPath[0]);
+            setTimeout(() => {
+              ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId })
+            }, 1000);
+          }),
+          switchMap(({ locationId }) => {
+            return this.ws.isArriveObs.pipe(
+              takeUntil(
+                merge(
+                  this.cancelMission$,
+                  this.closeArriveLoc$.pipe(filter((arriveLoc) => arriveLoc == locationId), tap(() => { console.log("complete arrive") }))
+                )))
+          })
+        )
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
-      TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
-        group: "traffic",
-        type: "isArrive",
-      });
       const nowPermittedLoc = this.permitted[0];
 
-      if (receiveLoc !== nowPermittedLoc) {
-        const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc);
-        if (!isSuccess) {
-          ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, locationId: nowPermittedLoc });
-          this.permitted.pop()
-          return;
-        }
-        this.emitReachGoal(nowPermittedLoc);
-        this.registering = false;
-        ack({ return_code: ReturnCode.SUCCESS })
-        TCLoggerNormal.info(
-          `register success: Arrive location ${nowPermittedLoc}`,
-          {
-            group: "traffic",
-            type: "register",
-          }
-        );
+      if (receiveLoc !== nowPermittedLoc && !this.abnormalProcess({ receiveLoc, nowPermittedLoc, type: "is_arrive" })) {
+        ack({ return_code: ReturnCode.IS_ARRIVE_ERROR, expect: nowPermittedLoc, receive: receiveLoc });
+        this.permitted.pop();
+        this.closeArriveLoc$.next(nowPermittedLoc);
+        return;
       }
 
       this.occupy.push(nowPermittedLoc);
       this.permitted.pop();
+      ack({ return_code: ReturnCode.SUCCESS, expect: nowPermittedLoc, receive: receiveLoc });
 
       this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
       this.emitReachGoal(nowPermittedLoc);
       TCLoggerNormal.info(
-        `register success: Arrive location: ${nowPermittedLoc}`,
+        `register success: receive arrive location: ${nowPermittedLoc}`,
         {
           group: "traffic",
           type: "register",
+          status: { occupy: this.occupy, permitted: this.permitted }
         }
       );
-      this.closeArriveLoc$.next(true);
+      this.closeArriveLoc$.next(nowPermittedLoc);
       this.registering = false;
+      this.initShortestPath = [];
     })
 
 
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow }) => { return isAllow }),
+      filter(({ isAllow }) => { return isAllow && !this.registering }),
       switchMap(() => {
         return this.ws.isArriveObs.pipe(takeUntil(merge(this.cancelMission$, this.closeArriveLoc$)))
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
+      const nowPermittedLoc = this.permitted[0];
+      if (receiveLoc !== nowPermittedLoc && !this.abnormalProcess({ receiveLoc, nowPermittedLoc, type: "is_arrive" })) {
+        ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: nowPermittedLoc, receive: receiveLoc });
+        return;
+      }
+
+      this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
+      if (nowPermittedLoc == this.targetLoc) this.emitReachGoal(this.targetLoc);
+      this.occupy.push(this.permitted.shift());
+
+      ack({ return_code: ReturnCode.SUCCESS, expect: nowPermittedLoc, receive: receiveLoc });
+
       TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
         group: "traffic",
-        type: "isArrive",
+        type: "is_arrive",
+        status: { occupy: this.occupy, permitted: this.permitted }
       });
-      const nowPermittedLoc = this.permitted[0];
-      if (receiveLoc !== nowPermittedLoc) {
-        const isSuccess = this.abnormalProcess(receiveLoc, nowPermittedLoc)
-        if (!isSuccess) {
-          ack({ return_code: ReturnCode.IS_AWAY_ERROR, locationId: nowPermittedLoc });
-          return;
-        }
-        if (nowPermittedLoc == this.targetLoc) {
-          this.emitReachGoal(this.targetLoc);
-        }
-      } else {
-        this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
-        if (nowPermittedLoc == this.targetLoc) {
-          this.emitReachGoal(this.targetLoc);
-        }
-        this.occupy.push(nowPermittedLoc);
-        this.permitted.pop();
-      }
-      ack({ return_code: ReturnCode.SUCCESS, locationId: nowPermittedLoc });
-      this.closeArriveLoc$.next(true);
+
+      this.closeArriveLoc$.next(nowPermittedLoc);
     });
 
     this.isAllowSub$.pipe(
-      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc }),
-      tap(({ locationId }) => {
+      filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
+      concatMap(({ locationId }) => {
         TCLoggerNormal.info("create leave location obs", {
           group: "traffic",
           type: "create leave obs",
           status: { waitLeave: locationId },
         });
-      }),
-      concatMap(({ locationId }) => {
         return this.ws.isAwayObs
           .pipe(
+            filter(({ locationId: awayPoint }) => awayPoint == locationId),
             takeUntil(
-              merge(this.cancelMission$, this.closeAwayLoc$)),
-            filter(({ locationId: awayPoint }) => awayPoint == locationId)
+              merge(this.cancelMission$, this.closeAwayLoc$.pipe(filter((loc) => loc == locationId)))
+            )
           )
       })
     ).subscribe(({ locationId: receiveLoc, ack }) => {
-      TCLoggerNormal.info(
-        `receive leave location ${receiveLoc}`,
-        {
-          group: "traffic",
-          type: "isAway"
-        }
-      );
 
       if (!this.occupy.length) {
-        TCLoggerNormalWarning.warn(`occupied array is empty`, {
+        TCLoggerNormalWarning.warn(`receive leave location, but occupied array is empty`, {
           group: "traffic",
-          type: "isAway",
+          type: "is_away ",
           status: { occupy: this.occupy, permitted: this.permitted }
         });
-        ack({ locationId: "", return_code: ReturnCode.IS_AWAY_ERROR });
+        ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: "#", receive: receiveLoc });
         return;
       }
       const nowOccupiedLoc = this.occupy[0];
-      if (receiveLoc !== nowOccupiedLoc) {
-        if (!this.inTolerance(nowOccupiedLoc, receiveLoc)) {
-          TCLoggerNormalError.error(`receive location: ${receiveLoc} is greater than tolerance with ${nowOccupiedLoc}`, {
-            group: "traffic",
-            type: "isAway",
-            status: { permitted: this.permitted, occupy: this.occupy }
-          });
-          return ack({ locationId: nowOccupiedLoc, return_code: ReturnCode.IS_AWAY_ERROR });;
-        }
+      if (receiveLoc !== nowOccupiedLoc && !this.abnormalProcess({ receiveLoc, nowPermittedLoc: nowOccupiedLoc, type: "is_away" })) {
+        return ack({ return_code: ReturnCode.IS_AWAY_ERROR, expect: nowOccupiedLoc, receive: receiveLoc });;
       };
+
       for (let i = this.occupy.length - 1; i >= 0; i--) {
         if (this.occupy[i] === nowOccupiedLoc) {
           this.occupy.splice(i, 1);
         }
       };
-      ack({ return_code: ReturnCode.SUCCESS, locationId: nowOccupiedLoc })
+      TCLoggerNormal.info(
+        `receive leave location ${receiveLoc}`,
+        {
+          group: "traffic",
+          type: "is_away",
+          status: { occupy: this.occupy, permitted: this.permitted }
+        }
+      );
+      ack({ return_code: ReturnCode.SUCCESS, expect: nowOccupiedLoc, receive: receiveLoc })
       this.emitLeaveLoc(nowOccupiedLoc);
-      this.closeAwayLoc$.next(true)
-
+      this.closeAwayLoc$.next(nowOccupiedLoc)
     })
 
 
@@ -217,12 +215,9 @@ class MoveControl {
           break;
         case CMD_ID.SHORTEST_PATH:
           const { shortestPath, init } = payload;
+
           if (init) {
-            this.registering = true;
-            this.permitted.push(shortestPath[0]);
-            setTimeout(() => {
-              ROS.sendShortestPath(this.rb, { shortestPath, id, amrId })
-            }, 1000);
+            this.initShortestPath = shortestPath;
           } else {
             ROS.sendShortestPath(this.rb, {
               shortestPath,
@@ -244,17 +239,19 @@ class MoveControl {
               }),
               { expiration: "3000" }
             )
+          } else {
+            this.permitted.push(locationId)
+            ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
           };
-
-          TCLoggerNormal.info("receive isAllow message", {
+          TCLoggerNormal.info("receive allow location message", {
             group: "traffic",
-            type: "isAllow",
-            status: { isAllow, locationId }
+            type: "is_allow",
+            status: { isAllow, locationId, occupy: this.occupy, permitted: this.permitted }
           });
-          this.permitted.push(locationId)
-
           this.isAllowSub$.next({ isAllow, locationId });
-          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
+          break;
+        case CMD_ID.REROUTE_PATH:
+          ROS.sendReroutePath(this.rb, { reroutePath: payload.reroutePath, id, amrId });
           break;
         default:
           break;
@@ -321,7 +318,7 @@ class MoveControl {
       }
     }).filter(({ locationId }) => locationId == a || locationId == b);
 
-    if (ComparLocs.length < 2) return false;
+    if (ComparLocs.length < 2) return { canPass: false, dist: -1 };
 
     const [locA, locB] = ComparLocs;
     const { x: x1, y: y1 } = locA;
@@ -332,9 +329,9 @@ class MoveControl {
 
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance <= 1.5) return true
+    if (distance <= 1.5) return { canPass: true, dist: distance }
 
-    return false;
+    return { canPass: false, dist: distance };
 
   }
 
@@ -345,19 +342,17 @@ class MoveControl {
     }
   }
 
-  private abnormalProcess(receiveLoc, nowPermittedLoc) {
-    if (!this.inTolerance(nowPermittedLoc, receiveLoc)) {
-      TCLoggerNormalError.error(`receive location: ${receiveLoc} is greater than tolerance with ${nowPermittedLoc}`, {
+  private abnormalProcess(data: { receiveLoc: string, nowPermittedLoc: string, type: string }) {
+    const { receiveLoc, nowPermittedLoc, type } = data;
+    const { canPass, dist } = this.inTolerance(nowPermittedLoc, receiveLoc);
+    if (!canPass) {
+      TCLoggerNormalError.error(`receive location: ${receiveLoc} is greater than tolerance with ${nowPermittedLoc} by ${dist}m`, {
         group: "traffic",
-        type: "isArrive",
+        type,
         status: { permitted: this.permitted, occupy: this.occupy }
       })
       return false;
-    } else {
-      this.occupy.push(nowPermittedLoc);
-      this.permitted.pop();
-      this.emitArriveLoc({ isArrive: true, locationId: nowPermittedLoc });
-    };
+    }
     return true
   }
 

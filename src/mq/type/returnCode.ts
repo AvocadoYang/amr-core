@@ -12,6 +12,7 @@ export enum ReturnCode {
     isAllowServiceFailed = "0002",
     IS_ARRIVE_ERROR = "0003",
     IS_AWAY_ERROR = "0005",
+    reroutePathServiceFailed = "0006"
 }
 
 
@@ -21,6 +22,7 @@ export const registerReturnCode = [
     ReturnCode.REGISTER_FORMAT_ERROR,
     ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM,
     ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER,
-    ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL
+    ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL,
+    ReturnCode.NORMAL_REGISTER
 ]
 

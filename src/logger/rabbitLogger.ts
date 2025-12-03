@@ -38,7 +38,7 @@ const RabbitNormalFormatter =
             delete meta.type;
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-                `${isLog ? AMR_ID_COLOR('rabbitmq') : 'rabbitmq'} ` +
+                `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(10, " ")) : 'rabbitmq'.padEnd(10, " ")} ` +
                 `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
@@ -64,7 +64,7 @@ const RabbitDebugFormatter =
             delete meta.type;
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-                `${isLog ? AMR_ID_COLOR('rabbitmq') : 'rabbitmq'} ` +
+                `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(10, " ")) : 'rabbitmq'.padEnd(10, " ")} ` +
                 `${isLog ? DEBUG('[message]') : '[message]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
@@ -90,7 +90,7 @@ const RabbitBindingFormatter =
             delete meta.type;
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-                `${isLog ? AMR_ID_COLOR('rabbitmq') : 'rabbitmq'} ` +
+                `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(10, " ")) : 'rabbitmq'.padEnd(10, " ")} ` +
                 `${isLog ? DEBUG('[binding]') : '[binding]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
@@ -116,7 +116,7 @@ const RabbitNormalFormatterWrong =
             delete meta.type;
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-                `${isLog ? AMR_ID_COLOR('rabbitmq') : 'rabbitmq'} ` +
+                `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(10, " ")) : 'rabbitmq'.padEnd(10, " ")} ` +
                 `${isLog ? WRANG('[warn]') : '[warn]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
@@ -142,7 +142,7 @@ const RabbitNormalFormatterError =
             delete meta.type;
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-                `${isLog ? AMR_ID_COLOR('rabbitmq') : 'rabbitmq'} ` +
+                `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(10, " ")) : 'rabbitmq'.padEnd(10, " ")} ` +
                 `${isLog ? ERROR('[error]') : '[error]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
