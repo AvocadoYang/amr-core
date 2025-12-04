@@ -341,7 +341,6 @@ export default class RabbitClient {
                 this.requestCache.push({ timestamp: Date.now(), type: "REQUEST", msg });
             } else {
                 this.reqTransactionOutput$.next(msg);
-
             }
         });
 

@@ -82,6 +82,7 @@ class Status {
         });
 
         ROS.getAmrError$.subscribe((msg: { data: string }) => {
+
             const jMsg = JSON.parse(msg.data) as {
                 warning_msg: string[];
                 warning_id: string[];

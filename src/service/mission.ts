@@ -20,7 +20,8 @@ export default class Mission {
 
   constructor(
     private rb: RBClient,
-    private info: { amrId: string, isConnect: boolean }
+    private info: { amrId: string, isConnect: boolean },
+    private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
   ) {
     this.output$ = new Subject();
 
@@ -47,6 +48,7 @@ export default class Mission {
     ROS.getFeedbackFromMoveAction$.subscribe((Feedback) => {
       const { status, feedback } = Feedback;
       const actionId = status.goal_id.id;
+      this.amrStatus.amrHasMission = true;
 
       if (this.lastSendGoalId !== actionId) {
         TCLoggerNormalError.error(
@@ -108,6 +110,7 @@ export default class Mission {
       this.output$.next(sendAmrHasMission({ hasMission: false }))
 
       this.executing = false;
+      this.amrStatus.amrHasMission = false;
     });
 
   }

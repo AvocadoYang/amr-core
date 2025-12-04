@@ -4,7 +4,7 @@ import { cleanEnv, str } from "envalid";
 import { MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
 import { BehaviorSubject, catchError, from, interval, map, of, Subject, switchMap, tap } from "rxjs";
-import { IS_CONNECTED } from "./actions/networkManager/output";
+import { IS_CONNECTED, isConnected } from "./actions/networkManager/output";
 import { TCLoggerNormal, TCLoggerNormalWarning } from "./logger/trafficCenterLogger";
 import { CMD_ID } from "./mq/type/cmdId";
 import { isDifferentPose, formatPose, SimplePose } from "./helpers";
@@ -34,7 +34,7 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
-
+  private stillWorking = false;
   private isConnectWithQAMS$ = new Subject<boolean>();
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeatTime: number = 0;
@@ -53,15 +53,16 @@ class AmrCore {
     this.rb = new RBClient(this.info);
     this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager(this.amrStatus);
-    this.ms = new MissionManager(this.rb, this.info);
+    this.ms = new MissionManager(this.rb, this.info, this.amrStatus);
     this.st = new Status(this.rb, this.info, this.map);
     this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
 
 
     this.ws.subscribe(async (isConnect) => {
-      if (isConnect) {
+      if (isConnect && !this.stillWorking) {
         await amrCore.init();
         amrCore.monitorHeartbeat();
+        this.stillWorking = true;
       }
     });
 
@@ -71,58 +72,10 @@ class AmrCore {
 
       switch (action.type) {
         case IS_CONNECTED:
-          const return_code = action.return_code
-          if (return_code === ReturnCode.SUCCESS) {
-            this.rb.flushCache({ continue: true });
-          }
-          else if (return_code === ReturnCode.NORMAL_REGISTER) {
-            this.rb.flushCache({ continue: false });
-            this.mc.resetStatus(action.trafficStatus);
-          }
-          else if (
-            (return_code === ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL) || (return_code === ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER)
-          ) {
-            if (this.ms.lastSendGoalId) {
-              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-              this.mc.resetStatus(action.trafficStatus);
-            };
-            this.rb.flushCache({ continue: false });
-          }
-          else if (
-            return_code === ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM
-          ) {
-            SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
-              type: "register",
-            });
-            if (this.ms.lastSendGoalId) {
-              ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-              this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-              this.mc.resetStatus(action.trafficStatus);
-            };
-            this.rb.flushCache({ continue: false });
-          };
-
-
           try {
-            const return_code = action.return_code
-            if (return_code === ReturnCode.SUCCESS) {
-              this.rb.flushCache({ continue: true });
-            } else {
-              if (this.ms.lastSendGoalId) {
-                ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-                this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-                this.mc.resetStatus(action.trafficStatus);
-              };
-              if (this.amrStatus.amrHasMission) {
-                ROS.cancelCarStatusAnyway("##");
-              }
-              this.rb.flushCache({ continue: false })
-            };
-
+            this.registerProcess(action)
             this.info.amrId = action.amrId;
             this.info.isConnect = true;
-
             this.isConnectWithQAMS$.next(action.isConnected);
             this.lastHeartbeatTime = Date.now();
             const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
@@ -207,7 +160,7 @@ class AmrCore {
         case CMD_ID.READ_STATUS:
           break;
         case CMD_ID.CARGO_VERITY:
-          console.log(action, '@@@@@@@')
+          // console.log(action, '@@@@@@@')
           break;
         default:
           break;
@@ -273,6 +226,52 @@ class AmrCore {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
 
     await this.netWorkManager.fleetConnect();
+  }
+
+
+  private registerProcess(action: ReturnType<typeof isConnected>) {
+    const { return_code } = action;
+    switch (return_code) {
+      case ReturnCode.SUCCESS:
+        this.rb.flushCache({ continue: true });
+        break;
+      /** */
+      case ReturnCode.NORMAL_REGISTER:
+        this.rb.flushCache({ continue: false });
+        this.mc.resetStatus(action.trafficStatus);
+        this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+        if (this.amrStatus.amrHasMission) ROS.cancelCarStatusAnyway("#")
+        break;
+      /** */
+      case ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL:
+        if (this.ms.lastTransactionId) {
+          ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
+          this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+          this.mc.resetStatus(action.trafficStatus);
+        };
+        this.rb.flushCache({ continue: false });
+        break;
+      /** */
+      case ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER:
+        this.rb.flushCache({ continue: false });
+        break;
+      /**  */
+      case ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM:
+        SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
+          type: "register",
+        });
+        if (this.ms.lastSendGoalId) {
+          ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
+          this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
+          this.mc.resetStatus(action.trafficStatus);
+        };
+        this.rb.flushCache({ continue: false });
+        break;
+
+      default:
+        break;
+
+    }
   }
 
 

@@ -41,7 +41,7 @@ const SysNormalFormatter =
       delete meta.type;
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR('system'.padEnd(10, " ")) : 'system'.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR('sys'.padEnd(10, " ")) : 'sys'.padEnd(10, " ")} ` +
         `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -67,7 +67,7 @@ const SysNormalFormatterWrong =
       delete meta.type;
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR('system'.padEnd(10, " ")) : 'system'.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR('sys'.padEnd(10, " ")) : 'sys'.padEnd(10, " ")} ` +
         `${isLog ? WRANG('[warn]') : '[warn]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -94,7 +94,7 @@ const SysNormalFormatterError =
 
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR('system'.padEnd(10, " ")) : 'system'.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR('sys'.padEnd(10, " ")) : 'sys'.padEnd(10, " ")} ` +
         `${isLog ? ERROR('[error]') : '[error]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length

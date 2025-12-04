@@ -552,10 +552,12 @@ export const currentId$ = (() => {
     messageType: "std_msgs/Int32",
   });
 
-  return fromEventPattern<string>((next) =>
-    topic.subscribe((msg) => {
+  return fromEventPattern<string>((next) => {
+    return topic.subscribe((msg) => {
       next(schema.validateSync(msg).data);
     })
+  }
+
   );
 })();
 
@@ -580,7 +582,7 @@ export const currentPoseAccurate$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: "/kenmec_fork/localization_check",
+    name: `/kenmec_${config.AMR}/localization_check`,
     messageType: "std_msgs/Bool",
   });
 

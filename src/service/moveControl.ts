@@ -218,7 +218,7 @@ class MoveControl {
           TCLoggerNormal.info("send shortest path", {
             group: "traffic",
             type: "shortest path [req]",
-            status: { shortestPath, rotateFlag }
+            status: { shortestPath, rotateFlag, init }
           });
 
           if (init) {
@@ -251,7 +251,7 @@ class MoveControl {
           TCLoggerNormal.info("receive allow location message", {
             group: "traffic",
             type: "is_allow",
-            status: { isAllow, locationId, occupy: this.occupy, permitted: this.permitted }
+            status: { isAllow, locationId, occupy: this.occupy, permitted: this.permitted, registering: this.registering }
           });
           this.isAllowSub$.next({ isAllow, locationId });
           break;
@@ -370,6 +370,7 @@ class MoveControl {
     const { occupied: tc_occupied, permitted: tc_permitted } = trafficStatus;
     TCLoggerNormal.info(`reset operator status`, {
       type: "operator",
+      group: "mc",
       status: { tc_op: { occupy: tc_occupied, permitted: tc_permitted }, amr_op: { occupy: this.occupy, permitted: this.permitted } }
     })
     this.occupy.length = 0;
