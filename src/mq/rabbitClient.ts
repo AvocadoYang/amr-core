@@ -336,7 +336,7 @@ export default class RabbitClient {
         });
 
         this.consume<AllReq>(reqQName, (msg) => {
-            if (msg.payload.cmd_id == CMD_ID.HEARTBEAT) console.log(msg.payload, '???????????')
+            // if (msg.payload.cmd_id == CMD_ID.HEARTBEAT) console.log(msg.payload, '???????????')
             if (!this.info.isConnect) {
                 this.requestCache.push({ timestamp: Date.now(), type: "REQUEST", msg });
             } else {

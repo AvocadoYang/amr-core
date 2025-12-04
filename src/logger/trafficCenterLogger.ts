@@ -38,7 +38,9 @@ const TCNormalFormatter =
       };
     }) => {
       const meta = input.metadata;
-      const { type, group } = meta;
+      let { type, group } = meta;
+      type = type ? type : "unknown"
+      group = group ? group : "unknown"
       delete meta.type;
       delete meta.group
       return (

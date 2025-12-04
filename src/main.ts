@@ -180,7 +180,7 @@ class AmrCore {
         case CMD_ID.HEARTBEAT:
           const { heartbeat, id } = payload;
           this.lastHeartbeatTime = Date.now();
-          console.log("heartbeat: ", heartbeat, "lastHeartbeatTime:", this.lastHeartbeatTime, '@@@@@')
+          // console.log("heartbeat: ", heartbeat, "lastHeartbeatTime:", this.lastHeartbeatTime, '@@@@@')
           this.lastHeartbeatCount = payload.heartbeat;
           let resHeartbeat = heartbeat + 1;
           if (resHeartbeat > 9999) {
@@ -246,7 +246,7 @@ class AmrCore {
             return interval(1000).pipe(
               tap(() => {
                 const now = Date.now();
-                console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
+                // console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
                 if (now - this.lastHeartbeatTime > 6000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
