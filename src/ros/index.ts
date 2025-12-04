@@ -428,7 +428,7 @@ export const sendHasCargo = (() => {
     messageType: "std_msgs/Bool",
   })
   return (msg: boolean) => {
-    topic.publish(msg)
+    topic.publish({ data: msg })
   }
 })();
 
