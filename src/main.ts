@@ -75,6 +75,10 @@ class AmrCore {
           if (return_code === ReturnCode.SUCCESS) {
             this.rb.flushCache({ continue: true });
           }
+          else if (return_code === ReturnCode.NORMAL_REGISTER) {
+            this.rb.flushCache({ continue: false });
+            this.mc.resetStatus(action.trafficStatus);
+          }
           else if (
             (return_code === ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL) || (return_code === ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER)
           ) {
@@ -98,6 +102,8 @@ class AmrCore {
             };
             this.rb.flushCache({ continue: false });
           };
+
+
           try {
             const return_code = action.return_code
             if (return_code === ReturnCode.SUCCESS) {
@@ -174,6 +180,7 @@ class AmrCore {
         case CMD_ID.HEARTBEAT:
           const { heartbeat, id } = payload;
           this.lastHeartbeatTime = Date.now();
+          console.log("heartbeat: ", heartbeat, "lastHeartbeatTime:", this.lastHeartbeatTime, '@@@@@')
           this.lastHeartbeatCount = payload.heartbeat;
           let resHeartbeat = heartbeat + 1;
           if (resHeartbeat > 9999) {
@@ -239,7 +246,8 @@ class AmrCore {
             return interval(1000).pipe(
               tap(() => {
                 const now = Date.now();
-                if (now - this.lastHeartbeatTime > 3000) {
+                console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
+                if (now - this.lastHeartbeatTime > 6000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
                     type: "heartbeat",
