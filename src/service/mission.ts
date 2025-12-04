@@ -54,7 +54,7 @@ export default class Mission {
         TCLoggerNormalError.error(
           `execute action ID: ${this.lastSendGoalId} not equal to feedback action ID: ${actionId}`,
           {
-            group: "mission",
+            group: "ms",
             type: "ros handshake",
           }
         );
@@ -70,7 +70,7 @@ export default class Mission {
     ROS.getReadStatus$.subscribe((readStatus) => {
       if (!this.executing) {
         TCLoggerNormalWarning.warn(`No mission is currently in progress.`, {
-          group: "mission",
+          group: "ms",
           type: "abnormal read status",
           status: readStatus
         })
@@ -90,7 +90,7 @@ export default class Mission {
       };
 
       TCLoggerNormal.info(`mission [${this.missionType}] complete`, {
-        group: "mission",
+        group: "ms",
         type: "mission complete",
         status:
           this.missionType === "move"
@@ -124,7 +124,7 @@ export default class Mission {
         const { operation } = status.Body;
         const misType = operation.type;
         TCLoggerNormal.info(`receive mission (${misType})`, {
-          group: "mission",
+          group: "ms",
           type: "new mission",
           status:
             misType === "move"
@@ -153,6 +153,7 @@ export default class Mission {
         );
 
         ROS.writeStatus(status);
+        this.executing = true;
         break;
       case CMD_ID.WRITE_CANCEL:
         this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));

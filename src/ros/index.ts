@@ -155,7 +155,7 @@ export const reroutePath = () => {
       reroutePath$.subscribe((reroute_Path) => {
 
         TCLoggerNormal.info("send reroute path", {
-          group: "traffic",
+          group: "tc",
           type: "reroute path [req]",
           status: reroute_Path.reroutePath
         })
@@ -170,14 +170,14 @@ export const reroutePath = () => {
               SOCKET.sendReroutePathInProcess(response);
             }
             TCLoggerNormal.info(`receive reroute path response from ros service`, {
-              group: "traffic",
+              group: "tc",
               type: "reroute path [res]",
               status: { serviceName: service.name, res: response }
             })
           },
           (error: string) => {
             TCLoggerNormalError.error(`Service request is failed `, {
-              group: "traffic",
+              group: "tc",
               type: "reroute path",
               status: error
             })
@@ -254,7 +254,7 @@ export const sendShortestPath = (() => {
             { expiration: "10000" }
           )
           TCLoggerNormal.info(`receive shortest path response from ros service`, {
-            group: "traffic",
+            group: "tc",
             type: "shortest path [res]",
             status: { serviceName: service.name, res: data }
           });
@@ -263,7 +263,7 @@ export const sendShortestPath = (() => {
       },
       (error: string) => {
         TCLoggerNormalError.error(`Service request is failed `, {
-          group: "traffic",
+          group: "tc",
           type: "shortest path",
           status: error
         });
@@ -305,7 +305,7 @@ export const sendReroutePath = (() => {
             { expiration: "10000" }
           )
           TCLoggerNormal.info(`receive reroute path response from ros service`, {
-            group: "traffic",
+            group: "tc",
             type: "reroute path [res]",
             status: { serviceName: service.name, res: data }
           });
@@ -314,7 +314,7 @@ export const sendReroutePath = (() => {
       },
       (error: string) => {
         TCLoggerNormalError.error(`Service request is failed `, {
-          group: "traffic",
+          group: "tc",
           type: "reroute path",
           status: error
         });
@@ -366,7 +366,7 @@ export const sendIsAllowTarget = (() => {
       },
       (error: string) => {
         TCLoggerNormalError.error(`Service request is failed `, {
-          group: "traffic",
+          group: "tc",
           type: "isAllow",
           status: error
         });
@@ -509,7 +509,7 @@ export const cancelCarStatusAnyway = (() => {
 
   return (lastSendGoalId: string) => {
     TCLoggerNormal.info("cancel mission", {
-      group: "mission",
+      group: "ms",
       type: "cancel mission",
       status: { mid: lastSendGoalId }
     })

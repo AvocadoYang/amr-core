@@ -51,7 +51,7 @@ class MoveControl {
     this.registerSub$.pipe(
       tap(() => {
         TCLoggerNormal.info("start register", {
-          group: "traffic",
+          group: "tc",
           type: "register",
         });
         this.registering = true
@@ -99,7 +99,7 @@ class MoveControl {
       TCLoggerNormal.info(
         `register success: receive arrive location: ${nowPermittedLoc}`,
         {
-          group: "traffic",
+          group: "tc",
           type: "register",
           status: { occupy: this.occupy, permitted: this.permitted }
         }
@@ -130,7 +130,7 @@ class MoveControl {
       ack({ return_code: ReturnCode.SUCCESS, expect: nowPermittedLoc, receive: receiveLoc });
 
       TCLoggerNormal.info(`receive arrive location ${receiveLoc}`, {
-        group: "traffic",
+        group: "tc",
         type: "is_arrive",
         status: { occupy: this.occupy, permitted: this.permitted }
       });
@@ -142,7 +142,7 @@ class MoveControl {
       filter(({ isAllow, locationId }) => { return isAllow && locationId !== this.targetLoc && !this.registering }),
       concatMap(({ locationId }) => {
         TCLoggerNormal.info("create leave location obs", {
-          group: "traffic",
+          group: "tc",
           type: "create leave obs",
           status: { waitLeave: locationId },
         });
@@ -158,7 +158,7 @@ class MoveControl {
 
       if (!this.occupy.length) {
         TCLoggerNormalWarning.warn(`receive leave location, but occupied array is empty`, {
-          group: "traffic",
+          group: "tc",
           type: "is_away ",
           status: { occupy: this.occupy, permitted: this.permitted }
         });
@@ -178,7 +178,7 @@ class MoveControl {
       TCLoggerNormal.info(
         `receive leave location ${receiveLoc}`,
         {
-          group: "traffic",
+          group: "tc",
           type: "is_away",
           status: { occupy: this.occupy, permitted: this.permitted }
         }
@@ -216,7 +216,7 @@ class MoveControl {
         case CMD_ID.SHORTEST_PATH:
           const { shortestPath, init, rotateFlag } = payload;
           TCLoggerNormal.info("send shortest path", {
-            group: "traffic",
+            group: "tc",
             type: "shortest path [req]",
             status: { shortestPath, rotateFlag, init }
           });
@@ -249,7 +249,7 @@ class MoveControl {
             ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
           };
           TCLoggerNormal.info("receive allow location message", {
-            group: "traffic",
+            group: "tc",
             type: "is_allow",
             status: { isAllow, locationId, occupy: this.occupy, permitted: this.permitted, registering: this.registering }
           });
@@ -257,7 +257,7 @@ class MoveControl {
           break;
         case CMD_ID.REROUTE_PATH:
           TCLoggerNormal.info("send reroute path", {
-            group: "traffic",
+            group: "tc",
             type: "shortest path [req]",
             status: { reroutePath: payload.reroutePath, rotateFlag: payload.rotateFlag }
           });
@@ -357,7 +357,7 @@ class MoveControl {
     const { canPass, dist } = this.inTolerance(nowPermittedLoc, receiveLoc);
     if (!canPass) {
       TCLoggerNormalError.error(`receive location: ${receiveLoc} is greater than tolerance with ${nowPermittedLoc} by ${dist}m`, {
-        group: "traffic",
+        group: "tc",
         type,
         status: { permitted: this.permitted, occupy: this.occupy }
       })

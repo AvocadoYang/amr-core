@@ -63,6 +63,8 @@ class AmrCore {
         await amrCore.init();
         amrCore.monitorHeartbeat();
         this.stillWorking = true;
+      } else {
+        this.isConnectWithQAMS$.next(false);
       }
     });
 

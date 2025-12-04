@@ -6,7 +6,7 @@ import { kenmecLogs } from '~/helpers/system';
 
 
 const LOG_LEVEL = 'info';
-const AMR_ID_COLOR = chalk.hex('#9dbff3');
+const AMR_ID_COLOR = chalk.green;
 const NORMAL = chalk.hex('#deffc8');
 const WRANG = chalk.hex('#fecf89');
 const DEBUG = chalk.hex('#fdcdee');
@@ -45,7 +45,7 @@ const TCNormalFormatter =
       delete meta.group
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(8, " ")) : group.padEnd(8, " ")} ` +
         `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -73,7 +73,7 @@ const TCNormalFormatterWrong =
       delete meta.group;
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(8, " ")) : group.padEnd(8, " ")} ` +
         `${isLog ? WRANG('[warn]') : '[warn]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
@@ -102,7 +102,7 @@ const TCNormalFormatterError =
 
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
-        `${isLog ? AMR_ID_COLOR(group.padEnd(10, " ")) : group.padEnd(10, " ")} ` +
+        `${isLog ? AMR_ID_COLOR(group.padEnd(8, " ")) : group.padEnd(8, " ")} ` +
         `${isLog ? ERROR('[error]') : '[error]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
