@@ -17,9 +17,6 @@ export enum CMD_ID {
   SHORTEST_PATH = "SP",
   REROUTE_PATH = "RP",
   ALLOW_PATH = "AP",
-  REACH_GOAL = "RG",
-  ARRIVE_LOC = "AL",
-  LEAVE_LOC = "LL",
   REGISTERED = "RD",
 
   HAS_CARGO = "HC"

@@ -240,7 +240,6 @@ class AmrCore {
       /** */
       case ReturnCode.NORMAL_REGISTER:
         this.rb.flushCache({ continue: false });
-        this.mc.resetStatus(action.trafficStatus);
         this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
         if (this.amrStatus.amrHasMission) ROS.cancelCarStatusAnyway("#")
         break;
@@ -249,7 +248,7 @@ class AmrCore {
         if (this.ms.lastTransactionId) {
           ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
           this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-          this.mc.resetStatus(action.trafficStatus);
+
         };
         this.rb.flushCache({ continue: false });
         break;
@@ -265,7 +264,7 @@ class AmrCore {
         if (this.ms.lastSendGoalId) {
           ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
           this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-          this.mc.resetStatus(action.trafficStatus);
+
         };
         this.rb.flushCache({ continue: false });
         break;

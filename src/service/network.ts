@@ -37,9 +37,7 @@ class NetWorkManager {
       applicant: string().required(),
       amrId: string(),
       return_code: string().required(),
-      occupied: array(string()).required(),
       message: string().required(),
-      permitted: array(string()).required(),
     })
     while (true) {
       try {
@@ -53,18 +51,18 @@ class NetWorkManager {
           timeout: 5000
         });
 
-        const { return_code, amrId, occupied, permitted, message } = await schema.validate(data).catch((err) => {
+        const { return_code, amrId, message } = await schema.validate(data).catch((err) => {
           throw new ValidationError(err, (err as YupValidationError).message)
         });
 
         if (registerReturnCode.includes(return_code as ReturnCode)) {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
-            status: { message, return_code, tc_op: { occupied, permitted } }
+            status: { message, return_code }
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;
-          this.output$.next(isConnected({ isConnected: true, amrId, return_code, trafficStatus: { occupied, permitted } }));
+          this.output$.next(isConnected({ isConnected: true, amrId, return_code }));
           break;
         } else {
           throw new CustomerError(return_code, "custom error");
