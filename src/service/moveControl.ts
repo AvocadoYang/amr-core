@@ -6,7 +6,7 @@ import * as ROS from "../ros";
 import { MapType } from "~/types/map";
 import { IO_EX, RES_EX } from "~/mq/type/type";
 import config from "../configs";
-import { sendBaseResponse, sendIsArrive, sendLeaveLoc, sendReachGoal } from "~/mq/transactionsWrapper";
+import { sendBaseResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { group } from "console";
 import { AllControl } from "~/mq/type/control";
@@ -41,13 +41,6 @@ class MoveControl {
       this.resProcess(action);
     });
 
-    this.ws.isArriveObs.subscribe(({ locationId, ack }) => {
-      ack({ return_code: ReturnCode.SUCCESS, expect: locationId, receive: locationId });
-    })
-
-    this.ws.isAwayObs.subscribe(({ locationId, ack }) => {
-      ack({ return_code: ReturnCode.SUCCESS, expect: locationId, receive: locationId });
-    })
 
     ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
       this.lastCurrentId = currentId;

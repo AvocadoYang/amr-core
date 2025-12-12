@@ -3,6 +3,7 @@ import { from, fromEventPattern, Observable, Subject } from 'rxjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { SysLoggerNormal } from '~/logger/systemLogger';
 import { TCLoggerNormal } from '~/logger/trafficCenterLogger';
+import { ReturnCode } from '~/mq/type/returnCode';
 
 class WsServer {
     public isAwayObs: Observable<{ locationId: string, ack: (...args: any[]) => void }>;
@@ -33,27 +34,17 @@ class WsServer {
 
     public onConnection(socket: Socket,) {
 
-        this.isArriveObs = fromEventPattern(
-            (next) => {
-                const handler = (msg, ack) => next({ ...JSON.parse(msg), ack });
-                socket.on("is_arrive", handler);
-                return handler;
-            },
-            (handler) => {
-                socket.off("is_arrive", handler);
-            }
-        );
 
-        this.isAwayObs = fromEventPattern(
-            (next) => {
-                const handler = (msg, ack) => next({ ...JSON.parse(msg), ack });
-                socket.on("is_away", handler);
-                return handler;
-            },
-            (handler) => {
-                socket.off("is_away", handler);
-            }
-        );
+        socket.on("is_arrive", (msg, ack) => {
+            const { locationId } = JSON.parse(msg);
+            ack({ return_code: ReturnCode.SUCCESS, expect: locationId, receive: locationId });
+        })
+
+        socket.on("is_away", (msg, ack) => {
+            const { locationId } = JSON.parse(msg);
+            ack({ return_code: ReturnCode.SUCCESS, expect: locationId, receive: locationId });
+        })
+
         this.output$.next(true)
 
 

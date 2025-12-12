@@ -32,6 +32,7 @@ import { RES_EX } from "~/mq/type/type";
 import { sendBaseResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CMD_ID } from "~/mq/type/cmdId";
+import { group } from "console";
 
 const ros = new ROSLIB.Ros({ encoding: "utf8" } as any); // cast for removing warning
 
@@ -341,6 +342,11 @@ export const sendIsAllowTarget = (() => {
   });
   return (rb: RBClient, nextLocation: { locationId: string, isAllow: boolean, amrId: string, id: string }) => {
     const { locationId, isAllow, amrId, id } = nextLocation;
+    TCLoggerNormal.info(`send allow location ${locationId}`, {
+      group: "tc",
+      type: "is_allow",
+
+    })
     service.callService(
       { locationId, isAllow },
       (res) => {
