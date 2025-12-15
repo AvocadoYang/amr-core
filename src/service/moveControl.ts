@@ -61,14 +61,17 @@ class MoveControl {
             if (!this.initShortestPath.length || !isAllow || locationId !== this.initShortestPath[0]) return false;
             return true
           }),
-          tap(() => {
-            setTimeout(() => {
-              ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId })
-            }, 1000);
-          })
+          // tap(() => {
+          //   setTimeout(() => {
+          //     ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId });
+          //     this.registering = false;
+          //     this.initShortestPath = [];
+          //   }, 1000);
+          // })
         )
       })
     ).subscribe(() => {
+      ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId });
       this.registering = false;
       this.initShortestPath = [];
     })
@@ -112,6 +115,7 @@ class MoveControl {
         case CMD_ID.ALLOW_PATH:
           const { isAllow, locationId } = payload;
           if (this.registering) {
+            this.isAllowSub$.next({ locationId, isAllow })
             this.rb.resPublish(
               RES_EX,
               `amr.res.${config.MAC}.volatile`,

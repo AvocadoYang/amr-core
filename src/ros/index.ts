@@ -254,13 +254,13 @@ export const sendShortestPath = (() => {
             sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.SHORTEST_PATH, id }),
             { expiration: "10000" }
           )
-          TCLoggerNormal.info(`receive shortest path response from ros service`, {
-            group: "tc",
-            type: "shortest path [res]",
-            status: { serviceName: service.name, res: data }
-          });
-          return;
         };
+        TCLoggerNormal.info(`receive shortest path response from ros service`, {
+          group: "tc",
+          type: "shortest path [res]",
+          status: { serviceName: service.name, res: data }
+        });
+        return;
       },
       (error: string) => {
         TCLoggerNormalError.error(`Service request is failed `, {
