@@ -40,61 +40,59 @@ class NetWorkManager {
       return_code: string().required(),
       message: string().required(),
     })
-    while (true) {
-      try {
-        const { data } = await axios.post(
-          `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
-          serialNumber: config.MAC,
-          lastSendGoalId: this.lastSendGoalId,
-          lastTransaction: this.lastTransactionId,
-          lastMissionType: this.lastMissionType,
-          amrIsRegistered: this.amrStatus.amrIsRegistered,
-          timeout: 5000
-        });
+    try {
+      const { data } = await axios.post(
+        `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
+        serialNumber: config.MAC,
+        lastSendGoalId: this.lastSendGoalId,
+        lastTransaction: this.lastTransactionId,
+        lastMissionType: this.lastMissionType,
+        amrIsRegistered: this.amrStatus.amrIsRegistered,
+        timeout: 5000
+      });
 
-        const { return_code, amrId, message, session } = await schema.validate(data).catch((err) => {
-          throw new ValidationError(err, (err as YupValidationError).message)
-        });
+      const { return_code, amrId, message, session } = await schema.validate(data).catch((err) => {
+        throw new ValidationError(err, (err as YupValidationError).message)
+      });
 
-        if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
-          SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
-            type: "QAMS",
-            status: { message, return_code, session }
-          });
-          this.amrId = amrId;
-          this.fleet_connect_log = true;
-          this.output$.next(isConnected({ isConnected: true, amrId, return_code, session }));
-          break;
-        } else {
-          throw new CustomerError(return_code, "custom error");
-        }
-      } catch (error) {
-        if (this.fleet_connect_log) {
-          switch (error.type) {
-            case "yup":
-              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
-                type: "QAMS",
-                status: error.msg,
-              });
-              break;
-            case "custom":
-              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
-                type: "QAMS",
-                status: { return_code: error.statusCode, description: error.message },
-              });
-              break;
-            default:
-              SysLoggerNormalError.error(`${error.message}, retry after 5s..`, {
-                type: "QAMS",
-              });
-              break;
-          }
-          this.fleet_connect_log = false;
-        }
-        // this.output$.next(isConnected({ isConnected: false }));
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
+        SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
+          type: "QAMS",
+          status: { message, return_code, session }
+        });
+        this.amrId = amrId;
+        this.fleet_connect_log = true;
+        this.output$.next(isConnected({ isConnected: true, amrId, return_code, session }));
+      } else {
+        this.output$.next(isConnected({ isConnected: false, amrId, return_code, session }));
+        throw new CustomerError(return_code, "custom error");
       }
+    } catch (error) {
+      if (this.fleet_connect_log) {
+        switch (error.type) {
+          case "yup":
+            SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+              type: "QAMS",
+              status: error.msg,
+            });
+            break;
+          case "custom":
+            SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+              type: "QAMS",
+              status: { return_code: error.statusCode, description: error.message },
+            });
+            break;
+          default:
+            SysLoggerNormalError.error(`${error.message}, retry after 5s..`, {
+              type: "QAMS",
+            });
+            break;
+        }
+        this.fleet_connect_log = false;
+      }
+      setTimeout(async () => await this.fleetConnect(), 2000)
     }
+
   }
 
   public rosConnect() {

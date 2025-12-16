@@ -1,7 +1,7 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { filter, interval, Subject, Subscription } from "rxjs";
+import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, distinctUntilKeyChanged, EMPTY, filter, finalize, from, interval, map, merge, NEVER, startWith, Subject, Subscription, switchMap, tap } from "rxjs";
 import config from "~/configs"
 import * as faker from 'faker';
 import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormal, RabbitLoggerNormalError, RabbitLoggerNormalWarning } from "~/logger/rabbitLogger";
@@ -12,10 +12,12 @@ import { RequestMsgType, ResponseMsgType, sendHeartbeat } from "./transactionsWr
 import { AllRes } from "./type/res";
 import { AllReq } from "./type/req";
 import { CMD_ID } from "./type/cmdId";
-import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile } from "./type/type";
+import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile, controlQName, ioQFromQAMS, reqQName, responseQName } from "./type/type";
 import { AllControl } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { AllIO } from "./type/ioFromQams";
+import { Input } from "~/actions/rabbitmq/input";
+import { ReturnCode } from "./type/returnCode";
 
 export default class RabbitClient {
     private url: string;
@@ -29,7 +31,12 @@ export default class RabbitClient {
     private reqTransactionOutput$: Subject<AllReq> = new Subject();
     private ioTransactionOutput$: Subject<AllIO> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
+
+    private consumerTags: string[] = [];
+
+    private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
     private output$: Subject<Output>
+    public input$: Subject<Input>
 
     private controlCache: { timestamp: number, type: "CONTROL", msg: AllControl }[] = [];
     private requestCache: { timestamp: number, type: "REQUEST", msg: AllReq }[] = [];
@@ -49,15 +56,49 @@ export default class RabbitClient {
 
     private retryTime: number;
     constructor(
-        private info: { amrId: string, isConnect: boolean, session: number },
+        private info: { amrId: string, isConnect: boolean, session: number, return_code: string },
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
+        this.input$ = new Subject();
         this.machineID = config.MAC;
         this.debugLogger = RabbitLoggerDebug(false);
         this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 3000
         this.url = `amqp://kenmec:kenmec@${config.RABBIT_MQ_HOST}:5672`
+
+        combineLatest([
+            this.input$.pipe(
+                filter((action) => action.type == "RABBIT/INPUT/RB_IS_CONNECTED"),
+                map((data) => data.isConnected), startWith(false)
+            ),
+            this.rabbitIsConnected$.pipe(startWith(false))
+        ]).pipe(
+            distinctUntilChanged((prev, curr) => prev[0] === curr[0] && prev[1] === curr[1]),
+            switchMap(([serviceConnected, rabbitConnected]) => {
+                if (serviceConnected && rabbitConnected) {
+                    return defer(() => {
+                        RabbitLoggerNormal.info("Start consuming topics", { type: "consume" });
+                        return from(this.consumeTopic());
+                    }).pipe(
+                        switchMap(() => NEVER),
+                        finalize(() => {
+                            RabbitLoggerNormal.info("Stop consuming topics", {
+                                type: "consume"
+                            });
+                            this.cancelConsumers();
+                        })
+                    );
+                };
+                RabbitLoggerNormal.info("connection status", {
+                    type: "connect", status: {
+                        rabbitService: rabbitConnected,
+                        qamsService: serviceConnected
+                    }
+                })
+                return EMPTY;
+            })
+        ).subscribe();
 
     }
 
@@ -70,6 +111,7 @@ export default class RabbitClient {
                     status: err.message
                 });
                 this.channel = null;
+                this.rabbitIsConnected$.next(false);
             });
 
             this.connection.on("close", () => {
@@ -79,6 +121,7 @@ export default class RabbitClient {
 
                 this.output$.next(isConnected({ isConnected: false }))
                 this.channel = null;
+                this.rabbitIsConnected$.next(false);
                 setTimeout(() => this.connect(), this.retryTime);
 
             });
@@ -87,9 +130,10 @@ export default class RabbitClient {
 
             SysLoggerNormal.info(`Connected to ${this.url}`, {
                 type: "rabbitmq service"
-            })
+            });
             await this.init();
             await this.flushPendingMessages();
+            this.rabbitIsConnected$.next(true)
 
         } catch (err) {
             SysLoggerNormalError.error("Connection failed", {
@@ -267,7 +311,7 @@ export default class RabbitClient {
     public async consume<A>(queueName: string, onMessage: (msg: A) => void) {
         if (!this.channel) throw new Error("Channel is not available");
         const localChannel = this.channel;
-        await this.channel.consume(queueName, (msg) => {
+        const consumeTag = await this.channel.consume(queueName, (msg) => {
             if (msg) {
                 try {
                     const content = msg.content.toString();
@@ -301,6 +345,8 @@ export default class RabbitClient {
                 }
             }
         });
+
+        return consumeTag.consumerTag;
     }
 
     public async init() {
@@ -309,58 +355,24 @@ export default class RabbitClient {
         await this.createExchange(IO_EX, "topic", { durable: true });
         await this.createExchange(CONTROL_EX, "topic", { durable: true });
 
-        const ioQFromQAMS = `amr.${config.MAC}.io.form.qams.queue`;
+
         await this.createQueue(ioQFromQAMS, { durable: true });
         await this.bindQueue(ioQFromQAMS, IO_EX, `amr.${config.MAC}.io.from.qams.*`);
 
 
-        const reqQName = `amr.${config.MAC}.req.queue`;
+
         await this.createQueue(reqQName, { durable: true });
         await this.bindQueue(reqQName, REQ_EX, `amr.${config.MAC}.req.*`);
 
-        const controlQName = `amr.${config.MAC}.control.queue`;
+
         await this.createQueue(controlQName, { durable: true });
         await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
 
         await this.createQueue(HANDSHAKE_IO_QUEUE, { durable: true });
 
-        const responseQName = `amr.${config.MAC}.message.res.queue`;
+
         await this.createQueue(responseQName, { durable: true });
         await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
-
-
-        this.consume<AllControl>(controlQName, (msg) => {
-            if (!this.info.isConnect) {
-                this.controlCache.push({ timestamp: Date.now(), type: "CONTROL", msg });
-            } else {
-                this.controlTransactionOutput$.next(msg);
-            }
-        });
-
-        this.consume<AllReq>(reqQName, (msg) => {
-            // if (msg.payload.cmd_id == CMD_ID.HEARTBEAT) console.log(msg.payload, '???????????')
-            if (!this.info.isConnect) {
-                this.requestCache.push({ timestamp: Date.now(), type: "REQUEST", msg });
-            } else {
-                this.reqTransactionOutput$.next(msg);
-            }
-        });
-
-        this.consume<AllIO>(ioQFromQAMS, (msg) => {
-            if (!this.info.isConnect) {
-                this.ioCache.push({ timestamp: Date.now(), type: "IO", msg });
-            } else {
-                this.ioTransactionOutput$.next(msg);
-            }
-        })
-
-        this.consume<AllRes>(responseQName, (msg) => {
-            if (!this.info.isConnect) {
-                this.responseCache.push({ timestamp: Date.now(), type: "RESPONSE", msg })
-            } else {
-                this.resTransactionOutput$.next(msg);
-            }
-        })
 
         this.output$.next(isConnected({ isConnected: true }));
     }
@@ -506,4 +518,64 @@ export default class RabbitClient {
             }
         }
     }
+
+    public send(action: Input) {
+        this.input$.next(action);
+    }
+
+    private async consumeTopic() {
+        const tags = await Promise.all([
+            this.consume<AllControl>(controlQName, (msg) => {
+                const checkSession = msg.session == this.info.session;
+                if (!checkSession) {
+                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
+                    if (canPass) this.controlTransactionOutput$.next(msg);
+                } else {
+                    this.controlTransactionOutput$.next(msg);
+                }
+            }),
+
+            this.consume<AllReq>(reqQName, (msg) => {
+                const checkSession = msg.session == this.info.session;
+                if (!checkSession) {
+                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
+                    if (canPass) this.reqTransactionOutput$.next(msg);
+                } else {
+                    this.reqTransactionOutput$.next(msg);
+                }
+            }),
+            this.consume<AllIO>(ioQFromQAMS, (msg) => {
+                const checkSession = msg.session == this.info.session;
+                if (!checkSession) {
+                    return;
+                } else {
+                    this.ioTransactionOutput$.next(msg);
+                }
+            }),
+
+            this.consume<AllRes>(responseQName, (msg) => {
+                const checkSession = msg.session == this.info.session;
+                if (!checkSession) {
+                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
+                    if (canPass) this.resTransactionOutput$.next(msg);
+                } else {
+                    this.resTransactionOutput$.next(msg);
+                };
+            })
+        ]);
+        return tags;
+    }
+
+    private async cancelConsumers() {
+        if (!this.channel) return;
+        for (const tag of this.consumerTags) {
+            try {
+                await this.channel.cancel(tag);
+            } catch (e) {
+                // channel 可能已經 close，忽略
+            }
+        }
+        this.consumerTags = [];
+    }
+
 }

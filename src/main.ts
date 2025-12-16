@@ -3,7 +3,7 @@ import config from './configs'
 import { cleanEnv, str } from "envalid";
 import { MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
-import { BehaviorSubject, catchError, from, interval, map, of, Subject, switchMap, tap } from "rxjs";
+import { BehaviorSubject, catchError, from, interval, map, timer, of, Subject, switchMap, tap } from "rxjs";
 import { IS_CONNECTED, isConnected } from "./actions/networkManager/output";
 import { TCLoggerNormal, TCLoggerNormalWarning } from "./logger/trafficCenterLogger";
 import { CMD_ID } from "./mq/type/cmdId";
@@ -21,6 +21,7 @@ import { RabbitLoggerNormal } from "./logger/rabbitLogger";
 import { SysLoggerNormal, SysLoggerNormalWarning } from "./logger/systemLogger";
 import { IS_REGISTERED } from "./actions/status/output";
 import { number } from "yup";
+import { connectWithQAMS } from "./actions/rabbitmq/input";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -35,8 +36,8 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
-  private isConnectWithQAMS$ = new Subject<boolean>();
-  private isConnectWithRabbitMQ: boolean = false;
+  private heartbeatSwitch$ = new Subject<boolean>();
+
   private lastHeartbeatTime: number = 0;
   private lastHeartbeatCount: number = 0;
   private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean } = { amrHasMission: false, amrIsRegistered: false };
@@ -47,7 +48,7 @@ class AmrCore {
   private mc: MoveControl;
   private ws: WsServer;
   private st: Status;
-  private info: { amrId: string, isConnect: boolean, session: number } = { amrId: "", isConnect: false, session: 0 }
+  private info: { amrId: string, isConnect: boolean, session: number, return_code: string } = { amrId: "", isConnect: false, session: 0, return_code: "" }
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
@@ -65,17 +66,16 @@ class AmrCore {
       switch (action.type) {
         case IS_CONNECTED:
           try {
-            this.registerProcess(action)
-            this.info.amrId = action.amrId;
-            this.info.isConnect = true;
-            this.info.session = action.session;
-            this.isConnectWithQAMS$.next(action.isConnected);
-            this.lastHeartbeatTime = Date.now();
+            const { isConnected, amrId, session, return_code } = action;
+            this.setStatus({ isConnected, amrId, session, return_code })
+            this.registerProcess(action);
+            this.rb.send(connectWithQAMS({ isConnected }))
+            this.heartbeatSwitch$.next(isConnected);
             const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
             this.map = data;
           } catch (err) {
             console.log(err)
-            this.isConnectWithQAMS$.next(false);
+            this.heartbeatSwitch$.next(false);
           }
           break;
         default:
@@ -87,7 +87,6 @@ class AmrCore {
     this.rb.subscribe((action) => {
       switch (action.type) {
         case RB_IS_CONNECTED:
-          this.isConnectWithRabbitMQ = action.isConnected;
           break;
         default:
           break;
@@ -126,7 +125,6 @@ class AmrCore {
         case CMD_ID.HEARTBEAT:
           const { heartbeat, id } = payload;
           this.lastHeartbeatTime = Date.now();
-          // console.log("heartbeat: ", heartbeat, "lastHeartbeatTime:", this.lastHeartbeatTime, '@@@@@')
           this.lastHeartbeatCount = payload.heartbeat;
           let resHeartbeat = heartbeat + 1;
           if (resHeartbeat > 9999) {
@@ -183,15 +181,14 @@ class AmrCore {
   }
 
   public monitorHeartbeat() {
-    this.isConnectWithQAMS$
+    this.heartbeatSwitch$
       .pipe(
         switchMap((connected) => {
           if (connected) {
             SysLoggerNormal.info(`connect with QAMS, start heartbeat detection`, {
               type: "heartbeat",
             });
-
-            return interval(1000).pipe(
+            return timer(5000, 5000).pipe(
               tap(() => {
                 const now = Date.now();
                 // console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
@@ -200,7 +197,8 @@ class AmrCore {
                     group: "transaction",
                     type: "heartbeat",
                   });
-                  this.isConnectWithQAMS$.next(false);
+                  this.heartbeatSwitch$.next(false);
+                  this.rb.send(connectWithQAMS({ isConnected: false }))
                 }
               })
             );
@@ -219,7 +217,6 @@ class AmrCore {
 
   private async retryConnectWithDelay(delayMs: number) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-
     await this.netWorkManager.fleetConnect();
   }
 
@@ -237,7 +234,7 @@ class AmrCore {
         if (this.amrStatus.amrHasMission) ROS.cancelCarStatusAnyway("#")
         break;
       /** */
-      case ReturnCode.REGISTER_ERROR_MISSION_NOT_EQUAL:
+      case ReturnCode.REGISTER_SUCCESS_MISSION_NOT_EQUAL:
         if (this.ms.lastTransactionId) {
           ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
           this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
@@ -246,7 +243,7 @@ class AmrCore {
         this.rb.flushCache({ continue: false });
         break;
       /** */
-      case ReturnCode.REGISTER_ERROR_AMR_NOT_REGISTER:
+      case ReturnCode.REGISTER_SUCCESS_AMR_NOT_REGISTER:
         this.rb.flushCache({ continue: false });
         break;
       /**  */
@@ -256,13 +253,21 @@ class AmrCore {
 
   }
 
+  private setStatus(data: { amrId: string, session: number, isConnected: boolean, return_code: string }) {
+    const { amrId, session, isConnected, return_code } = data;
+    this.info.amrId = amrId;
+    this.info.isConnect = isConnected;
+    this.info.session = session;
+    this.info.return_code = return_code
+  }
+
 
 }
 
 
 const amrCore = new AmrCore();
 (async () => {
-  amrCore.init();
+  await amrCore.init();
 })()
 
 
