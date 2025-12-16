@@ -5,6 +5,7 @@ interface Base<A> {
     id: string;
     sender: string;
     serialNum: string;
+    session: number;
     flag: "REQ";
     amrId?: string;
     payload: A
@@ -24,7 +25,7 @@ export type WriteStatus = {
     amrId: string,
     id: string,
     status: Mission_Payload,
-    actionType: string, 
+    actionType: string,
     locationId: number
 }
 export type WRITE_STATUS = Base<WriteStatus>;
@@ -61,14 +62,14 @@ export type ForceReset = {
     amrId: string,
     payload: boolean
 }
-export type FORCE_RESET = Base<ForceReset> 
+export type FORCE_RESET = Base<ForceReset>
 
 
 
 export type AllReq =
-    HEARTBEAT    |
-    WRITE_CANCEL | 
-    WRITE_STATUS | 
-    UPDATE_POSE | 
-    EMERGENCY_STOP | 
+    HEARTBEAT |
+    WRITE_CANCEL |
+    WRITE_STATUS |
+    UPDATE_POSE |
+    EMERGENCY_STOP |
     FORCE_RESET;

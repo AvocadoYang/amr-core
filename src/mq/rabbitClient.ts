@@ -49,7 +49,7 @@ export default class RabbitClient {
 
     private retryTime: number;
     constructor(
-        private info: { amrId: string, isConnect: boolean },
+        private info: { amrId: string, isConnect: boolean, session: number },
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
@@ -191,6 +191,7 @@ export default class RabbitClient {
             id,
             sender: "AMR_CORE",
             serialNum: this.machineID,
+            session: this.info.session,
             flag,
             timestamp: formatDate(),
             payload: { id, ...message, amrId: this.info.amrId }
@@ -229,6 +230,7 @@ export default class RabbitClient {
             id: message.id,
             sender: "AMR_CORE",
             serialNum: this.machineID,
+            session: this.info.session,
             flag,
             timestamp: formatDate(),
             payload: message

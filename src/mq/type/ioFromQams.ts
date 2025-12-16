@@ -4,6 +4,7 @@ interface Base<A> {
     id: string;
     sender: string;
     serialNum: string;
+    session: number;
     flag: "REQ";
     amrId?: string;
     payload: A

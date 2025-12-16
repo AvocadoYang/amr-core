@@ -20,6 +20,7 @@ import * as ROS from './ros'
 import { RabbitLoggerNormal } from "./logger/rabbitLogger";
 import { SysLoggerNormal, SysLoggerNormalWarning } from "./logger/systemLogger";
 import { IS_REGISTERED } from "./actions/status/output";
+import { number } from "yup";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -34,19 +35,19 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
-  private stillWorking = false;
   private isConnectWithQAMS$ = new Subject<boolean>();
   private isConnectWithRabbitMQ: boolean = false;
   private lastHeartbeatTime: number = 0;
   private lastHeartbeatCount: number = 0;
   private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean } = { amrHasMission: false, amrIsRegistered: false };
+
   private netWorkManager: NetWorkManager;
   private rb: RBClient;
   private ms: MissionManager;
+  private mc: MoveControl;
   private ws: WsServer;
   private st: Status;
-  private mc: MoveControl;
-  private info: { amrId: string, isConnect: boolean } = { amrId: "", isConnect: false }
+  private info: { amrId: string, isConnect: boolean, session: number } = { amrId: "", isConnect: false, session: 0 }
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
@@ -58,26 +59,16 @@ class AmrCore {
     this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
 
 
-    this.ws.subscribe(async (isConnect) => {
-      if (isConnect && !this.stillWorking) {
-        await amrCore.init();
-        amrCore.monitorHeartbeat();
-        this.stillWorking = true;
-      } else {
-        this.isConnectWithQAMS$.next(false);
-      }
-    });
 
 
     this.netWorkManager.subscribe(async (action) => {
-      const { amrId } = action;
-
       switch (action.type) {
         case IS_CONNECTED:
           try {
             this.registerProcess(action)
             this.info.amrId = action.amrId;
             this.info.isConnect = true;
+            this.info.session = action.session;
             this.isConnectWithQAMS$.next(action.isConnected);
             this.lastHeartbeatTime = Date.now();
             const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
@@ -177,7 +168,9 @@ class AmrCore {
         default:
           break
       }
-    })
+    });
+
+    this.monitorHeartbeat();
 
   }
 
@@ -257,22 +250,10 @@ class AmrCore {
         this.rb.flushCache({ continue: false });
         break;
       /**  */
-      case ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM:
-        SysLoggerNormalWarning.warn("this machine not be registered in QAMS system", {
-          type: "register",
-        });
-        if (this.ms.lastSendGoalId) {
-          ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-          this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-
-        };
-        this.rb.flushCache({ continue: false });
-        break;
-
       default:
         break;
-
     }
+
   }
 
 
@@ -280,5 +261,8 @@ class AmrCore {
 
 
 const amrCore = new AmrCore();
+(async () => {
+  amrCore.init();
+})()
 
 

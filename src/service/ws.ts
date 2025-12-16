@@ -17,11 +17,11 @@ class WsServer {
                 group: "ws",
                 type: "connect"
             })
-            this.onConnection(socket)
+            // this.onConnection(socket)
         });
 
         io.on("disconnect", () => {
-            this.output$.next(false)
+            // this.output$.next(false)
         });
 
 
@@ -46,7 +46,6 @@ class WsServer {
         })
 
         this.output$.next(true)
-
 
     }
 

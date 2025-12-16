@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import * as ROS from '../ros'
 import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
 import axios from "axios";
-import { array, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
+import { array, number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { bindingTable } from '~/mq/bindingTable';
@@ -36,6 +36,7 @@ class NetWorkManager {
     const schema = object({
       applicant: string().required(),
       amrId: string(),
+      session: number(),
       return_code: string().required(),
       message: string().required(),
     })
@@ -51,18 +52,18 @@ class NetWorkManager {
           timeout: 5000
         });
 
-        const { return_code, amrId, message } = await schema.validate(data).catch((err) => {
+        const { return_code, amrId, message, session } = await schema.validate(data).catch((err) => {
           throw new ValidationError(err, (err as YupValidationError).message)
         });
 
-        if (registerReturnCode.includes(return_code as ReturnCode)) {
+        if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
           SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
             type: "QAMS",
-            status: { message, return_code }
+            status: { message, return_code, session }
           });
           this.amrId = amrId;
           this.fleet_connect_log = true;
-          this.output$.next(isConnected({ isConnected: true, amrId, return_code }));
+          this.output$.next(isConnected({ isConnected: true, amrId, return_code, session }));
           break;
         } else {
           throw new CustomerError(return_code, "custom error");
