@@ -5,7 +5,7 @@ export const IS_CONNECTED = `${PREFIX}/HEARTBEAT` as const;
 export const isConnected = (data: {
     isConnected: boolean;
     amrId: string;
-    session: number,
+    session: string,
     return_code: string
 }) => {
     return {

@@ -36,7 +36,7 @@ class NetWorkManager {
     const schema = object({
       applicant: string().required(),
       amrId: string(),
-      session: number(),
+      session: string(),
       return_code: string().required(),
       message: string().required(),
     })

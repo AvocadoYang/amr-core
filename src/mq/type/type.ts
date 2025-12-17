@@ -1,6 +1,7 @@
 import config from "~/configs"
 
 // Exchanges
+export const HEARTBEAT_EX = "amr.heartbeat.topic";
 export const REQ_EX = "amr.req.topic";
 export const RES_EX = "amr.res.topic";
 export const IO_EX = "amr.io.topic";
@@ -15,12 +16,12 @@ export const REGISTER_QUEUE = "qams.register.queue";
 export const HANDSHAKE_IO_QUEUE = "amr.io.handshake.queue";
 
 
+
+export const heartbeatPingQName = `heartbeat.ping.${config.MAC}.queue`
+export const heartbeatPongQName = `heartbeat.pong.${config.MAC}.queue`
 export const controlQName = `amr.${config.MAC}.control.queue`
-
 export const reqQName = `amr.${config.MAC}.req.queue`
-
 export const ioQFromQAMS = `amr.${config.MAC}.io.form.qams.queue`
-
 export const responseQName = `amr.${config.MAC}.message.res.queue`
 
 export interface PublishOptions {

@@ -12,7 +12,7 @@ import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
 import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
 import { AMR_HAS_MISSION, CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
-import { IO_EX, RES_EX } from "./mq/type/type";
+import { HEARTBEAT_EX, IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
@@ -48,7 +48,7 @@ class AmrCore {
   private mc: MoveControl;
   private ws: WsServer;
   private st: Status;
-  private info: { amrId: string, isConnect: boolean, session: number, return_code: string } = { amrId: "", isConnect: false, session: 0, return_code: "" }
+  private info: { amrId: string, isConnect: boolean, session: string, return_code: string } = { amrId: "", isConnect: false, session: "", return_code: "" }
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
@@ -56,10 +56,8 @@ class AmrCore {
     this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager(this.amrStatus);
     this.ms = new MissionManager(this.rb, this.info, this.amrStatus);
-    this.st = new Status(this.rb, this.info, this.map);
+    this.st = new Status(this.rb, this.info, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
-
-
 
 
     this.netWorkManager.subscribe(async (action) => {
@@ -83,15 +81,6 @@ class AmrCore {
       }
     });
 
-
-    this.rb.subscribe((action) => {
-      switch (action.type) {
-        case RB_IS_CONNECTED:
-          break;
-        default:
-          break;
-      }
-    });
 
     this.ms.subscribe((action) => {
       switch (action.type) {
@@ -119,54 +108,27 @@ class AmrCore {
       }
     });
 
-    this.rb.onReqTransaction((action) => {
+    this.rb.onHeartbeat((action) => {
       const { payload } = action;
-      switch (payload.cmd_id) {
-        case CMD_ID.HEARTBEAT:
-          const { heartbeat, id } = payload;
-          this.lastHeartbeatTime = Date.now();
-          this.lastHeartbeatCount = payload.heartbeat;
-          let resHeartbeat = heartbeat + 1;
-          if (resHeartbeat > 9999) {
-            resHeartbeat = 0;
-          }
-          this.rb.resPublish(RES_EX, `amr.res.${config.MAC}.volatile`,
-            sendHeartBeatResponse({
-              id,
-              heartbeat: resHeartbeat,
-              return_code: ReturnCode.SUCCESS,
-              amrId: this.info.amrId
-            }), { expiration: "2000" }
-          )
-          break;
-        default:
-          break;
+      const { heartbeat, id } = payload;
+      this.lastHeartbeatTime = Date.now();
+      this.lastHeartbeatCount = payload.heartbeat;
+      let resHeartbeat = heartbeat + 1;
+      if (resHeartbeat > 9999) {
+        resHeartbeat = 0;
       }
+
+      this.rb.resPublish(HEARTBEAT_EX, `amr.heartbeat.pong.${config.MAC}`,
+        sendHeartBeatResponse({
+          id,
+          heartbeat: resHeartbeat,
+          return_code: ReturnCode.SUCCESS,
+          amrId: this.info.amrId
+        }), { expiration: "2000" }
+      )
     })
 
-    this.rb.onResTransaction((action) => {
-      const { payload } = action;
 
-      switch (payload.cmd_id) {
-        case CMD_ID.READ_STATUS:
-          break;
-        case CMD_ID.CARGO_VERITY:
-          // console.log(action, '@@@@@@@')
-          break;
-        default:
-          break;
-      }
-    });
-
-    this.st.subscribe((action) => {
-      switch (action.type) {
-        case IS_REGISTERED:
-          this.amrStatus.amrIsRegistered = action.isRegistered;
-          break;
-        default:
-          break
-      }
-    });
 
     this.monitorHeartbeat();
 
@@ -253,7 +215,7 @@ class AmrCore {
 
   }
 
-  private setStatus(data: { amrId: string, session: number, isConnected: boolean, return_code: string }) {
+  private setStatus(data: { amrId: string, session: string, isConnected: boolean, return_code: string }) {
     const { amrId, session, isConnected, return_code } = data;
     this.info.amrId = amrId;
     this.info.isConnect = isConnected;

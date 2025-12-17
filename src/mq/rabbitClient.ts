@@ -10,9 +10,9 @@ import { bindingTable } from "./bindingTable";
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendHeartbeat } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
-import { AllReq } from "./type/req";
+import { AllReq, HEARTBEAT } from "./type/req";
 import { CMD_ID } from "./type/cmdId";
-import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile, controlQName, ioQFromQAMS, reqQName, responseQName } from "./type/type";
+import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile, controlQName, ioQFromQAMS, reqQName, responseQName, HEARTBEAT_EX, heartbeatPingQName, heartbeatPongQName } from "./type/type";
 import { AllControl } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { AllIO } from "./type/ioFromQams";
@@ -27,6 +27,7 @@ export default class RabbitClient {
     private isClosing = false;
     public debugLogger: winston.Logger;
     private bindingLogger: winston.Logger;
+    private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private reqTransactionOutput$: Subject<AllReq> = new Subject();
     private ioTransactionOutput$: Subject<AllIO> = new Subject();
@@ -56,7 +57,7 @@ export default class RabbitClient {
 
     private retryTime: number;
     constructor(
-        private info: { amrId: string, isConnect: boolean, session: number, return_code: string },
+        private info: { amrId: string, isConnect: boolean, session: string, return_code: string },
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
@@ -86,7 +87,7 @@ export default class RabbitClient {
                             RabbitLoggerNormal.info("Stop consuming topics", {
                                 type: "consume"
                             });
-                            this.cancelConsumers();
+                            if (serviceConnected) this.cancelConsumers();
                         })
                     );
                 };
@@ -147,12 +148,13 @@ export default class RabbitClient {
 
     private async createQueue(
         queueName: string,
-        options: { durable?: boolean; quorum?: boolean; exclusive?: boolean; arguments?: any } = {}
+        options: { durable?: boolean; quorum?: boolean; exclusive?: boolean; autoDelete?: boolean; arguments?: any } = {}
     ) {
         if (!this.channel) throw new Error("Channel is not available");
         const queueOptions: amqp.Options.AssertQueue = {
             durable: options.durable ?? true,
             exclusive: options.exclusive ?? false,
+            autoDelete: options.autoDelete ?? false,
             arguments: options.arguments ?? {},
         };
 
@@ -350,6 +352,9 @@ export default class RabbitClient {
     }
 
     public async init() {
+
+
+        await this.createExchange(HEARTBEAT_EX, "topic", { durable: true });
         await this.createExchange(REQ_EX, "topic", { durable: true });
         await this.createExchange(RES_EX, "topic", { durable: true });
         await this.createExchange(IO_EX, "topic", { durable: true });
@@ -374,7 +379,17 @@ export default class RabbitClient {
         await this.createQueue(responseQName, { durable: true });
         await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
 
+
+        await this.createQueue(heartbeatPingQName, { autoDelete: false });
+        await this.createQueue(heartbeatPongQName, { autoDelete: false });
+        await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${config.MAC}`);
+        await this.bindQueue(heartbeatPongQName, HEARTBEAT_EX, `amr.heartbeat.pong.${config.MAC}`);
+
         this.output$.next(isConnected({ isConnected: true }));
+    }
+
+    public onHeartbeat(cb: (action: HEARTBEAT) => void) {
+        return this.heartbeatOutput$.subscribe(cb);
     }
 
     public onReqTransaction(cb: (action: AllReq) => void) {
@@ -411,7 +426,7 @@ export default class RabbitClient {
     }
 
     private isVolatile(exchange: string, routingKey: string): boolean {
-        if (exchange !== IO_EX) return false;
+        if (exchange !== IO_EX && !exchange.includes("heartbeat")) return false;
 
         return volatile.some(v => routingKey.includes(v));
     }
@@ -524,7 +539,13 @@ export default class RabbitClient {
     }
 
     private async consumeTopic() {
+        if (!this.channel) return [];
+
         const tags = await Promise.all([
+            this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
+                if (msg.session !== this.info.session) return;
+                this.heartbeatOutput$.next(msg);
+            }),
             this.consume<AllControl>(controlQName, (msg) => {
                 const checkSession = msg.session == this.info.session;
                 if (!checkSession) {
@@ -563,6 +584,7 @@ export default class RabbitClient {
                 };
             })
         ]);
+        this.consumerTags = tags;
         return tags;
     }
 

@@ -19,7 +19,8 @@ class Status {
     constructor(
         private rb: RBClient,
         private info: { amrId: string, isConnect: boolean },
-        private map: MapType
+        private map: MapType,
+        private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
     ) {
 
         this.rb.onReqTransaction(async (action) => {
@@ -108,7 +109,7 @@ class Status {
 
         ROS.is_registered.subscribe(msg => {
             this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg));
-            this.output$.next(setIsRegistered({ isRegistered: msg }));
+            this.amrStatus.amrIsRegistered = msg;
         });
 
         ROS.getVerityCargo$.subscribe((msg) => {
