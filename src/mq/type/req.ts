@@ -16,7 +16,6 @@ export type Heartbeat = {
     amrId: string,
     id: string,
     heartbeat: number,
-    timestamp: number
 }
 export type HEARTBEAT = Base<Heartbeat>;
 
