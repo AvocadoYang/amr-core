@@ -4,5 +4,5 @@ ROS_BRIDGE_URL: ws://localhost:9090
 MISSION_CONTROL_HOST: 127.0.0.1
 RABBIT_MQ_HOST: 127.0.0.1
 IFACE_NAME: enP1p1s0 #wlP7p1s0
-MAC: "00:e0:4c:68:08:ff" #"58:02:05:0c:a9:9c"
+MAC: "58:02:05:0c:a9:9c" #"58:02:05:0c:a9:9c"
 AMR: fork

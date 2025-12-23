@@ -68,6 +68,7 @@ class Status {
         /** ROS subscribe */
 
         ROS.pose$.subscribe((pose) => {
+            if (!info.isConnect) return;
             if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
                 logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
             }
@@ -83,31 +84,35 @@ class Status {
         });
 
         ROS.getAmrError$.subscribe((msg: { data: string }) => {
-
+            if (!info.isConnect) return;
             const jMsg = JSON.parse(msg.data) as {
                 warning_msg: string[];
                 warning_id: string[];
             };
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg));
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg), { expiration: "3000" });
         });
 
         ROS.getIOInfo$.subscribe((data) => {
+            if (!info.isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(data), {
                 expiration: "2000"
             })
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
+            if (!info.isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
             })
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
+            if (!info.isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg))
         });
 
         ROS.is_registered.subscribe(msg => {
+            if (!info.isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg));
             this.amrStatus.amrIsRegistered = msg;
         });

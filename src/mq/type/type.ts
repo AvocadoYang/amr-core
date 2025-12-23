@@ -9,20 +9,20 @@ export const CONTROL_EX = "amr.control.topic"; // optional dedicated control exc
 
 
 // Queues
-export const PROMISE_RES_QUEUE = "promise.res.queue";
-export const VOLATILE_RES_QUEUE = "volatile.res.queue";
-export const IO_QUEUE = "amr.io.queue";
-export const REGISTER_QUEUE = "qams.register.queue";
-export const HANDSHAKE_IO_QUEUE = "amr.io.handshake.queue";
+export const PROMISE_RES_QUEUE = "qams.promise.res.queue";
+export const VOLATILE_RES_QUEUE = "qams.volatile.res.queue";
+export const IO_QUEUE = "qams.io.queue";
+export const IO_HEARTBEAT_QUEUE = "qams.io.heartbeat_queue";
+export const HANDSHAKE_IO_QUEUE = "qams.io.handshake.queue";
 
 
 
-export const heartbeatPingQName = `heartbeat.ping.${config.MAC}.queue`
-export const heartbeatPongQName = `heartbeat.pong.${config.MAC}.queue`
-export const controlQName = `amr.${config.MAC}.control.queue`
-export const reqQName = `amr.${config.MAC}.req.queue`
-export const ioQFromQAMS = `amr.${config.MAC}.io.form.qams.queue`
-export const responseQName = `amr.${config.MAC}.message.res.queue`
+export const heartbeatPingQName = `heartbeat.ping.queue.${config.MAC}`
+export const heartbeatPongQName = `heartbeat.pong.queue.${config.MAC}`
+export const controlQName = `amr.control.queue..${config.MAC}`
+export const reqQName = `amr.req.queue.${config.MAC}`
+export const ioQFromQAMS = `amr.io.form.qams.queue.${config.MAC}`
+export const responseQName = `amr.message.res.queue..${config.MAC}`
 
 export interface PublishOptions {
     expiration?: string;

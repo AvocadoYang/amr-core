@@ -66,11 +66,13 @@ class AmrCore {
           try {
             const { isConnected, amrId, session, return_code } = action;
             this.setStatus({ isConnected, amrId, session, return_code })
-            this.registerProcess(action);
-            this.rb.send(connectWithQAMS({ isConnected }))
-            this.heartbeatSwitch$.next(isConnected);
-            const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
-            this.map = data;
+            if (isConnected) {
+              this.registerProcess(action);
+              this.rb.send(connectWithQAMS({ isConnected }));
+              if (isConnected) this.heartbeatSwitch$.next(isConnected);
+              const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+              this.map = data;
+            }
           } catch (err) {
             console.log(err)
             this.heartbeatSwitch$.next(false);

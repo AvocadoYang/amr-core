@@ -21,6 +21,7 @@ import { ReturnCode } from "./type/returnCode";
 
 export default class RabbitClient {
     private url: string;
+    private isInit: boolean = false;
     private machineID: string;
     private connection: amqp.ChannelModel | null = null
     private channel: amqp.Channel | null = null;
@@ -132,8 +133,6 @@ export default class RabbitClient {
             SysLoggerNormal.info(`Connected to ${this.url}`, {
                 type: "rabbitmq service"
             });
-            await this.init();
-            await this.flushPendingMessages();
             this.rabbitIsConnected$.next(true)
 
         } catch (err) {
@@ -366,14 +365,13 @@ export default class RabbitClient {
 
 
 
-        await this.createQueue(reqQName, { durable: true });
+        await this.createQueue(reqQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
         await this.bindQueue(reqQName, REQ_EX, `amr.${config.MAC}.req.*`);
 
 
-        await this.createQueue(controlQName, { durable: true });
+        await this.createQueue(controlQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
         await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
 
-        await this.createQueue(HANDSHAKE_IO_QUEUE, { durable: true });
 
 
         await this.createQueue(responseQName, { durable: true });
@@ -540,7 +538,11 @@ export default class RabbitClient {
 
     private async consumeTopic() {
         if (!this.channel) return [];
-
+        if (!this.isInit) {
+            await this.init();
+            this.isInit = true;
+            await this.flushPendingMessages();
+        }
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
                 if (msg.session !== this.info.session) return;
@@ -565,6 +567,7 @@ export default class RabbitClient {
                     this.reqTransactionOutput$.next(msg);
                 }
             }),
+
             this.consume<AllIO>(ioQFromQAMS, (msg) => {
                 const checkSession = msg.session == this.info.session;
                 if (!checkSession) {

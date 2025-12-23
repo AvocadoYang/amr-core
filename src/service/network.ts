@@ -90,7 +90,7 @@ class NetWorkManager {
         }
         this.fleet_connect_log = false;
       }
-      setTimeout(async () => await this.fleetConnect(), 2000)
+      setTimeout(async () => await this.fleetConnect(), 3500)
     }
 
   }
