@@ -19,10 +19,10 @@ export const HANDSHAKE_IO_QUEUE = "qams.io.handshake.queue";
 
 export const heartbeatPingQName = `heartbeat.ping.queue.${config.MAC}`
 export const heartbeatPongQName = `heartbeat.pong.queue.${config.MAC}`
-export const controlQName = `amr.control.queue..${config.MAC}`
+export const controlQName = `amr.control.queue.${config.MAC}`
 export const reqQName = `amr.req.queue.${config.MAC}`
 export const ioQFromQAMS = `amr.io.form.qams.queue.${config.MAC}`
-export const responseQName = `amr.message.res.queue..${config.MAC}`
+export const responseQName = `amr.message.res.queue.${config.MAC}`
 
 export interface PublishOptions {
     expiration?: string;
