@@ -36,6 +36,7 @@ class NetWorkManager {
     const schema = object({
       applicant: string().required(),
       amrId: string(),
+      qamsSerialNum: string(),
       session: string(),
       return_code: string().required(),
       message: string().required(),
@@ -51,7 +52,7 @@ class NetWorkManager {
         timeout: 5000
       });
 
-      const { return_code, amrId, message, session } = await schema.validate(data).catch((err) => {
+      const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
         throw new ValidationError(err, (err as YupValidationError).message)
       });
 
@@ -62,9 +63,9 @@ class NetWorkManager {
         });
         this.amrId = amrId;
         this.fleet_connect_log = true;
-        this.output$.next(isConnected({ isConnected: true, amrId, return_code, session }));
+        this.output$.next(isConnected({ isConnected: true, amrId, return_code, session, qamsSerialNum }));
       } else {
-        this.output$.next(isConnected({ isConnected: false, amrId, return_code, session }));
+        this.output$.next(isConnected({ isConnected: false, amrId, return_code, session, qamsSerialNum }));
         throw new CustomerError(return_code, "custom error");
       }
     } catch (error) {

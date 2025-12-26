@@ -6,6 +6,7 @@ export const isConnected = (data: {
     isConnected: boolean;
     amrId: string;
     session: string,
+    qamsSerialNum: string;
     return_code: string
 }) => {
     return {

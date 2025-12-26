@@ -48,7 +48,8 @@ class AmrCore {
   private mc: MoveControl;
   private ws: WsServer;
   private st: Status;
-  private info: { amrId: string, isConnect: boolean, session: string, return_code: string } = { amrId: "", isConnect: false, session: "", return_code: "" }
+  private info: { amrId: string, isConnect: boolean, qamsSerialNum: string; session: string, return_code: string } =
+    { amrId: "", isConnect: false, qamsSerialNum: "", session: "", return_code: "" }
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
@@ -64,12 +65,13 @@ class AmrCore {
       switch (action.type) {
         case IS_CONNECTED:
           try {
-            const { isConnected, amrId, session, return_code } = action;
+            const { isConnected, amrId, session, return_code, qamsSerialNum } = action;
             this.setStatus({ isConnected, amrId, session, return_code })
             if (isConnected) {
+              this.info.qamsSerialNum = qamsSerialNum;
               this.registerProcess(action);
               this.rb.send(connectWithQAMS({ isConnected }));
-              if (isConnected) this.heartbeatSwitch$.next(isConnected);
+              this.heartbeatSwitch$.next(isConnected);
               const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
               this.map = data;
             }
@@ -202,7 +204,6 @@ class AmrCore {
         if (this.ms.lastTransactionId) {
           ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
           this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-
         };
         this.rb.flushCache({ continue: false });
         break;
