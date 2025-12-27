@@ -1,7 +1,7 @@
 const PREFIX = "RABBIT/INPUT";
 
 
-export const CONNECT_WITH_QAMS = `${PREFIX}/RB_IS_CONNECTED` as const;
+export const CONNECT_WITH_QAMS = `${PREFIX}/QAMS_IS_CONNECTED` as const;
 export const connectWithQAMS = (data: {
     isConnected: boolean
 }) => {

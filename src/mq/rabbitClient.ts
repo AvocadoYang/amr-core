@@ -16,16 +16,14 @@ import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, 
 import { AllControl } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { AllIO } from "./type/ioFromQams";
-import { Input } from "~/actions/rabbitmq/input";
+import { CONNECT_WITH_QAMS, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
 
 export default class RabbitClient {
     private url: string;
-    private isInit: boolean = false;
     private machineID: string;
     private connection: amqp.ChannelModel | null = null
     private channel: amqp.Channel | null = null;
-    private isClosing = false;
     public debugLogger: winston.Logger;
     private bindingLogger: winston.Logger;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
@@ -71,7 +69,7 @@ export default class RabbitClient {
 
         combineLatest([
             this.input$.pipe(
-                filter((action) => action.type == "RABBIT/INPUT/RB_IS_CONNECTED"),
+                filter((action) => action.type == CONNECT_WITH_QAMS),
                 map((data) => data.isConnected), startWith(false)
             ),
             this.rabbitIsConnected$.pipe(startWith(false))
@@ -121,7 +119,6 @@ export default class RabbitClient {
                     type: "rabbitmq service"
                 });
 
-                this.output$.next(isConnected({ isConnected: false }))
                 this.channel = null;
                 this.rabbitIsConnected$.next(false);
                 setTimeout(() => this.connect(), this.retryTime);
@@ -133,6 +130,7 @@ export default class RabbitClient {
             SysLoggerNormal.info(`Connected to ${this.url}`, {
                 type: "rabbitmq service"
             });
+            await this.init();
             this.rabbitIsConnected$.next(true)
 
         } catch (err) {
@@ -383,7 +381,6 @@ export default class RabbitClient {
         await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${config.MAC}`);
         await this.bindQueue(heartbeatPongQName, HEARTBEAT_EX, `amr.heartbeat.pong.${config.MAC}`);
 
-        this.output$.next(isConnected({ isConnected: true }));
     }
 
     public onHeartbeat(cb: (action: HEARTBEAT) => void) {
@@ -413,7 +410,6 @@ export default class RabbitClient {
 
 
     public async close() {
-        this.isClosing = true;
         await this.channel?.close();
         await this.connection?.close();
 
@@ -536,11 +532,7 @@ export default class RabbitClient {
 
     private async consumeTopic() {
         if (!this.channel) return [];
-        if (!this.isInit) {
-            await this.init();
-            this.isInit = true;
-            await this.flushPendingMessages();
-        }
+
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
                 if (msg.session !== this.info.session) return;
@@ -585,6 +577,8 @@ export default class RabbitClient {
                 };
             })
         ]);
+
+        await this.flushPendingMessages();
         this.consumerTags = tags;
         return tags;
     }

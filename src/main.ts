@@ -158,7 +158,7 @@ class AmrCore {
               tap(() => {
                 const now = Date.now();
                 // console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
-                if (now - this.lastHeartbeatTime > 6000) {
+                if (now - this.lastHeartbeatTime > 4000) {
                   TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                     group: "transaction",
                     type: "heartbeat",
