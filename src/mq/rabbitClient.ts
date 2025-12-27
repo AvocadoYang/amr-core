@@ -420,7 +420,6 @@ export default class RabbitClient {
         SysLoggerNormal.info(`Connection closed manually.`, {
             type: "rabbitmq service"
         })
-
     }
 
     private isVolatile(exchange: string, routingKey: string): boolean {
