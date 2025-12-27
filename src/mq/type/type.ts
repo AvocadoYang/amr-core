@@ -8,7 +8,7 @@ export const IO_EX = "amr.io.topic";
 export const CONTROL_EX = "amr.control.topic"; // optional dedicated control exchange
 
 
-// Queues
+// Queues: Qams <- amr
 export const PROMISE_RES_QUEUE = "qams.promise.res.queue";
 export const VOLATILE_RES_QUEUE = "qams.volatile.res.queue";
 export const IO_QUEUE = "qams.io.queue";
@@ -16,7 +16,7 @@ export const IO_HEARTBEAT_QUEUE = "qams.io.heartbeat_queue";
 export const HANDSHAKE_IO_QUEUE = "qams.io.handshake.queue";
 
 
-
+//Queues: Qams -> amr 
 export const heartbeatPingQName = `heartbeat.ping.queue.${config.MAC}`
 export const heartbeatPongQName = `heartbeat.pong.queue.${config.MAC}`
 export const controlQName = `amr.control.queue.${config.MAC}`

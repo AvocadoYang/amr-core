@@ -451,7 +451,6 @@ export default class RabbitClient {
                 const publishOptions = expiration
                     ? { expiration }
                     : undefined;
-
                 this.channel.publish(exchange, key, buffer, publishOptions);
 
                 return;
