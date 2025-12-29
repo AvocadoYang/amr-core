@@ -7,8 +7,8 @@ import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
 import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { IO_EX, RES_EX } from "~/mq/type/type";
-import { AllReq } from "~/mq/type/req";
+import { CONTROL_EX, IO_EX, RES_EX } from "~/mq/type/type";
+import { AllControl } from "~/mq/type/control";
 
 export default class Mission {
   private output$: Subject<Output>
@@ -25,7 +25,7 @@ export default class Mission {
   ) {
     this.output$ = new Subject();
 
-    this.rb.onReqTransaction((action) => {
+    this.rb.onControlTransaction((action) => {
       this.reqProcess(action);
     });
 
@@ -103,9 +103,8 @@ export default class Mission {
         //sendTargetLoc
       };
 
-      this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.readStatus`, sendReadStatus(newState), {
-        persistent: true
-      });
+      this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.readStatus`, sendReadStatus(newState));
+
       this.updateStatue({ missionType: "", targetLoc: "" });
       this.output$.next(sendAmrHasMission({ hasMission: false }))
 
@@ -115,7 +114,7 @@ export default class Mission {
 
   }
 
-  private reqProcess(action: AllReq) {
+  private reqProcess(action: AllControl) {
     const { payload } = action;
     const { id, cmd_id, amrId } = payload;
     switch (payload.cmd_id) {
@@ -148,7 +147,7 @@ export default class Mission {
 
         this.rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.writeStatus`,
+          `qams.${config.MAC}.res.writeStatus`,
           sendWriteStatusResponse({ return_code: ReturnCode.SUCCESS, amrId, id, lastSendGoalId: status.Id, missionType: misType })
         );
 
@@ -161,7 +160,7 @@ export default class Mission {
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         this.rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.writeCancel`,
+          `qams.${config.MAC}.res.writeCancel`,
           sendBaseResponse({ cmd_id, return_code: ReturnCode.SUCCESS, amrId, id })
         );
         this.output$.next(sendAmrHasMission({ hasMission: false }))

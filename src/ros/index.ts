@@ -250,7 +250,7 @@ export const sendShortestPath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.shortestPath`,
+            `qams.${config.MAC}.res.shortestPath`,
             sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.SHORTEST_PATH, id }),
             { expiration: "10000" }
           )
@@ -270,7 +270,7 @@ export const sendShortestPath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.shortestPath`,
+          `qams.${config.MAC}.res.shortestPath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.shortestPathServiceFailed,
             cmd_id: CMD_ID.SHORTEST_PATH,
@@ -301,7 +301,7 @@ export const sendReroutePath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.reroutePath`,
+            `qams.${config.MAC}.res.reroutePath`,
             sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REROUTE_PATH, id }),
             { expiration: "10000" }
           )
@@ -321,7 +321,7 @@ export const sendReroutePath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.reroutePath`,
+          `qams.${config.MAC}.res.reroutePath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.reroutePathServiceFailed,
             cmd_id: CMD_ID.REROUTE_PATH,
@@ -353,7 +353,7 @@ export const sendIsAllowTarget = (() => {
         if ((res as { result: boolean }).result) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.isAllow`,
+            `qams.${config.MAC}.res.isAllow`,
             sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.ALLOW_PATH, id }),
             { expiration: "10000" }
           )
@@ -361,7 +361,7 @@ export const sendIsAllowTarget = (() => {
         }
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.isAllow`,
+          `qams.${config.MAC}.res.isAllow`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.isAllowServiceFailed,
             cmd_id: CMD_ID.ALLOW_PATH,
@@ -378,7 +378,7 @@ export const sendIsAllowTarget = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.isAllow`,
+          `qams.${config.MAC}.res.isAllow`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.isAllowServiceFailed,
             cmd_id: CMD_ID.ALLOW_PATH,

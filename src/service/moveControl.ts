@@ -89,7 +89,7 @@ class MoveControl {
         case CMD_ID.REGISTER:
           this.rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.volatile`,
+            `qams.${config.MAC}.res.register`,
             sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
           );
           this.registerSub$.next(true);
@@ -118,7 +118,7 @@ class MoveControl {
             this.isAllowSub$.next({ locationId, isAllow })
             this.rb.resPublish(
               RES_EX,
-              `amr.res.${config.MAC}.volatile`,
+              `qams.${config.MAC}.res.isAllow`,
               sendBaseResponse({
                 amrId, return_code: ReturnCode.SUCCESS,
                 cmd_id: CMD_ID.ALLOW_PATH,
@@ -154,7 +154,6 @@ class MoveControl {
         break;
       case CMD_ID.CARGO_VERITY:
         // console.log(action, '@@@@')
-        break;
         break;
       default:
         break;

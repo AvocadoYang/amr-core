@@ -19,7 +19,10 @@ export enum CMD_ID {
   ALLOW_PATH = "AP",
   REGISTERED = "RD",
 
-  HAS_CARGO = "HC"
+  HAS_CARGO = "HC",
+
+
+  ETX = "ETX"
 }
 export const fakeFeedBack = {
   task_process: 1,

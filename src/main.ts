@@ -10,9 +10,9 @@ import { CMD_ID } from "./mq/type/cmdId";
 import { isDifferentPose, formatPose, SimplePose } from "./helpers";
 import logger from "./logger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
-import { sendBaseResponse, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
+import { sendBaseResponse, sendETX, sendHeartBeatResponse, sendPose } from "./mq/transactionsWrapper";
 import { AMR_HAS_MISSION, CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
-import { HEARTBEAT_EX, IO_EX, RES_EX } from "./mq/type/type";
+import { CONTROL_EX, HEARTBEAT_EX, IO_EX, RES_EX } from "./mq/type/type";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
@@ -37,6 +37,7 @@ cleanEnv(process.env, {
 
 class AmrCore {
   private heartbeatSwitch$ = new Subject<boolean>();
+  private consumedQueues: Map<string, string> = new Map();
 
   private lastHeartbeatTime: number = 0;
   private lastHeartbeatCount: number = 0;
@@ -53,7 +54,7 @@ class AmrCore {
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   constructor() {
-    this.rb = new RBClient(this.info);
+    this.rb = new RBClient(this.info, this.consumedQueues);
     this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager(this.amrStatus);
     this.ms = new MissionManager(this.rb, this.info, this.amrStatus);
@@ -122,7 +123,7 @@ class AmrCore {
         resHeartbeat = 0;
       }
 
-      this.rb.resPublish(HEARTBEAT_EX, `amr.heartbeat.pong.${config.MAC}`,
+      this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${config.MAC}`,
         sendHeartBeatResponse({
           id,
           heartbeat: resHeartbeat,
@@ -191,11 +192,9 @@ class AmrCore {
     const { return_code } = action;
     switch (return_code) {
       case ReturnCode.SUCCESS:
-        this.rb.flushCache({ continue: true });
         break;
       /** */
       case ReturnCode.NORMAL_REGISTER:
-        this.rb.flushCache({ continue: false });
         this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
         if (this.amrStatus.amrHasMission) ROS.cancelCarStatusAnyway("#")
         break;
@@ -205,11 +204,9 @@ class AmrCore {
           ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
           this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
         };
-        this.rb.flushCache({ continue: false });
         break;
       /** */
       case ReturnCode.REGISTER_SUCCESS_AMR_NOT_REGISTER:
-        this.rb.flushCache({ continue: false });
         break;
       /**  */
       default:

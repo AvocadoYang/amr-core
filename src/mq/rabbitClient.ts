@@ -1,21 +1,16 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, distinctUntilKeyChanged, EMPTY, filter, finalize, from, interval, map, merge, NEVER, startWith, Subject, Subscription, switchMap, tap } from "rxjs";
+import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap } from "rxjs";
 import config from "~/configs"
 import * as faker from 'faker';
 import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormal, RabbitLoggerNormalError, RabbitLoggerNormalWarning } from "~/logger/rabbitLogger";
-import { Transaction } from "~/actions/rabbitmq/transactions";
-import { bindingTable } from "./bindingTable";
-import { isConnected, Output } from "~/actions/rabbitmq/output";
-import { RequestMsgType, ResponseMsgType, sendHeartbeat } from "./transactionsWrapper";
+import { Output } from "~/actions/rabbitmq/output";
+import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
-import { AllReq, HEARTBEAT } from "./type/req";
-import { CMD_ID } from "./type/cmdId";
-import { REQ_EX, RES_EX, IO_EX, CONTROL_EX, HANDSHAKE_IO_QUEUE, PublishOptions, volatile, controlQName, ioQFromQAMS, reqQName, responseQName, HEARTBEAT_EX, heartbeatPingQName, heartbeatPongQName } from "./type/type";
-import { AllControl } from "./type/control";
+import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, dynamicListener, HEARTBEAT_PONG_QUEUE } from "./type/type";
+import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
-import { AllIO } from "./type/ioFromQams";
 import { CONNECT_WITH_QAMS, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
 
@@ -28,8 +23,6 @@ export default class RabbitClient {
     private bindingLogger: winston.Logger;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
-    private reqTransactionOutput$: Subject<AllReq> = new Subject();
-    private ioTransactionOutput$: Subject<AllIO> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
     private consumerTags: string[] = [];
@@ -37,11 +30,6 @@ export default class RabbitClient {
     private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
     private output$: Subject<Output>
     public input$: Subject<Input>
-
-    private controlCache: { timestamp: number, type: "CONTROL", msg: AllControl }[] = [];
-    private requestCache: { timestamp: number, type: "REQUEST", msg: AllReq }[] = [];
-    private responseCache: { timestamp: number, type: "RESPONSE", msg: AllRes }[] = [];
-    private ioCache: { timestamp: number, type: "IO", msg: AllIO }[] = [];
 
     private pendingMessages: {
         exchange: string;
@@ -57,6 +45,7 @@ export default class RabbitClient {
     private retryTime: number;
     constructor(
         private info: { amrId: string, isConnect: boolean, session: string, return_code: string },
+        private consumedQueues: Map<string, string>,
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
@@ -86,7 +75,7 @@ export default class RabbitClient {
                             RabbitLoggerNormal.info("Stop consuming topics", {
                                 type: "consume"
                             });
-                            if (serviceConnected) this.cancelConsumers();
+                            this.stopConsumeQueue(dynamicListener)
                         })
                     );
                 };
@@ -307,10 +296,20 @@ export default class RabbitClient {
         }
     }
 
-    public async consume<A>(queueName: string, onMessage: (msg: A) => void) {
+    public async consume<A>(queueName: string, onMessage: (msg: A) => void, noAck = false) {
         if (!this.channel) throw new Error("Channel is not available");
         const localChannel = this.channel;
-        const consumeTag = await this.channel.consume(queueName, (msg) => {
+        if (this.consumedQueues.has(queueName)) {
+            RabbitLoggerNormal.info(`Queue ${queueName} already being consumed.`, {
+                type: "consume queue"
+            });
+            return this.consumedQueues.get(queueName);
+        } else {
+            RabbitLoggerNormal.info(`start consume queue: ${queueName}`, {
+                type: "consume queue",
+            });
+        }
+        const consumer = await this.channel.consume(queueName, (msg) => {
             if (msg) {
                 try {
                     const content = msg.content.toString();
@@ -337,49 +336,44 @@ export default class RabbitClient {
                     })
                 } finally {
                     try {
-                        localChannel.ack(msg);  // 用舊 channel ack，而非 this.channel!!!
+                        if (!noAck) localChannel.ack(msg);  // 用舊 channel ack，而非 this.channel!!!
                     } catch (e) {
                         console.error("ack failed:", e);
                     }
                 }
             }
-        });
-
-        return consumeTag.consumerTag;
+        }, { noAck });
+        this.consumedQueues.set(queueName, consumer.consumerTag);
+        return consumer.consumerTag;
     }
 
     public async init() {
 
 
         await this.createExchange(HEARTBEAT_EX, "topic", { durable: true });
-        await this.createExchange(REQ_EX, "topic", { durable: true });
         await this.createExchange(RES_EX, "topic", { durable: true });
         await this.createExchange(IO_EX, "topic", { durable: true });
         await this.createExchange(CONTROL_EX, "topic", { durable: true });
 
+        await this.createQueue(q2a_controlQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.bindQueue(q2a_controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
 
-        await this.createQueue(ioQFromQAMS, { durable: true });
-        await this.bindQueue(ioQFromQAMS, IO_EX, `amr.${config.MAC}.io.from.qams.*`);
+        await this.createQueue(q2a_amrResponseQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.bindQueue(q2a_amrResponseQName, RES_EX, `amr.${config.MAC}.*.res`);
 
+        await this.createQueue(a2q_handshakeQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.bindQueue(a2q_handshakeQName, CONTROL_EX, `qams.${config.MAC}.handshake.*`);
 
+        await this.createQueue(a2q_qamsResponseQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.bindQueue(a2q_qamsResponseQName, RES_EX, `qams.${config.MAC}.res.*`);
 
-        await this.createQueue(reqQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
-        await this.bindQueue(reqQName, REQ_EX, `amr.${config.MAC}.req.*`);
-
-
-        await this.createQueue(controlQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
-        await this.bindQueue(controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
-
-
-
-        await this.createQueue(responseQName, { durable: true });
-        await this.bindQueue(responseQName, RES_EX, `amr.${config.MAC}.*.res`);
-
+        await this.createQueue(HEARTBEAT_PONG_QUEUE, { durable: true });
+        await this.bindQueue(HEARTBEAT_PONG_QUEUE, HEARTBEAT_EX, `qams.heartbeat.pong.*`);
 
         await this.createQueue(heartbeatPingQName, { autoDelete: false });
-        await this.createQueue(heartbeatPongQName, { autoDelete: false });
         await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${config.MAC}`);
-        await this.bindQueue(heartbeatPongQName, HEARTBEAT_EX, `amr.heartbeat.pong.${config.MAC}`);
+        await this.channel.purgeQueue(heartbeatPingQName);
+
 
     }
 
@@ -387,22 +381,16 @@ export default class RabbitClient {
         return this.heartbeatOutput$.subscribe(cb);
     }
 
-    public onReqTransaction(cb: (action: AllReq) => void) {
-        return this.reqTransactionOutput$.subscribe(cb);
-    }
-
 
     public onResTransaction(cb: (action: AllRes) => void) {
         return this.resTransactionOutput$.subscribe(cb);
     }
 
+
     public onControlTransaction(cb: (action: AllControl) => void) {
         return this.controlTransactionOutput$.subscribe(cb);
     }
 
-    public onIOTransaction(cb: (action: AllIO) => void) {
-        return this.ioTransactionOutput$.subscribe(cb)
-    }
 
     public subscribe(cb: (action: Output) => void) {
         return this.output$.subscribe(cb);
@@ -470,35 +458,6 @@ export default class RabbitClient {
         }
     }
 
-    public flushCache(data: { continue: boolean }) {
-        const { continue: isSync } = data;
-        RabbitLoggerNormal.info("flush cache", {
-            type: "cache",
-            status: { isSync }
-        })
-        if (isSync) {
-            const msg = [...this.controlCache, ...this.requestCache, ...this.responseCache, ...this.ioCache.slice(-30)]
-                .flat()
-                .sort((a, b) => a.timestamp - b.timestamp);
-            msg.forEach((data) => {
-                switch (data.type) {
-                    case "CONTROL":
-                        this.controlTransactionOutput$.next(data.msg);
-                        break;
-                    case "REQUEST":
-                        this.reqTransactionOutput$.next(data.msg);
-                        break;
-                    case "RESPONSE":
-                        this.resTransactionOutput$.next(data.msg);
-                        break;
-                }
-            });
-        }
-
-        this.controlCache.length = 0;
-        this.requestCache.length = 0;
-        this.responseCache.length = 0;
-    }
 
     private async flushPendingMessages() {
         if (!this.channel || this.pendingMessages.length === 0) return;
@@ -537,37 +496,14 @@ export default class RabbitClient {
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
                 if (msg.session !== this.info.session) return;
                 this.heartbeatOutput$.next(msg);
-            }),
-            this.consume<AllControl>(controlQName, (msg) => {
-                const checkSession = msg.session == this.info.session;
-                if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
-                    if (canPass) this.controlTransactionOutput$.next(msg);
-                } else {
-                    this.controlTransactionOutput$.next(msg);
-                }
+            }, true),
+
+            this.consume<AllControl>(q2a_controlQName, (msg) => {
+                this.controlTransactionOutput$.next(msg);
+
             }),
 
-            this.consume<AllReq>(reqQName, (msg) => {
-                const checkSession = msg.session == this.info.session;
-                if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
-                    if (canPass) this.reqTransactionOutput$.next(msg);
-                } else {
-                    this.reqTransactionOutput$.next(msg);
-                }
-            }),
-
-            this.consume<AllIO>(ioQFromQAMS, (msg) => {
-                const checkSession = msg.session == this.info.session;
-                if (!checkSession) {
-                    return;
-                } else {
-                    this.ioTransactionOutput$.next(msg);
-                }
-            }),
-
-            this.consume<AllRes>(responseQName, (msg) => {
+            this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
                 const checkSession = msg.session == this.info.session;
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.SUCCESS;
@@ -577,22 +513,27 @@ export default class RabbitClient {
                 };
             })
         ]);
-
         await this.flushPendingMessages();
         this.consumerTags = tags;
         return tags;
     }
 
-    private async cancelConsumers() {
+    public async stopConsumeQueue(queueNames: string[] = []) {
         if (!this.channel) return;
-        for (const tag of this.consumerTags) {
+        for (const queueName of queueNames) {
+            if (!this.consumedQueues.has(queueName)) continue;
             try {
+                const tag = this.consumedQueues.get(queueName);
                 await this.channel.cancel(tag);
+                this.consumedQueues.delete(queueName);
+                RabbitLoggerNormal.info(` stop consume queue: ${queueName}`, {
+                    type: "stop consume",
+                });
             } catch (e) {
                 // channel 可能已經 close，忽略
             }
         }
-        this.consumerTags = [];
     }
+
 
 }

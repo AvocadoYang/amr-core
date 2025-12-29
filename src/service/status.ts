@@ -3,7 +3,7 @@ import * as ROS from '../ros'
 import config from "../configs";
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
-import { IO_EX, RES_EX } from '~/mq/type/type';
+import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import logger from '~/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
@@ -23,47 +23,43 @@ class Status {
         private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
     ) {
 
-        this.rb.onReqTransaction(async (action) => {
+        this.rb.onControlTransaction(async (action) => {
             const { payload, serialNum } = action;
             const { id, cmd_id } = payload;
             switch (payload.cmd_id) {
                 case CMD_ID.UPDATE_MAP:
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
-                    this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }), { expiration: "2000" });
+                    this.rb.resPublish(
+                        RES_EX,
+                        `qams.${config.MAC}.res.updateMap`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                        { expiration: "2000" }
+                    );
                     const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
-                    this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`,
+                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.emergencyStop`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
-                    this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`,
+                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.forceReset`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
-                default:
                     break;
-            }
-        });
-
-        this.rb.onIOTransaction((action) => {
-            const { payload } = action;
-            const { cmd_id } = payload;
-            switch (cmd_id) {
                 case CMD_ID.HAS_CARGO:
                     ROS.sendHasCargo(payload.hasCargo);
                     break;
                 default:
                     break;
             }
-        })
+        });
 
         /** ROS subscribe */
 
@@ -108,17 +104,17 @@ class Status {
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
             if (!info.isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg))
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
 
         ROS.is_registered.subscribe(msg => {
             if (!info.isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg));
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
             this.amrStatus.amrIsRegistered = msg;
         });
 
         ROS.getVerityCargo$.subscribe((msg) => {
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
+            this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
 
