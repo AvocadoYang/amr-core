@@ -518,7 +518,7 @@ export default class RabbitClient {
             }),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
-                const checkSession = msg.session == this.info.session;
+                const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.SUCCESS;
                     if (canPass) this.resTransactionOutput$.next(msg);

@@ -13,12 +13,14 @@ import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 
 export default class HeartbeatMonitor {
     private qamsLastHeartbeatTime: number = 0;
-    private amrServiceHeartbeatTime: number = 0;
+    private response: number = 0;
 
     private qams_connect$ = new BehaviorSubject<boolean>(false);
     private ros_bridge_connect$ = new BehaviorSubject<boolean>(false);
     private amr_service_connect$ = new BehaviorSubject<boolean>(false);
     private rabbit_connect$ = new BehaviorSubject<boolean>(false);
+
+    private qams_lostCount: number = 0;
 
 
     public input$: Subject<Input> = new Subject();
@@ -32,8 +34,7 @@ export default class HeartbeatMonitor {
             const { payload } = action;
             const { heartbeat, id } = payload;
             this.qamsLastHeartbeatTime = Date.now();
-            let resHeartbeat = heartbeat >= 9999 ? 0 : heartbeat + 1;
-
+            let resHeartbeat = heartbeat + 1 > 9999 ? 0 : heartbeat + 1;
 
             this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${config.MAC}`,
                 sendHeartBeatResponse({
@@ -55,8 +56,18 @@ export default class HeartbeatMonitor {
                     return timer(5000, 5000).pipe(
                         tap(() => {
                             const now = Date.now();
-                            // console.log("now: ", now, "last: ", this.lastHeartbeatTime, "sub= ", now - this.lastHeartbeatTime)
+                            // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
                             if (now - this.qamsLastHeartbeatTime > 4000) {
+                                TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
+                                    group: "transaction",
+                                    type: "heartbeat",
+                                });
+                                this.qams_lostCount = this.qams_lostCount + 1;
+                            } else {
+                                this.qams_lostCount = 0;
+                            }
+
+                            if (this.qams_lostCount >= 2) {
                                 TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
                                     group: "transaction",
                                     type: "heartbeat",
