@@ -606,7 +606,7 @@ export const is_registered = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: "/kenmec_fork/is_register",
+    name: `/kenmec_${config.AMR}/is_register`,
     messageType: "std_msgs/Bool",
   });
 
@@ -616,6 +616,41 @@ export const is_registered = (() => {
     })
   );
 })();
+
+export const has_mission = (() => {
+  const schema = object({
+    data: boolean().required("mission missed"),
+  }).required("amr info missed");
+
+  const topic = new ROSLIB.Topic<typeof boolean>({
+    ros,
+    name: `/kenmec_${config.AMR}/has_mission`,
+    messageType: "std_msgs/Bool",
+  });
+
+  return fromEventPattern<boolean>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+})();
+
+export const amrServiceHeartbeat = (() => {
+  const schema = object({
+    data: boolean().required("service heartbeat error"),
+  });
+  const topic = new ROSLIB.Topic<typeof boolean>({
+    ros,
+    name: `/kenmec_${config.AMR}/still_alive`,
+    messageType: "std_msgs/Bool",
+  });
+  return fromEventPattern<boolean>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+
+})()
 
 // 接收
 export const getHeartbeat$ = (() => {

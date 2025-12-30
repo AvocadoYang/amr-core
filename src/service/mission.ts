@@ -9,6 +9,7 @@ import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CONTROL_EX, IO_EX, RES_EX } from "~/mq/type/type";
 import { AllControl } from "~/mq/type/control";
+import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 
 export default class Mission {
   private output$: Subject<Output>
@@ -20,7 +21,8 @@ export default class Mission {
 
   constructor(
     private rb: RBClient,
-    private info: { amrId: string, isConnect: boolean },
+    private info: TRANSACTION_INFO,
+    private connectStatus: CONNECT_STATUS,
     private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
   ) {
     this.output$ = new Subject();

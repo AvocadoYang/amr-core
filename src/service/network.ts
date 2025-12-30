@@ -1,26 +1,27 @@
 import config from '../configs'
-import { cleanEnv, str } from "envalid";
-import dotenv from "dotenv";
 import * as ROS from '../ros'
-import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
+import * as net from 'net';
+import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout, timestamp } from "rxjs";
 import axios from "axios";
-import { array, number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
+import { number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { bindingTable } from '~/mq/bindingTable';
-import { isConnected, Output } from '~/actions/networkManager/output';
-import { sendCancelMission, setMissionInfo } from '~/actions/mission/output';
+import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
+
 
 
 class NetWorkManager {
 
+  public server: net.Server
   private ros_bridge_error_log = true
   private ros_bridge_close_log = true
   private fleet_connect_log = true
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
+
+  private socket: net.Socket = null;
 
   private lastSendGoalId: string = "";
   private lastTransactionId: string = "";
@@ -30,6 +31,70 @@ class NetWorkManager {
     private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
   ) {
     this.output$ = new Subject();
+
+    this.server = net.createServer((socket) => {
+      SysLoggerNormal.info("AMR service is running", {
+        type: "tcp"
+      });
+      this.socket = socket;
+
+      /**
+       * {
+       *  timestamp: number,
+       *  heartbeat_count: 0-9999
+       * }
+       */
+
+      socket.write(JSON.stringify({
+        timestamp: Date.now(),
+        heartbeat_count: 0
+      }))
+
+      socket.on("data", async (chunk) => {
+        const schema = object({
+          timestamp: number().required(),
+          heartbeat_count: number().required()
+        })
+        try {
+          const msg = JSON.parse(chunk.toString());
+          const { heartbeat_count } = await schema.validate(msg).catch((err) => {
+            throw new ValidationError(err, (err as YupValidationError).message)
+          });
+          const resCount = heartbeat_count < 9999 ? heartbeat_count + 1 : 0
+          // socket.write(JSON.stringify({
+          //   timestamp: Date.now(),
+          //   heartbeat_count: resCount
+          // }))
+
+        } catch (err) {
+          console.log(err);
+        }
+      })
+
+      socket.on("end", () => {
+        SysLoggerNormalWarning.info("AMR service closed", {
+          type: "tcp"
+        })
+      });
+
+      socket.on("close", () => {
+        SysLoggerNormalWarning.info("AMR service closed", {
+          type: "tcp"
+        })
+      });
+
+      socket.on("error", () => {
+        SysLoggerNormalWarning.error("tcp service error", {
+          type: "tcp"
+        })
+      });
+    });
+
+    this.server.listen(8532, () => {
+      SysLoggerNormal.info(`tcp server is running on ${8532}`, {
+        type: "tcp service"
+      })
+    })
   }
 
   public async fleetConnect() {
@@ -155,6 +220,7 @@ class NetWorkManager {
     )
       .pipe(
         distinctUntilChanged(),
+        tap((isConnected) => this.output$.next(ros_bridge_connected({ isConnected }))),
         switchMap((isConnected) => (isConnected ? EMPTY : interval(5000)))
       )
       .subscribe(() => {

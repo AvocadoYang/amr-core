@@ -12,6 +12,7 @@ import { group } from "console";
 import { AllControl } from "~/mq/type/control";
 import { AllRes } from "~/mq/type/res";
 import WsServer from "./ws";
+import { TRANSACTION_INFO } from "~/types/status";
 
 class MoveControl {
   private lastCurrentId = ""
@@ -30,7 +31,7 @@ class MoveControl {
   constructor(
     private rb: RBClient,
     private ws: WsServer,
-    private info: { amrId: string, isConnect: boolean },
+    private info: TRANSACTION_INFO,
     private map: MapType
   ) {
     this.rb.onControlTransaction((action) => {

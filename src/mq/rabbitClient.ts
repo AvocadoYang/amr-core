@@ -5,14 +5,15 @@ import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, fil
 import config from "~/configs"
 import * as faker from 'faker';
 import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormal, RabbitLoggerNormalError, RabbitLoggerNormalWarning } from "~/logger/rabbitLogger";
-import { Output } from "~/actions/rabbitmq/output";
+import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
 import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, dynamicListener, HEARTBEAT_PONG_QUEUE } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
-import { CONNECT_WITH_QAMS, Input } from "~/actions/rabbitmq/input";
+import { CONNECT_WITH_QAMS, CONNECT_WITH_ROS_BRIDGE, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
+import { TRANSACTION_INFO } from "~/types/status";
 
 export default class RabbitClient {
     private url: string;
@@ -25,7 +26,7 @@ export default class RabbitClient {
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
-    private consumerTags: string[] = [];
+    private error_logger_switch: boolean = true;
 
     private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
     private output$: Subject<Output>
@@ -44,7 +45,7 @@ export default class RabbitClient {
 
     private retryTime: number;
     constructor(
-        private info: { amrId: string, isConnect: boolean, session: string, return_code: string },
+        private info: TRANSACTION_INFO,
         private consumedQueues: Map<string, string>,
         option: { retryTime?: number } = {}
     ) {
@@ -61,11 +62,17 @@ export default class RabbitClient {
                 filter((action) => action.type == CONNECT_WITH_QAMS),
                 map((data) => data.isConnected), startWith(false)
             ),
-            this.rabbitIsConnected$.pipe(startWith(false))
+            this.rabbitIsConnected$.pipe(startWith(false)),
+            this.input$.pipe(
+                filter((action) => action.type == CONNECT_WITH_ROS_BRIDGE),
+                map((data) => data.isConnected), startWith(false)
+            ),
         ]).pipe(
-            distinctUntilChanged((prev, curr) => prev[0] === curr[0] && prev[1] === curr[1]),
-            switchMap(([serviceConnected, rabbitConnected]) => {
-                if (serviceConnected && rabbitConnected) {
+            distinctUntilChanged((prev, curr) => {
+                return (prev[0] === curr[0]) && (prev[1] === curr[1]) && (prev[2] === curr[2]);
+            }),
+            switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected]) => {
+                if (serviceConnected && rabbitConnected && rosbridgeConnected) {
                     return defer(() => {
                         RabbitLoggerNormal.info("Start consuming topics", { type: "consume" });
                         return from(this.consumeTopic());
@@ -100,7 +107,7 @@ export default class RabbitClient {
                     status: err.message
                 });
                 this.channel = null;
-                this.rabbitIsConnected$.next(false);
+                this.output$.next(isConnected({ isConnected: false }))
             });
 
             this.connection.on("close", () => {
@@ -109,7 +116,8 @@ export default class RabbitClient {
                 });
 
                 this.channel = null;
-                this.rabbitIsConnected$.next(false);
+                this.consumedQueues.clear();
+                this.output$.next(isConnected({ isConnected: false }))
                 setTimeout(() => this.connect(), this.retryTime);
 
             });
@@ -119,14 +127,20 @@ export default class RabbitClient {
             SysLoggerNormal.info(`Connected to ${this.url}`, {
                 type: "rabbitmq service"
             });
+
+            this.error_logger_switch = true;
             await this.init();
-            this.rabbitIsConnected$.next(true)
+            this.rabbitIsConnected$.next(true);
+            this.output$.next(isConnected({ isConnected: true }))
 
         } catch (err) {
-            SysLoggerNormalError.error("Connection failed", {
-                type: "rabbitmq service",
-                status: (err as Error).message
-            });
+            if (this.error_logger_switch) {
+                SysLoggerNormalError.error("Connection failed", {
+                    type: "rabbitmq service",
+                    status: (err as Error).message
+                });
+                this.error_logger_switch = false;
+            }
             setTimeout(() => this.connect(), this.retryTime);
         }
     }
@@ -233,7 +247,6 @@ export default class RabbitClient {
         const buffer = Buffer.from(sMsg);
 
         try {
-            if (!this.info.isConnect) return;
             await this.publishWithRetry(exchangeName, routingKey, buffer, flag);
 
             // 發送成功才記錄 transaction
@@ -489,6 +502,7 @@ export default class RabbitClient {
         this.input$.next(action);
     }
 
+
     private async consumeTopic() {
         if (!this.channel) return [];
 
@@ -514,7 +528,7 @@ export default class RabbitClient {
             })
         ]);
         await this.flushPendingMessages();
-        this.consumerTags = tags;
+
         return tags;
     }
 

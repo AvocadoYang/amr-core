@@ -11,6 +11,7 @@ import { interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
 import { Output, setIsRegistered } from '~/actions/status/output';
+import { CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
 
 
 class Status {
@@ -18,7 +19,8 @@ class Status {
     private output$: Subject<Output> = new Subject();
     constructor(
         private rb: RBClient,
-        private info: { amrId: string, isConnect: boolean },
+        private info: TRANSACTION_INFO,
+        private connectStatus: CONNECT_STATUS,
         private map: MapType,
         private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
     ) {
@@ -64,7 +66,7 @@ class Status {
         /** ROS subscribe */
 
         ROS.pose$.subscribe((pose) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
                 logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
             }
@@ -80,7 +82,7 @@ class Status {
         });
 
         ROS.getAmrError$.subscribe((msg: { data: string }) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             const jMsg = JSON.parse(msg.data) as {
                 warning_msg: string[];
                 warning_id: string[];
@@ -89,29 +91,34 @@ class Status {
         });
 
         ROS.getIOInfo$.subscribe((data) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(data), {
                 expiration: "2000"
             })
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
             })
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
 
         ROS.is_registered.subscribe(msg => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
             this.amrStatus.amrIsRegistered = msg;
         });
+
+        ROS.has_mission.subscribe(msg => {
+            if (!this.connectStatus.qams_isConnect) return;
+            console.log(msg)
+        })
 
         ROS.getVerityCargo$.subscribe((msg) => {
             this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
