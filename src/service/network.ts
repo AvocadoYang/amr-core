@@ -24,7 +24,6 @@ class NetWorkManager {
   private socket: net.Socket = null;
 
   private lastSendGoalId: string = "";
-  private lastTransactionId: string = "";
   private lastMissionType: string = "";
 
   constructor(
@@ -49,9 +48,6 @@ class NetWorkManager {
         `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
         serialNumber: config.MAC,
         lastSendGoalId: this.lastSendGoalId,
-        lastTransaction: this.lastTransactionId,
-        lastMissionType: this.lastMissionType,
-        amrIsRegistered: this.amrStatus.amrIsRegistered,
         timeout: 5000
       });
 
@@ -151,10 +147,8 @@ class NetWorkManager {
     return this.amrId;
   }
 
-  public updateMissionStatus(action: { missionType: string, lastSendGoalId: string, lastTransactionId: string }) {
-    this.lastMissionType = action.missionType;
+  public updateMissionStatus(action: { lastSendGoalId: string }) {
     this.lastSendGoalId = action.lastSendGoalId;
-    this.lastTransactionId = action.lastTransactionId;
   }
 }
 
