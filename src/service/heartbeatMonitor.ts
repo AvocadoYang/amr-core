@@ -1,7 +1,8 @@
-import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, map, of, Subject, switchMap, tap, timer } from "rxjs";
+import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, interval, map, of, Subject, switchMap, tap, timer } from "rxjs";
 import { CONNECT_WITH_AMR_SERVICE, CONNECT_WITH_QAMS, CONNECT_WITH_RABBIT_MQ, CONNECT_WITH_ROS_BRIDGE, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
 import { Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
+import * as net from 'net';
 import { SysLoggerNormal } from "~/logger/systemLogger";
 import { TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
 import { RBClient } from "~/mq";
@@ -10,10 +11,12 @@ import config from '../configs'
 import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
+import { number, object, ValidationError } from "yup";
 
 export default class HeartbeatMonitor {
     private qamsLastHeartbeatTime: number = 0;
-    private response: number = 0;
+    private amrServiceLastHeartbeatTime: number = 0;
+    private amrServiceHeartbeatCount = 0;
 
     private qams_connect$ = new BehaviorSubject<boolean>(false);
     private ros_bridge_connect$ = new BehaviorSubject<boolean>(false);
@@ -21,6 +24,9 @@ export default class HeartbeatMonitor {
     private rabbit_connect$ = new BehaviorSubject<boolean>(false);
 
     private qams_lostCount: number = 0;
+
+    public tcp_server: net.Server;
+    private socket: net.Socket = null;
 
 
     public input$: Subject<Input> = new Subject();
@@ -90,16 +96,19 @@ export default class HeartbeatMonitor {
         combineLatest([
             this.qams_connect$,
             this.ros_bridge_connect$,
-            this.rabbit_connect$
-        ]).pipe(filter(([qamsConnect, rosbridgeConnect, rabbitConnect]) => {
+            this.rabbit_connect$,
+            this.amr_service_connect$
+        ]).pipe(filter(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
             SysLoggerNormal.info("service connect status", {
                 type: "connect status",
                 status: {
                     qamsConnect: qamsConnect ? "✅" : "❌",
                     rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
-                    rabbitConnect: rabbitConnect ? "✅" : "❌"
+                    rabbitConnect: rabbitConnect ? "✅" : "❌",
+                    amrServiceConnect: amrServiceConnect ? "✅" : "❌"
                 }
             });
+            this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect })
             return (
                 qamsConnect == false &&
                 rosbridgeConnect == true &&
@@ -139,11 +148,109 @@ export default class HeartbeatMonitor {
                     break;
             }
         });
+
+        this.createAmrServiceFn();
     }
 
     private async retryConnectQAMSWithDelay(delayMs: number) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         this.output$.next(reconnectQAMS())
+    }
+
+    private createAmrServiceFn() {
+        this.tcp_server = net.createServer((socket) => {
+
+            /**
+              * {
+              *  timestamp: string,
+              *  heartbeat_count: 0-9999
+              * }
+              */
+            this.socket = socket;
+
+            socket.on("data", async (chunk) => {
+                const schema = object({
+                    timestamp: number().required(),
+                    heartbeat_count: number().required()
+                });
+                try {
+                    const msg = JSON.parse(chunk.toString());
+                    const { heartbeat_count } = await schema.validate(msg).catch((err) => {
+                        throw new ValidationError(err, (err as ValidationError).message)
+                    });
+                    const resCount = Number(heartbeat_count) + 1 > 9999 ? 0 : Number(heartbeat_count) + 1;
+                    this.amrServiceHeartbeatCount = resCount;
+                    this.socket.write(
+                        JSON.stringify({
+                            timestamp: (Date.now()).toString(),
+                            heartbeat_count: this.amrServiceHeartbeatCount
+                        })
+                    )
+
+                } catch (err) {
+                    console.log(err);
+                }
+            })
+        });
+
+        this.tcp_server.listen(8532, () => {
+            SysLoggerNormal.info(`tcp server is running on ${8532}`, {
+                type: "tcp service"
+            })
+        })
+
+        // heartbeat launch
+        this.amr_service_connect$.pipe(
+            switchMap((isConnected) => {
+                if (isConnected) {
+                    return interval(1000)
+                        .pipe(tap(() => {
+                            if (!this.socket) return;
+                            const timestamp = Date.now();
+                            this.amrServiceLastHeartbeatTime = timestamp;
+                            this.socket.write(
+                                JSON.stringify({
+                                    timestamp: timestamp.toString(),
+                                    heartbeat_count: this.amrServiceHeartbeatCount
+                                })
+                            )
+                        }))
+                }
+                return EMPTY;
+            })
+        ).subscribe();
+
+        // heartbeat watch dog
+        this.amr_service_connect$.pipe(
+            tap((isConnected) => { if (isConnected) this.amrServiceLastHeartbeatTime = Date.now() }),
+            switchMap((isConnected) => {
+                if (isConnected) {
+                    return timer(2000, 3000).pipe(
+                        tap(() => {
+                            const timestamp = Date.now();
+                            if (timestamp - this.amrServiceLastHeartbeatTime > 2500) {
+                                this.amr_service_connect$.next(false);
+                                this.socket.destroy();
+                                this.socket = null;
+                                this.amrServiceHeartbeatCount = 0;
+                            }
+                        })
+                    )
+                };
+                return of()
+            })
+        ).subscribe();
+
+
+    }
+
+    private setServiceConnectStatus(status:
+        { qamsConnect: boolean, rosbridgeConnect: boolean, rabbitConnect: boolean, amrServiceConnect: boolean }
+    ) {
+        this.connectStatus.qams_isConnect = status.qamsConnect;
+        this.connectStatus.rosbridge_isConnect = status.rosbridgeConnect;
+        this.connectStatus.rabbitMQ_isConnect = status.rabbitConnect;
+        this.connectStatus.amr_service_isConnect = status.amrServiceConnect;
     }
 
     public send(action: Input) {

@@ -32,69 +32,6 @@ class NetWorkManager {
   ) {
     this.output$ = new Subject();
 
-    this.server = net.createServer((socket) => {
-      SysLoggerNormal.info("AMR service is running", {
-        type: "tcp"
-      });
-      this.socket = socket;
-
-      /**
-       * {
-       *  timestamp: number,
-       *  heartbeat_count: 0-9999
-       * }
-       */
-
-      socket.write(JSON.stringify({
-        timestamp: Date.now(),
-        heartbeat_count: 0
-      }))
-
-      socket.on("data", async (chunk) => {
-        const schema = object({
-          timestamp: number().required(),
-          heartbeat_count: number().required()
-        })
-        try {
-          const msg = JSON.parse(chunk.toString());
-          const { heartbeat_count } = await schema.validate(msg).catch((err) => {
-            throw new ValidationError(err, (err as YupValidationError).message)
-          });
-          const resCount = heartbeat_count < 9999 ? heartbeat_count + 1 : 0
-          // socket.write(JSON.stringify({
-          //   timestamp: Date.now(),
-          //   heartbeat_count: resCount
-          // }))
-
-        } catch (err) {
-          console.log(err);
-        }
-      })
-
-      socket.on("end", () => {
-        SysLoggerNormalWarning.info("AMR service closed", {
-          type: "tcp"
-        })
-      });
-
-      socket.on("close", () => {
-        SysLoggerNormalWarning.info("AMR service closed", {
-          type: "tcp"
-        })
-      });
-
-      socket.on("error", () => {
-        SysLoggerNormalWarning.error("tcp service error", {
-          type: "tcp"
-        })
-      });
-    });
-
-    this.server.listen(8532, () => {
-      SysLoggerNormal.info(`tcp server is running on ${8532}`, {
-        type: "tcp service"
-      })
-    })
   }
 
   public async fleetConnect() {
@@ -169,26 +106,6 @@ class NetWorkManager {
       this.reconnectCount$.next(this.reconnectCount$.value + 1);
     });
 
-
-    ROS.connectionError$.subscribe((error: Error) => {
-      // if (this.ros_bridge_error_log) {
-      //   SysLoggerNormalWarning.warn("ROS bridge connect error", {
-      //     type: "ros bridge",
-      //     status: error.message,
-      //   });
-      //   this.ros_bridge_error_log = false;
-      // }
-
-    });
-
-    ROS.connectionClosed$.subscribe(() => {
-      // if (this.ros_bridge_close_log) {
-      //   SysLoggerNormalWarning.warn("ROS bridge connection closed", {
-      //     type: "ros bridge",
-      //   });
-      //   this.ros_bridge_close_log = false;
-      // }
-    });
 
     this.reconnectCount$.pipe(filter((v) => v > 1)).subscribe((count) => {
       SysLoggerNormal.info(`ROS bridge has been reconnected for ${count} time`, {
