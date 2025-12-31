@@ -24,6 +24,19 @@ export enum CMD_ID {
 
   ETX = "ETX"
 }
+
+export const blackList = [
+  CMD_ID.HEARTBEAT,
+  CMD_ID.POSE,
+  CMD_ID.FEEDBACK,
+  CMD_ID.IO_INFO,
+  CMD_ID.CURRENT_ID,
+  CMD_ID.ERROR_INFO,
+  CMD_ID.REGISTERED,
+  CMD_ID.CHECK_POSITION,
+  CMD_ID.HAS_CARGO
+]
+
 export const fakeFeedBack = {
   task_process: 1,
   navigation_status: true,

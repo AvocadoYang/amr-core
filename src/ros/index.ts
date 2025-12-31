@@ -251,7 +251,12 @@ export const sendShortestPath = (() => {
           rb.resPublish(
             RES_EX,
             `qams.${config.MAC}.res.shortestPath`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.SHORTEST_PATH, id }),
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.SHORTEST_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
         };
@@ -302,7 +307,12 @@ export const sendReroutePath = (() => {
           rb.resPublish(
             RES_EX,
             `qams.${config.MAC}.res.reroutePath`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REROUTE_PATH, id }),
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.REROUTE_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
           TCLoggerNormal.info(`receive reroute path response from ros service`, {
@@ -354,7 +364,12 @@ export const sendIsAllowTarget = (() => {
           rb.resPublish(
             RES_EX,
             `qams.${config.MAC}.res.isAllow`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.ALLOW_PATH, id }),
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.ALLOW_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
           return;

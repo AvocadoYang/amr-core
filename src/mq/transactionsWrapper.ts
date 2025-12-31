@@ -115,7 +115,7 @@ export const sendHeartBeatResponse = (data: {
     return_code: ReturnCode,
     id: string,
     amrId: string,
-    heartbeat: number
+    heartbeat: number,
 }) => {
     return {
         cmd_id: CMD_ID.HEARTBEAT,
@@ -128,7 +128,7 @@ export const sendWriteStatusResponse = (data: {
     id: string,
     amrId: string,
     lastSendGoalId: string,
-    missionType: string
+    missionType: string,
 }) => {
     return {
         cmd_id: CMD_ID.WRITE_STATUS,

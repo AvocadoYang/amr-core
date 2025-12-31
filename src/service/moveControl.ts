@@ -72,7 +72,11 @@ class MoveControl {
         )
       })
     ).subscribe(() => {
-      ROS.sendShortestPath(this.rb, { shortestPath: this.initShortestPath, id: "#", amrId: this.info.amrId });
+      ROS.sendShortestPath(this.rb, {
+        shortestPath: this.initShortestPath,
+        id: "#",
+        amrId: this.info.amrId
+      });
       this.registering = false;
       this.initShortestPath = [];
     })
@@ -91,7 +95,12 @@ class MoveControl {
           this.rb.resPublish(
             RES_EX,
             `qams.${config.MAC}.res.register`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REGISTER, id }), { expiration: "3000" }
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.REGISTER,
+              id
+            }), { expiration: "3000" }
           );
           this.registerSub$.next(true);
           break;

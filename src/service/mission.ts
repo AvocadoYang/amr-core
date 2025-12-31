@@ -150,7 +150,13 @@ export default class Mission {
         this.rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.writeStatus`,
-          sendWriteStatusResponse({ return_code: ReturnCode.SUCCESS, amrId, id, lastSendGoalId: status.Id, missionType: misType })
+          sendWriteStatusResponse({
+            return_code: ReturnCode.SUCCESS,
+            amrId,
+            id,
+            lastSendGoalId: status.Id,
+            missionType: misType
+          })
         );
 
         ROS.writeStatus(status);
@@ -163,7 +169,12 @@ export default class Mission {
         this.rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.writeCancel`,
-          sendBaseResponse({ cmd_id, return_code: ReturnCode.SUCCESS, amrId, id })
+          sendBaseResponse({
+            cmd_id,
+            return_code: ReturnCode.SUCCESS,
+            amrId,
+            id
+          })
         );
         this.output$.next(sendAmrHasMission({ hasMission: false }))
 

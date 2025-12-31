@@ -14,6 +14,7 @@ import { formatDate } from "~/helpers/system";
 import { CONNECT_WITH_QAMS, CONNECT_WITH_ROS_BRIDGE, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
 import { TRANSACTION_INFO } from "~/types/status";
+import { blackList, CMD_ID } from "./type/cmdId";
 
 export default class RabbitClient {
     private url: string;
@@ -26,6 +27,10 @@ export default class RabbitClient {
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
+    private lastReceiveReq: Map<string, {
+        session: string
+    }> = new Map();
+
     private error_logger_switch: boolean = true;
 
     private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
@@ -36,6 +41,7 @@ export default class RabbitClient {
         exchange: string;
         key: string;
         buffer: Buffer;
+        jMsg: any;
         options: PublishOptions;
         flag: "REQ" | "RES"
     }[] = [];
@@ -52,7 +58,7 @@ export default class RabbitClient {
         this.output$ = new Subject();
         this.input$ = new Subject();
         this.machineID = config.MAC;
-        this.debugLogger = RabbitLoggerDebug(false);
+        this.debugLogger = RabbitLoggerDebug(true);
         this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 3000
         this.url = `amqp://kenmec:kenmec@${config.RABBIT_MQ_HOST}:5672`
@@ -224,6 +230,7 @@ export default class RabbitClient {
     ) {
         const id = faker.datatype.uuid();
         const flag = "REQ";
+
         const jMsg = {
             id,
             sender: "AMR_CORE",
@@ -238,15 +245,10 @@ export default class RabbitClient {
         const buffer = Buffer.from(sMsg);
 
         try {
-            await this.publishWithRetry(exchangeName, routingKey, buffer, flag);
+            const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg);
 
             // 發送成功才記錄 transaction
-            this.transactionMap.set(id, { id, count: 0 });
-
-            this.debugLogger.info(`Published REQ`, {
-                type: "publish",
-                status: message
-            });
+            if (result) this.transactionMap.set(id, { id, count: 0 });
 
         } catch (err) {
             RabbitLoggerNormalError.error(`${err.message}`, {
@@ -262,41 +264,38 @@ export default class RabbitClient {
         options?: PublishOptions
     ) {
         const flag = "RES";
-        const sMsg = JSON.stringify({
+        const messagePair = this.lastReceiveReq.get(message.id);
+        if (!messagePair) {
+            RabbitLoggerNormalError.error("can not get request message for response", {
+                type: "unexpected error",
+                status: message
+            });
+            return;
+        }
+        const jMsg = {
             id: message.id,
             sender: "AMR_CORE",
             serialNum: this.machineID,
-            session: this.info.session,
+            session: messagePair.session,
             flag,
             timestamp: formatDate(),
             payload: message
-        });
+        };
+        this.lastReceiveReq.delete(message.id);
+
+        const sMsg = JSON.stringify(jMsg);
 
 
         const buffer = Buffer.from(sMsg);
 
         try {
-            await this.publishWithRetry(exchangeName, routingKey, buffer, flag, options);
+            const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg, options);
 
-            this.debugLogger.info(`Published RES`, {
-                type: "publish",
-                status: message
-            });
 
         } catch (err) {
             RabbitLoggerNormalError.error(`${err.message}`, {
                 type: "rabbitmq service"
             });
-        }
-    }
-
-
-    public setTransactionTimmer(msg: { id: string, sender: string, flag: "REQ" | "RES", msg: string }) {
-        try {
-            const existing = this.transactionMap.get(msg.id);
-            const count = existing ? 0 : 1;
-        } catch (err) {
-
         }
     }
 
@@ -318,17 +317,25 @@ export default class RabbitClient {
                 try {
                     const content = msg.content.toString();
                     const data = JSON.parse(content);
-                    const { payload } = data;
+                    const { payload, session } = data;
                     if (data.flag == 'RES') {
-                        this.debugLogger.info(`Receive response message`, {
-                            type: "receive",
-                            status: payload
-                        })
+                        if (!blackList.includes(payload.cmd_id)) {
+                            this.debugLogger.info(`Receive [response] message (${payload.cmd_id}) -`, {
+                                type: "receive",
+                                response: { ...payload, session }
+                            });
+                        }
                     } else {
-                        this.debugLogger.info(`Receive request message`, {
-                            type: "receive",
-                            status: payload
-                        });
+                        if (!blackList.includes(payload.cmd_id)) {
+                            this.debugLogger.info(`Receive [request] message (${payload.cmd_id}) -`, {
+                                type: "receive",
+                                request: { ...payload, session }
+                            });
+                            this.lastReceiveReq.set(payload.id, { session })
+                        }
+                        if (payload.cmd_id == CMD_ID.HEARTBEAT) {
+                            this.lastReceiveReq.set(payload.id, { session })
+                        }
                     }
 
                     onMessage(data);
@@ -413,7 +420,7 @@ export default class RabbitClient {
     private isVolatile(exchange: string, routingKey: string): boolean {
         if (exchange !== IO_EX && !exchange.includes("heartbeat")) return false;
 
-        return volatile.some(v => routingKey.includes(v));
+        return true;
     }
 
     private async publishWithRetry(
@@ -421,8 +428,10 @@ export default class RabbitClient {
         key: string,
         buffer: Buffer,
         flag: "REQ" | "RES",
-        options: PublishOptions = {}
-    ): Promise<void> {
+        jMsg: any,
+        options: PublishOptions = {},
+        mode: string = "normal"
+    ): Promise<boolean> {
 
         const {
             expiration,
@@ -439,22 +448,47 @@ export default class RabbitClient {
                     ? { expiration }
                     : undefined;
                 this.channel.publish(exchange, key, buffer, publishOptions);
+                if (flag == "REQ") {
+                    if (!blackList.includes(jMsg.payload.cmd_id)) {
+                        this.debugLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                            type: "publish",
+                            request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session }
+                        });
+                    }
+                } else {
+                    if (!blackList.includes(jMsg.payload.cmd_id)) {
+                        this.debugLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                            type: "publish",
+                            response: { ...jMsg.payload, session: jMsg.session }
+                        });
+                    }
+                }
 
-                return;
+                return true;
             } catch (err) {
                 if (this.isVolatile(exchange, key)) {
-                    return;
+                    return false;
                 }
                 attempts++;
-
+                if (err.message == "Rabbit channel is not available") {
+                    const data = JSON.parse(buffer.toString());
+                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
+                    RabbitLoggerNormalWarning.warn(
+                        `Rabbit channel is not available, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                        type: "transaction",
+                        status: { exchange, key, data }
+                    });
+                    return false;
+                }
                 if (attempts >= retries) {
                     const data = JSON.parse(buffer.toString());
-                    RabbitLoggerNormalWarning.warn(`Failed to publish after ${attempts} attempts: ${err.message}, store message to pending queue`, {
+                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
+                    RabbitLoggerNormalWarning.warn(
+                        `Failed to publish after ${attempts} attempts: ${err.message}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
                         type: "transaction",
-                        message: { exchange, key, data }
+                        status: { exchange, key, data }
                     });
-                    this.pendingMessages.push({ exchange, key, buffer, flag, options });
-                    return;
+                    return false;
                 }
 
                 await new Promise((r) => setTimeout(r, retryDelay));
@@ -480,7 +514,9 @@ export default class RabbitClient {
                     msg.key,
                     msg.buffer,
                     msg.flag,
-                    msg.options
+                    msg.jMsg,
+                    msg.options,
+                    "cache"
                 );
             } catch (err) {
                 // 如果 flush 時仍然失敗，先放回 pending

@@ -58,11 +58,13 @@ export default class HeartbeatMonitor {
                             const now = Date.now();
                             // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
                             if (now - this.qamsLastHeartbeatTime > 4000) {
-                                TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
-                                    group: "transaction",
-                                    type: "heartbeat",
-                                });
                                 this.qams_lostCount = this.qams_lostCount + 1;
+                                if (this.qams_lostCount < 2) {
+                                    TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
+                                        group: "transaction",
+                                        type: "heartbeat",
+                                    });
+                                }
                             } else {
                                 this.qams_lostCount = 0;
                             }
@@ -95,7 +97,7 @@ export default class HeartbeatMonitor {
                 status: {
                     qamsConnect: qamsConnect ? "✅" : "❌",
                     rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
-                    rabbitConnect: rosbridgeConnect ? "✅" : "❌"
+                    rabbitConnect: rabbitConnect ? "✅" : "❌"
                 }
             });
             return (

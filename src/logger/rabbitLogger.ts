@@ -8,7 +8,7 @@ const LOG_LEVEL = 'info';
 const AMR_ID_COLOR = chalk.green;
 const NORMAL = chalk.hex('#deffc8');
 const WRANG = chalk.hex('#fecf89');
-const DEBUG = chalk.hex('#fdcdee');
+const DEBUG = chalk.hex('#bad1ff');
 const ERROR = chalk.hex("#ff5e5e");
 const SILENT = false;
 
