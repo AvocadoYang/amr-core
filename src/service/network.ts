@@ -8,30 +8,25 @@ import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
+import { AMR_STATUS } from '~/types/status';
 
 
 
 class NetWorkManager {
 
   public server: net.Server
-  private ros_bridge_error_log = true
-  private ros_bridge_close_log = true
   private fleet_connect_log = true
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
 
-  private socket: net.Socket = null;
-
   private lastSendGoalId: string = "";
-  private lastMissionType: string = "";
 
   constructor(
-    private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+    private amrStatus: AMR_STATUS
   ) {
     this.output$ = new Subject();
     this.rosConnect();
-
   }
 
   public async fleetConnect() {
@@ -44,6 +39,9 @@ class NetWorkManager {
       message: string().required(),
     })
     try {
+      if (this.amrStatus.amrHasMission == undefined || this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
+        throw new CustomerError("5555", "amr status is null");
+      }
       const { data } = await axios.post(
         `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
         serialNumber: config.MAC,
@@ -70,6 +68,12 @@ class NetWorkManager {
     } catch (error) {
       if (this.fleet_connect_log) {
         switch (error.type) {
+          case "amr status is null":
+            SysLoggerNormalError.error("wait for amr status, retry after 5s..", {
+              type: "QAMS",
+              status: { return_code: error.statusCode, description: error.message },
+            });
+            break;
           case "yup":
             SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
               type: "QAMS",
@@ -98,8 +102,6 @@ class NetWorkManager {
   public rosConnect() {
     ROS.init();
     ROS.connected$.subscribe(() => {
-      this.ros_bridge_error_log = true;
-      this.ros_bridge_close_log = true;
       this.reconnectCount$.next(this.reconnectCount$.value + 1);
     });
 

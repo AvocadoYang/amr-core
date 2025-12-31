@@ -11,7 +11,7 @@ import { interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
 import { Output, setIsRegistered } from '~/actions/status/output';
-import { CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
+import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
 
 
 class Status {
@@ -22,7 +22,7 @@ class Status {
         private info: TRANSACTION_INFO,
         private connectStatus: CONNECT_STATUS,
         private map: MapType,
-        private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+        private amrStatus: AMR_STATUS
     ) {
 
         this.rb.onControlTransaction(async (action) => {
@@ -98,6 +98,7 @@ class Status {
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
+            this.amrStatus.currentId = currentId;
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
@@ -105,6 +106,7 @@ class Status {
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
+            this.amrStatus.poseAccurate = msg;
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
@@ -112,10 +114,10 @@ class Status {
         ROS.is_registered.subscribe(msg => {
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
-            this.amrStatus.amrIsRegistered = msg;
         });
 
         ROS.has_mission.subscribe(msg => {
+            this.amrStatus.amrHasMission = msg
             if (!this.connectStatus.qams_isConnect) return;
             console.log(msg)
         })

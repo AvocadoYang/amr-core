@@ -1,5 +1,5 @@
 export type AMR_STATUS =
-    { amrHasMission: boolean, amrIsRegistered: boolean, rosbridgeIsConnected: boolean }
+    { amrHasMission: boolean, poseAccurate: boolean, currentId: string }
 
 
 export type CONNECT_STATUS =

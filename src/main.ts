@@ -41,7 +41,7 @@ class AmrCore {
 
   private consumedQueues: Map<string, string> = new Map();
   private amrStatus: AMR_STATUS =
-    { amrHasMission: false, amrIsRegistered: false, rosbridgeIsConnected: false };
+    { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
   private info: TRANSACTION_INFO =
     { amrId: "", qamsSerialNum: "", session: "", return_code: "" }
   private connectStatus: CONNECT_STATUS =
@@ -88,7 +88,9 @@ class AmrCore {
         case ROS_BRIDGE_CONNECTED:
           try {
             const { isConnected } = action;
-            this.amrStatus.rosbridgeIsConnected = isConnected
+            if (!isConnected) {
+              this.amrStatus = { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
+            }
             this.rb.send(rabbit_connectWithRosBridge({ isConnected }));
             this.hb.send(heartbeat_connectWithRosBridge({ isConnected }))
           } catch {
@@ -148,7 +150,10 @@ class AmrCore {
           await this.netWorkManager.fleetConnect();
           break;
         case AMR_SERVICE_ISCONNECTED:
-          this.rb.send(sendAmrServiceIsConnected({ isConnected: action.isConnected }))
+          this.rb.send(sendAmrServiceIsConnected({ isConnected: action.isConnected }));
+          if (!action.isConnected) {
+            this.amrStatus = { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
+          }
           break;
         default:
           break;
