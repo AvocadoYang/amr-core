@@ -164,34 +164,30 @@ class NetWorkManager {
   public rosConnect() {
     ROS.init();
     ROS.connected$.subscribe(() => {
-      SysLoggerNormal.info(`connect with ROS bridge`, {
-        type: "ros bridge",
-      });
       this.ros_bridge_error_log = true;
       this.ros_bridge_close_log = true;
       this.reconnectCount$.next(this.reconnectCount$.value + 1);
-      // ROS.testTop();
     });
 
 
     ROS.connectionError$.subscribe((error: Error) => {
-      if (this.ros_bridge_error_log) {
-        SysLoggerNormalWarning.warn("ROS bridge connect error", {
-          type: "ros bridge",
-          status: error.message,
-        });
-        this.ros_bridge_error_log = false;
-      }
+      // if (this.ros_bridge_error_log) {
+      //   SysLoggerNormalWarning.warn("ROS bridge connect error", {
+      //     type: "ros bridge",
+      //     status: error.message,
+      //   });
+      //   this.ros_bridge_error_log = false;
+      // }
 
     });
 
     ROS.connectionClosed$.subscribe(() => {
-      if (this.ros_bridge_close_log) {
-        SysLoggerNormalWarning.warn("ROS bridge connection closed", {
-          type: "ros bridge",
-        });
-        this.ros_bridge_close_log = false;
-      }
+      // if (this.ros_bridge_close_log) {
+      //   SysLoggerNormalWarning.warn("ROS bridge connection closed", {
+      //     type: "ros bridge",
+      //   });
+      //   this.ros_bridge_close_log = false;
+      // }
     });
 
     this.reconnectCount$.pipe(filter((v) => v > 1)).subscribe((count) => {

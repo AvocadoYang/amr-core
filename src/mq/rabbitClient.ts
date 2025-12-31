@@ -74,24 +74,15 @@ export default class RabbitClient {
             switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected]) => {
                 if (serviceConnected && rabbitConnected && rosbridgeConnected) {
                     return defer(() => {
-                        RabbitLoggerNormal.info("Start consuming topics", { type: "consume" });
                         return from(this.consumeTopic());
                     }).pipe(
                         switchMap(() => NEVER),
                         finalize(() => {
-                            RabbitLoggerNormal.info("Stop consuming topics", {
-                                type: "consume"
-                            });
+
                             this.stopConsumeQueue(dynamicListener)
                         })
                     );
                 };
-                RabbitLoggerNormal.info("connection status", {
-                    type: "connect", status: {
-                        rabbitService: rabbitConnected,
-                        qamsService: serviceConnected
-                    }
-                })
                 return EMPTY;
             })
         ).subscribe();

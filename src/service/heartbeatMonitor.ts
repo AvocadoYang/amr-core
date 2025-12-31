@@ -92,7 +92,11 @@ export default class HeartbeatMonitor {
         ]).pipe(filter(([qamsConnect, rosbridgeConnect, rabbitConnect]) => {
             SysLoggerNormal.info("service connect status", {
                 type: "connect status",
-                status: { qamsConnect, rosbridgeConnect, rabbitConnect }
+                status: {
+                    qamsConnect: qamsConnect ? "✅" : "❌",
+                    rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
+                    rabbitConnect: rosbridgeConnect ? "✅" : "❌"
+                }
             });
             return (
                 qamsConnect == false &&
