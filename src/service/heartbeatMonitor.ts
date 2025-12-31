@@ -15,7 +15,7 @@ import { number, object, ValidationError } from "yup";
 
 export default class HeartbeatMonitor {
     private qamsLastHeartbeatTime: number = 0;
-    private amrServiceLastHeartbeatTime: number = 0;
+    private amrServiceLastReceiveHeartbeatTime: number = 0;
     private amrServiceHeartbeatCount = 0;
 
     private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -180,17 +180,15 @@ export default class HeartbeatMonitor {
                     });
                     const resCount = Number(heartbeat_count) + 1 > 9999 ? 0 : Number(heartbeat_count) + 1;
                     this.amrServiceHeartbeatCount = resCount;
-                    this.socket.write(
-                        JSON.stringify({
-                            timestamp: (Date.now()).toString(),
-                            heartbeat_count: this.amrServiceHeartbeatCount
-                        })
-                    )
+                    this.amrServiceLastReceiveHeartbeatTime = Date.now()
 
                 } catch (err) {
                     console.log(err);
                 }
-            })
+            });
+
+            this.amr_service_connect$.next(true)
+
         });
 
         this.tcp_server.listen(8532, () => {
@@ -207,7 +205,6 @@ export default class HeartbeatMonitor {
                         .pipe(tap(() => {
                             if (!this.socket) return;
                             const timestamp = Date.now();
-                            this.amrServiceLastHeartbeatTime = timestamp;
                             this.socket.write(
                                 JSON.stringify({
                                     timestamp: timestamp.toString(),
@@ -222,13 +219,13 @@ export default class HeartbeatMonitor {
 
         // heartbeat watch dog
         this.amr_service_connect$.pipe(
-            tap((isConnected) => { if (isConnected) this.amrServiceLastHeartbeatTime = Date.now() }),
+            tap((isConnected) => { if (isConnected) this.amrServiceLastReceiveHeartbeatTime = Date.now() }),
             switchMap((isConnected) => {
                 if (isConnected) {
                     return timer(2000, 3000).pipe(
                         tap(() => {
                             const timestamp = Date.now();
-                            if (timestamp - this.amrServiceLastHeartbeatTime > 2500) {
+                            if (timestamp - this.amrServiceLastReceiveHeartbeatTime > 2500) {
                                 this.amr_service_connect$.next(false);
                                 this.socket.destroy();
                                 this.socket = null;

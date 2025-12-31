@@ -92,7 +92,6 @@ export default class RabbitClient {
                 return EMPTY;
             })
         ).subscribe();
-
     }
 
     public async connect() {
