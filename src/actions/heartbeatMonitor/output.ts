@@ -18,11 +18,20 @@ export const reconnectQAMS = () => {
     }
 }
 
+export const AMR_SERVICE_ISCONNECTED = `${PREFIX}/AMR_SERVICE_ISCONNECTED` as const;
+export const amrServiceIsConnected = (data: { isConnected: boolean }) => {
+    return {
+        type: AMR_SERVICE_ISCONNECTED,
+        ...data
+    }
+}
+
 
 
 type AllTransaction =
     | typeof sendQAMSDisconnected
     | typeof reconnectQAMS
+    | typeof amrServiceIsConnected
 
 export type AllOutput = ReturnType<AllTransaction>;
 

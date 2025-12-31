@@ -11,7 +11,7 @@ import { AllRes } from "./type/res";
 import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, dynamicListener, HEARTBEAT_PONG_QUEUE } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
-import { CONNECT_WITH_QAMS, CONNECT_WITH_ROS_BRIDGE, Input } from "~/actions/rabbitmq/input";
+import { AMR_SERVICE_ISCONNECTED, CONNECT_WITH_QAMS, CONNECT_WITH_ROS_BRIDGE, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
 import { TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
@@ -73,18 +73,23 @@ export default class RabbitClient {
                 filter((action) => action.type == CONNECT_WITH_ROS_BRIDGE),
                 map((data) => data.isConnected), startWith(false)
             ),
+            this.input$.pipe(filter((action) => action.type == AMR_SERVICE_ISCONNECTED),
+                map((data) => data.isConnected), startWith(false)
+            )
         ]).pipe(
             distinctUntilChanged((prev, curr) => {
-                return (prev[0] === curr[0]) && (prev[1] === curr[1]) && (prev[2] === curr[2]);
+                return (prev[0] === curr[0]) &&
+                    (prev[1] === curr[1]) &&
+                    (prev[2] === curr[2]) &&
+                    (prev[3] === curr[3]);
             }),
-            switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected]) => {
-                if (serviceConnected && rabbitConnected && rosbridgeConnected) {
+            switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected, amrServiceConnected]) => {
+                if (serviceConnected && rabbitConnected && rosbridgeConnected && amrServiceConnected) {
                     return defer(() => {
                         return from(this.consumeTopic());
                     }).pipe(
                         switchMap(() => NEVER),
                         finalize(() => {
-
                             this.stopConsumeQueue(dynamicListener)
                         })
                     );
@@ -92,6 +97,9 @@ export default class RabbitClient {
                 return EMPTY;
             })
         ).subscribe();
+
+
+        this.connect();
     }
 
     public async connect() {

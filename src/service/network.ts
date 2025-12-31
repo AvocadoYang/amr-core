@@ -31,6 +31,7 @@ class NetWorkManager {
     private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
   ) {
     this.output$ = new Subject();
+    this.rosConnect();
 
   }
 

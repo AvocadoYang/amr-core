@@ -1,6 +1,6 @@
 import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, interval, map, of, Subject, switchMap, tap, timer } from "rxjs";
 import { CONNECT_WITH_AMR_SERVICE, CONNECT_WITH_QAMS, CONNECT_WITH_RABBIT_MQ, CONNECT_WITH_ROS_BRIDGE, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
-import { Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
+import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
 import * as net from 'net';
 import { SysLoggerNormal } from "~/logger/systemLogger";
@@ -112,7 +112,8 @@ export default class HeartbeatMonitor {
             return (
                 qamsConnect == false &&
                 rosbridgeConnect == true &&
-                rabbitConnect == true
+                rabbitConnect == true &&
+                amrServiceConnect == true
             )
         }),
             switchMap(() => {
@@ -130,15 +131,9 @@ export default class HeartbeatMonitor {
             switch (action.type) {
                 case CONNECT_WITH_QAMS:
                     this.qams_connect$.next(isConnected);
-
-                    break;
-                case CONNECT_WITH_AMR_SERVICE:
-                    this.amr_service_connect$.next(isConnected);
-
                     break;
                 case CONNECT_WITH_ROS_BRIDGE:
                     this.ros_bridge_connect$.next(isConnected);
-
                     break
                 case CONNECT_WITH_RABBIT_MQ:
                     this.rabbit_connect$.next(isConnected)
@@ -187,7 +182,8 @@ export default class HeartbeatMonitor {
                 }
             });
 
-            this.amr_service_connect$.next(true)
+            this.amr_service_connect$.next(true);
+            this.output$.next(amrServiceIsConnected({ isConnected: true }))
 
         });
 
@@ -227,6 +223,7 @@ export default class HeartbeatMonitor {
                             const timestamp = Date.now();
                             if (timestamp - this.amrServiceLastReceiveHeartbeatTime > 2500) {
                                 this.amr_service_connect$.next(false);
+                                this.output$.next(amrServiceIsConnected({ isConnected: false }))
                                 this.socket.destroy();
                                 this.socket = null;
                                 this.amrServiceHeartbeatCount = 0;

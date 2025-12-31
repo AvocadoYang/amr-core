@@ -23,9 +23,18 @@ export const connectWithRosBridge = (data: {
     }
 }
 
+export const AMR_SERVICE_ISCONNECTED = `${PREFIX}/AMR_SERVICE_ISCONNECTED` as const;
+export const sendAmrServiceIsConnected = (data: { isConnected: boolean }) => {
+    return {
+        type: AMR_SERVICE_ISCONNECTED,
+        ...data
+    }
+}
+
 type AllCreator =
     | typeof connectWithQAMS
     | typeof connectWithRosBridge
+    | typeof sendAmrServiceIsConnected
 
 
 export type ALL_INPUT = ReturnType<AllCreator>;

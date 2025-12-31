@@ -15,13 +15,13 @@ import { MapType } from "./types/map";
 import axios from "axios";
 import * as ROS from './ros'
 import { SysLoggerNormal, SysLoggerNormalWarning } from "./logger/systemLogger";
-import { connectWithQAMS, connectWithRosBridge as rabbit_connectWithRosBridge } from "./actions/rabbitmq/input";
+import { connectWithQAMS, connectWithRosBridge as rabbit_connectWithRosBridge, sendAmrServiceIsConnected } from "./actions/rabbitmq/input";
 import {
   connectWithRosBridge as heartbeat_connectWithRosBridge,
   connectWithQAMS as heartbeat_connectWithQAMS,
   connectWithRabbitMq as heart_connectWithRabbitMq
 } from './actions/heartbeatMonitor/input'
-import { QAMS_DISCONNECTED, RECONNECT_QAMS } from "./actions/heartbeatMonitor/output";
+import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED, RECONNECT_QAMS } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from "./types/status";
 
 dotenv.config();
@@ -142,11 +142,13 @@ class AmrCore {
     this.hb.subscribe(async (action) => {
       switch (action.type) {
         case QAMS_DISCONNECTED:
-          const { isConnected } = action;
-          this.rb.send(connectWithQAMS({ isConnected }))
+          this.rb.send(connectWithQAMS({ isConnected: action.isConnected }))
           break;
         case RECONNECT_QAMS:
           await this.netWorkManager.fleetConnect();
+          break;
+        case AMR_SERVICE_ISCONNECTED:
+          this.rb.send(sendAmrServiceIsConnected({ isConnected: action.isConnected }))
           break;
         default:
           break;
@@ -155,10 +157,9 @@ class AmrCore {
 
   }
 
-  public async init() {
-    await this.rb.connect();
-    this.netWorkManager.rosConnect();
-  }
+  // public async init() {
+  //   await this.rb.connect();
+  // }
 
 
 
@@ -203,8 +204,8 @@ class AmrCore {
 
 
 const amrCore = new AmrCore();
-(async () => {
-  amrCore.init();
-})()
+// (async () => {
+//   amrCore.init();
+// })()
 
 
