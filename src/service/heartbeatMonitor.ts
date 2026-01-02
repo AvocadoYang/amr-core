@@ -67,7 +67,7 @@ export default class HeartbeatMonitor {
                             // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
                             if (now - this.qamsLastHeartbeatTime > 4000) {
                                 this.qams_lostCount = this.qams_lostCount + 1;
-                                if (this.qams_lostCount < 10) {
+                                if (this.qams_lostCount < 2) {
                                     TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
                                         group: "transaction",
                                         type: "heartbeat",
@@ -77,7 +77,7 @@ export default class HeartbeatMonitor {
                                 this.qams_lostCount = 0;
                             }
 
-                            if (this.qams_lostCount >= 10) {
+                            if (this.qams_lostCount >= 2) {
                                 TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
                                     group: "transaction",
                                     type: "heartbeat",

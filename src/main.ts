@@ -36,7 +36,7 @@ class AmrCore {
   private missionStatus: MISSION_STATUS =
     { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" }
   private amrStatus: AMR_STATUS =
-    { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
+    { amrHasMission: false, poseAccurate: true, currentId: "3" };
   private info: TRANSACTION_INFO =
     { amrId: "", qamsSerialNum: "", session: "", return_code: "", approveNotSameSession: false }
   private connectStatus: CONNECT_STATUS =
