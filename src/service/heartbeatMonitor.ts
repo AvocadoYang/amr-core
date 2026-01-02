@@ -1,7 +1,8 @@
-import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, interval, map, of, Subject, switchMap, tap, timer } from "rxjs";
+import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, interval, map, of, Subject, switchMap, take, tap, timer } from "rxjs";
 import { CONNECT_WITH_AMR_SERVICE, CONNECT_WITH_QAMS, CONNECT_WITH_RABBIT_MQ, CONNECT_WITH_ROS_BRIDGE, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
 import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
+import * as ROS from '../ros'
 import * as net from 'net';
 import { SysLoggerNormal } from "~/logger/systemLogger";
 import { TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
@@ -10,7 +11,7 @@ import { HEARTBEAT_EX } from "~/mq/type/type";
 import config from '../configs'
 import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
+import { CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { number, object, ValidationError } from "yup";
 
 export default class HeartbeatMonitor {
@@ -35,6 +36,7 @@ export default class HeartbeatMonitor {
         private info: TRANSACTION_INFO,
         private connectStatus: CONNECT_STATUS,
         private rb: RBClient,
+        private missionStatus: MISSION_STATUS
     ) {
         this.rb.onHeartbeat((action) => {
             const { payload } = action;
@@ -65,7 +67,7 @@ export default class HeartbeatMonitor {
                             // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
                             if (now - this.qamsLastHeartbeatTime > 4000) {
                                 this.qams_lostCount = this.qams_lostCount + 1;
-                                if (this.qams_lostCount < 2) {
+                                if (this.qams_lostCount < 10) {
                                     TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
                                         group: "transaction",
                                         type: "heartbeat",
@@ -75,8 +77,8 @@ export default class HeartbeatMonitor {
                                 this.qams_lostCount = 0;
                             }
 
-                            if (this.qams_lostCount >= 2) {
-                                TCLoggerNormalWarning.warn(`heartbeat timeout, disconnect`, {
+                            if (this.qams_lostCount >= 10) {
+                                TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
                                     group: "transaction",
                                     type: "heartbeat",
                                 });
@@ -163,6 +165,13 @@ export default class HeartbeatMonitor {
               */
             this.socket = socket;
 
+            ROS.has_mission.pipe(take(1)).subscribe((hasMission) => {
+                if (hasMission && !this.missionStatus) {
+                    ROS.cancelCarStatusAnyway("#")
+                };
+            })
+
+
             socket.on("data", async (chunk) => {
                 const schema = object({
                     timestamp: number().required(),
@@ -222,6 +231,10 @@ export default class HeartbeatMonitor {
                         tap(() => {
                             const timestamp = Date.now();
                             if (timestamp - this.amrServiceLastReceiveHeartbeatTime > 2500) {
+                                TCLoggerNormalWarning.warn(`(TCP Service) heartbeat timeout, disconnect`, {
+                                    group: "transaction",
+                                    type: "heartbeat",
+                                });
                                 this.amr_service_connect$.next(false);
                                 this.output$.next(amrServiceIsConnected({ isConnected: false }))
                                 this.socket.destroy();

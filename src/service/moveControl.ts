@@ -15,14 +15,9 @@ import WsServer from "./ws";
 import { TRANSACTION_INFO } from "~/types/status";
 
 class MoveControl {
-  private lastCurrentId = ""
-  private isWorking: boolean = false;
-
-  private targetLoc: string = ""
   private registering = false;
 
   private registerSub$: Subject<boolean> = new Subject();
-  private cancelMission$: Subject<boolean> = new Subject();
   private initShortestPath: string[] = [];
 
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
@@ -30,9 +25,7 @@ class MoveControl {
 
   constructor(
     private rb: RBClient,
-    private ws: WsServer,
     private info: TRANSACTION_INFO,
-    private map: MapType
   ) {
     this.rb.onControlTransaction((action) => {
       this.controlProcess(action);
@@ -40,11 +33,6 @@ class MoveControl {
 
     this.rb.onResTransaction((action) => {
       this.resProcess(action);
-    });
-
-
-    ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
-      this.lastCurrentId = currentId;
     });
 
     this.registerSub$.pipe(
@@ -171,27 +159,6 @@ class MoveControl {
   }
 
 
-  public setTargetLoc(locationId: string) {
-    this.targetLoc = locationId;
-  }
-
-
-
-  public cancelMissionSignal() {
-    if (this.isWorking) {
-      this.cancelMission$.next(true);
-      this.stopWorking();
-    }
-  }
-
-
-  public startWorking() {
-    this.isWorking = true;
-  }
-
-  public stopWorking() {
-    this.isWorking = false;
-  }
 
   private mock() {
     // interval(4000).subscribe(() => {

@@ -9,21 +9,15 @@ import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CONTROL_EX, IO_EX, RES_EX } from "~/mq/type/type";
 import { AllControl } from "~/mq/type/control";
-import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
+import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 
 export default class Mission {
   private output$: Subject<Output>
   private executing: boolean = false;
-  public missionType: string = "";
-  public lastSendGoalId: string = "";
-  public targetLoc: string = "";
-  public lastTransactionId: string = "";
 
   constructor(
     private rb: RBClient,
-    private info: TRANSACTION_INFO,
-    private connectStatus: CONNECT_STATUS,
-    private amrStatus: AMR_STATUS
+    private missionStatus: MISSION_STATUS
   ) {
     this.output$ = new Subject();
 
@@ -50,11 +44,10 @@ export default class Mission {
     ROS.getFeedbackFromMoveAction$.subscribe((Feedback) => {
       const { status, feedback } = Feedback;
       const actionId = status.goal_id.id;
-      this.amrStatus.amrHasMission = true;
 
-      if (this.lastSendGoalId !== actionId) {
+      if (this.missionStatus.lastSendGoalId !== actionId) {
         TCLoggerNormalError.error(
-          `execute action ID: ${this.lastSendGoalId} not equal to feedback action ID: ${actionId}`,
+          `execute action ID: ${this.missionStatus.lastSendGoalId} not equal to feedback action ID: ${actionId}`,
           {
             group: "ms",
             type: "ros handshake",
@@ -64,18 +57,18 @@ export default class Mission {
       };
 
       this.executing = true;
-      this.output$.next(sendAmrHasMission({ hasMission: true }))
 
       this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
 
     ROS.getReadStatus$.subscribe((readStatus) => {
-      if (!this.executing) {
+      if (!this.executing && !this.missionStatus.lastSendGoalId) {
         TCLoggerNormalWarning.warn(`No mission is currently in progress.`, {
           group: "ms",
           type: "abnormal read status",
           status: readStatus
-        })
+        });
+        return;
       }
 
       const newState = {
@@ -86,32 +79,30 @@ export default class Mission {
           result_message: readStatus.result.result_message,
         },
       };
+
+
       const copyMsg = {
         ...newState.read,
         result_message: JSON.parse(newState.read.result_message),
       };
 
-      TCLoggerNormal.info(`mission [${this.missionType}] complete`, {
+      TCLoggerNormal.info(`mission [${this.missionStatus.missionType}] complete`, {
         group: "ms",
         type: "mission complete",
         status:
-          this.missionType === "move"
-            ? { mid: this.lastSendGoalId, dest: this.targetLoc, mission: copyMsg }
-            : { mid: this.lastSendGoalId, mission: copyMsg },
+          this.missionStatus.missionType === "move"
+            ? { mid: this.missionStatus.lastSendGoalId, dest: this.missionStatus.targetLoc, mission: copyMsg }
+            : { mid: this.missionStatus.lastSendGoalId, mission: copyMsg },
       });
-      this.updateStatue({ lastSendGoadId: "", missionType: "", targetLoc: "", lastTransactionId: "" });
+      this.resetMissionStatus();
 
-      if (this.missionType == "move") {
-        //sendTargetLoc
-      };
 
       this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.readStatus`, sendReadStatus(newState));
 
-      this.updateStatue({ missionType: "", targetLoc: "" });
+
       this.output$.next(sendAmrHasMission({ hasMission: false }))
 
       this.executing = false;
-      this.amrStatus.amrHasMission = false;
     });
 
   }
@@ -134,14 +125,12 @@ export default class Mission {
         });
 
         if (misType === "move") {
-          this.targetLoc = operation.locationId.toString();
-          this.output$.next(sendTargetLoc({ targetLoc: this.targetLoc }));
-          this.output$.next(sendStartMission());
+          this.missionStatus.targetLoc = operation.locationId.toString();
         };
 
         this.updateStatue({
           missionType: misType,
-          lastSendGoadId: status.Id,
+          lastSendGoalId: status.Id,
           targetLoc: misType === "move" ? operation.locationId.toString() : "",
           lastTransactionId: id
         })
@@ -163,8 +152,6 @@ export default class Mission {
         this.executing = true;
         break;
       case CMD_ID.WRITE_CANCEL:
-        this.output$.next(sendCancelMission({ missionId: payload.feedback_id }));
-
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         this.rb.resPublish(
           RES_EX,
@@ -176,31 +163,38 @@ export default class Mission {
             id
           })
         );
-        this.output$.next(sendAmrHasMission({ hasMission: false }))
-
+        this.updateStatue({ missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" });
         break;
       default:
         break;
     }
   }
 
-  public updateStatue(data: { missionType?: string, lastSendGoadId?: string, targetLoc?: string, lastTransactionId?: string }) {
-    this.missionType = data.missionType ?? this.missionType;
-    this.lastSendGoalId = data.lastSendGoadId ?? this.lastSendGoalId;
-    this.targetLoc = data.targetLoc ?? this.targetLoc;
-    this.lastTransactionId = data.lastTransactionId ?? this.lastTransactionId;
+  public updateStatue(data: { missionType?: string, lastSendGoalId?: string, targetLoc?: string, lastTransactionId?: string }) {
+    this.missionStatus.missionType = data.missionType ?? this.missionStatus.missionType;
+    this.missionStatus.lastSendGoalId = data.lastSendGoalId ?? this.missionStatus.lastSendGoalId;
+    this.missionStatus.targetLoc = data.targetLoc ?? this.missionStatus.targetLoc;
+    this.missionStatus.lastTransactionId = data.lastTransactionId ?? this.missionStatus.lastTransactionId;
 
-    this.output$.next(setMissionInfo({
-      missionType: this.missionType,
-      lastSendGoalId: this.lastSendGoalId,
-      lastTransactionId: this.lastTransactionId
-    }));
+    TCLoggerNormal.info(`mission status`, {
+      type: "mission status",
+      status: this.missionStatus
+    })
   };
 
-  public resetMission() {
-    ROS.cancelCarStatusAnyway(this.lastSendGoalId);
-    this.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" })
+  public resetMissionStatus() {
+    this.missionStatus.missionType = "";
+    this.missionStatus.lastSendGoalId = "";
+    this.missionStatus.targetLoc = "";
+    this.missionStatus.lastTransactionId = "";
+    this.executing = false;
+
+    TCLoggerNormal.info(`mission status`, {
+      type: "mission status",
+      status: this.missionStatus
+    })
   }
+
 
   public subscribe(cb: (action: Output) => void) {
     return this.output$.subscribe(cb);

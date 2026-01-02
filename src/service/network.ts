@@ -8,7 +8,7 @@ import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
-import { AMR_STATUS } from '~/types/status';
+import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
 
 
 
@@ -20,10 +20,9 @@ class NetWorkManager {
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
 
-  private lastSendGoalId: string = "";
-
   constructor(
-    private amrStatus: AMR_STATUS
+    private amrStatus: AMR_STATUS,
+    private missionStatus: MISSION_STATUS
   ) {
     this.output$ = new Subject();
     this.rosConnect();
@@ -45,15 +44,17 @@ class NetWorkManager {
       const { data } = await axios.post(
         `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
         serialNumber: config.MAC,
-        lastSendGoalId: this.lastSendGoalId,
+        lastSendGoalId: this.missionStatus.lastSendGoalId,
+        amrHasMission: this.amrStatus.amrHasMission,
         timeout: 5000
       });
+
 
       const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
         throw new ValidationError(err, (err as YupValidationError).message)
       });
 
-      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
+      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR && return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR) {
         SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
           type: "QAMS",
           status: { message, return_code, session }
@@ -63,17 +64,11 @@ class NetWorkManager {
         this.output$.next(isConnected({ isConnected: true, amrId, return_code, session, qamsSerialNum }));
       } else {
         this.output$.next(isConnected({ isConnected: false, amrId, return_code, session, qamsSerialNum }));
-        throw new CustomerError(return_code, "custom error");
+        throw new CustomerError(return_code, message);
       }
     } catch (error) {
       if (this.fleet_connect_log) {
         switch (error.type) {
-          case "amr status is null":
-            SysLoggerNormalError.error("wait for amr status, retry after 5s..", {
-              type: "QAMS",
-              status: { return_code: error.statusCode, description: error.message },
-            });
-            break;
           case "yup":
             SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
               type: "QAMS",
@@ -81,10 +76,26 @@ class NetWorkManager {
             });
             break;
           case "custom":
-            SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
-              type: "QAMS",
-              status: { return_code: error.statusCode, description: error.message },
-            });
+            if (error.statusCode == "5555") {
+              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+                type: "QAMS",
+                status: {
+                  return_code: error.statusCode,
+                  amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
+                  currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
+                  poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
+                  description: error.message
+                },
+              });
+            } else {
+              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+                type: "QAMS",
+                status: {
+                  return_code: error.statusCode,
+                  description: error.message
+                },
+              });
+            }
             break;
           default:
             SysLoggerNormalError.error(`${error.message}, retry after 5s..`, {
@@ -149,9 +160,6 @@ class NetWorkManager {
     return this.amrId;
   }
 
-  public updateMissionStatus(action: { lastSendGoalId: string }) {
-    this.lastSendGoalId = action.lastSendGoalId;
-  }
 }
 
 export default NetWorkManager

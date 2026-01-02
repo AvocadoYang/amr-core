@@ -3,18 +3,13 @@ import config from './configs'
 import { cleanEnv, str } from "envalid";
 import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
-import { BehaviorSubject, catchError, from, interval, map, timer, of, Subject, switchMap, tap, EMPTY, combineLatest, filter } from "rxjs";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
-import { TCLoggerNormalWarning } from "./logger/trafficCenterLogger";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
-import { sendHeartBeatResponse } from "./mq/transactionsWrapper";
-import { AMR_HAS_MISSION, CANCEL_MISSION, END_MISSION, MISSION_INFO, START_MISSION, TARGET_LOC } from "./actions/mission/output";
-import { HEARTBEAT_EX } from "./mq/type/type";
+import { AMR_HAS_MISSION, MISSION_INFO } from "./actions/mission/output";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
 import * as ROS from './ros'
-import { SysLoggerNormal, SysLoggerNormalWarning } from "./logger/systemLogger";
 import { connectWithQAMS, connectWithRosBridge as rabbit_connectWithRosBridge, sendAmrServiceIsConnected } from "./actions/rabbitmq/input";
 import {
   connectWithRosBridge as heartbeat_connectWithRosBridge,
@@ -22,7 +17,7 @@ import {
   connectWithRabbitMq as heart_connectWithRabbitMq
 } from './actions/heartbeatMonitor/input'
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED, RECONNECT_QAMS } from "./actions/heartbeatMonitor/output";
-import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from "./types/status";
+import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -37,13 +32,13 @@ cleanEnv(process.env, {
 });
 
 class AmrCore {
-
-
   private consumedQueues: Map<string, string> = new Map();
+  private missionStatus: MISSION_STATUS =
+    { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" }
   private amrStatus: AMR_STATUS =
     { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
   private info: TRANSACTION_INFO =
-    { amrId: "", qamsSerialNum: "", session: "", return_code: "" }
+    { amrId: "", qamsSerialNum: "", session: "", return_code: "", approveNotSameSession: false }
   private connectStatus: CONNECT_STATUS =
     { qams_isConnect: false, amr_service_isConnect: false, rosbridge_isConnect: false, rabbitMQ_isConnect: false }
 
@@ -58,12 +53,12 @@ class AmrCore {
 
   constructor() {
     this.rb = new RBClient(this.info, this.consumedQueues);
-    this.hb = new HeartbeatMonitor(this.info, this.connectStatus, this.rb)
+    this.hb = new HeartbeatMonitor(this.info, this.connectStatus, this.rb, this.missionStatus)
     this.ws = new WsServer();
-    this.netWorkManager = new NetWorkManager(this.amrStatus);
-    this.ms = new MissionManager(this.rb, this.info, this.connectStatus, this.amrStatus);
+    this.netWorkManager = new NetWorkManager(this.amrStatus, this.missionStatus);
+    this.ms = new MissionManager(this.rb, this.missionStatus);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
-    this.mc = new MoveControl(this.rb, this.ws, this.info, this.map);
+    this.mc = new MoveControl(this.rb, this.info);
 
 
     this.netWorkManager.subscribe(async (action) => {
@@ -71,14 +66,17 @@ class AmrCore {
         case IS_CONNECTED:
           try {
             const { isConnected, amrId, session, return_code, qamsSerialNum } = action;
-            this.setStatus({ amrId, session, return_code, qamsSerialNum })
+            let approveNotSameSession = false;
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
-              this.registerProcess(action);
+              approveNotSameSession = this.registerProcess(action);
+              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession })
               this.rb.send(connectWithQAMS({ isConnected }));
               this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
               const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
               this.map = data;
+            } else {
+              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
             }
             this.connectStatus.qams_isConnect = isConnected;
           } catch (err) {
@@ -114,31 +112,6 @@ class AmrCore {
     });
 
 
-    this.ms.subscribe((action) => {
-      switch (action.type) {
-        case MISSION_INFO:
-          const { type, ...data } = action;
-          this.netWorkManager.updateMissionStatus(data);
-          break;
-        case TARGET_LOC:
-          this.mc.setTargetLoc(action.targetLoc);
-          break;
-        case CANCEL_MISSION:
-          this.mc.cancelMissionSignal();
-          break;
-        case START_MISSION:
-          this.mc.startWorking();
-          break
-        case END_MISSION:
-          this.mc.stopWorking();
-          break;
-        case AMR_HAS_MISSION:
-          this.amrStatus.amrHasMission = action.hasMission;
-          break;
-        default:
-          break;
-      }
-    });
 
 
     this.hb.subscribe(async (action) => {
@@ -152,7 +125,7 @@ class AmrCore {
         case AMR_SERVICE_ISCONNECTED:
           this.rb.send(sendAmrServiceIsConnected({ isConnected: action.isConnected }));
           if (!action.isConnected) {
-            this.amrStatus = { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
+            this.resetAmrStatus();
           }
           break;
         default:
@@ -162,55 +135,50 @@ class AmrCore {
 
   }
 
-  // public async init() {
-  //   await this.rb.connect();
-  // }
 
+  private registerProcess(action: ReturnType<typeof isConnected>): boolean {
 
-
-
-
-  private registerProcess(action: ReturnType<typeof isConnected>) {
     const { return_code } = action;
     switch (return_code) {
       case ReturnCode.SUCCESS:
-        break;
+        return false;
+      case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
+        return false;
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
+        ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
+        this.ms.resetMissionStatus();
+        return false;
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
+        this.ms.resetMissionStatus();
+        return false;
       /** */
-      case ReturnCode.NORMAL_REGISTER:
-        this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-        if (this.amrStatus.amrHasMission) ROS.cancelCarStatusAnyway("#")
-        break;
-      /** */
-      case ReturnCode.REGISTER_SUCCESS_MISSION_NOT_EQUAL:
-        if (this.ms.lastTransactionId) {
-          ROS.cancelCarStatusAnyway(this.ms.lastSendGoalId);
-          this.ms.updateStatue({ missionType: "", lastSendGoadId: "", targetLoc: "", lastTransactionId: "" });
-        };
-        break;
-      /** */
-      case ReturnCode.REGISTER_SUCCESS_AMR_NOT_REGISTER:
-        break;
+      case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
+        return true;
       /**  */
       default:
         break;
     }
 
+    return false
+
   }
 
-  private setStatus(data: TRANSACTION_INFO) {
-    const { amrId, session, return_code } = data;
+  private setSystemStatus(data: TRANSACTION_INFO) {
+    const { amrId, session, return_code, approveNotSameSession } = data;
     this.info.amrId = amrId;
     this.info.session = session;
     this.info.return_code = return_code
+    this.info.approveNotSameSession = approveNotSameSession
   }
 
+  private resetAmrStatus() {
+    this.amrStatus.amrHasMission = undefined;
+    this.amrStatus.currentId = undefined;
+    this.amrStatus.poseAccurate = undefined;
+  }
 
 }
 
-
-const amrCore = new AmrCore();
-// (async () => {
-//   amrCore.init();
-// })()
+new AmrCore();
 
 
