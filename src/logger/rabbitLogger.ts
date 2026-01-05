@@ -8,7 +8,7 @@ const LOG_LEVEL = 'info';
 const AMR_ID_COLOR = chalk.green;
 const NORMAL = chalk.hex('#deffc8');
 const WRANG = chalk.hex('#fecf89');
-const DEBUG = chalk.hex('#fdcdee');
+const DEBUG = chalk.hex('#bad1ff');
 const ERROR = chalk.hex("#ff5e5e");
 const SILENT = false;
 
@@ -39,7 +39,7 @@ const RabbitNormalFormatter =
             return (
                 `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
                 `${isLog ? AMR_ID_COLOR('rabbitmq'.padEnd(8, " ")) : 'rabbitmq'.padEnd(8, " ")} ` +
-                `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
+                `${isLog ? NORMAL('[info]') : '[info]'} (${type}) - ` +
                 `${input.message} ` +
                 `${Object.keys(meta).length
                     ? JSON.stringify(meta, reduceFloatPrecision)

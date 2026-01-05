@@ -13,14 +13,29 @@ export enum CMD_ID {
   FORCE_RESET = "FR",
   CHECK_POSITION = "CP",
   CARGO_VERITY = "CV",
-  REGISTER = "RG",
   SHORTEST_PATH = "SP",
   REROUTE_PATH = "RP",
   ALLOW_PATH = "AP",
   REGISTERED = "RD",
 
-  HAS_CARGO = "HC"
+  HAS_CARGO = "HC",
+
+
+  ETX = "ETX"
 }
+
+export const blackList = [
+  CMD_ID.HEARTBEAT,
+  CMD_ID.POSE,
+  CMD_ID.FEEDBACK,
+  CMD_ID.IO_INFO,
+  CMD_ID.CURRENT_ID,
+  CMD_ID.ERROR_INFO,
+  CMD_ID.REGISTERED,
+  CMD_ID.CHECK_POSITION,
+  CMD_ID.HAS_CARGO
+]
+
 export const fakeFeedBack = {
   task_process: 1,
   navigation_status: true,

@@ -3,7 +3,7 @@ import * as ROS from '../ros'
 import config from "../configs";
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
-import { IO_EX, RES_EX } from '~/mq/type/type';
+import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import logger from '~/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
@@ -11,6 +11,7 @@ import { interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
 import { Output, setIsRegistered } from '~/actions/status/output';
+import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
 
 
 class Status {
@@ -18,57 +19,54 @@ class Status {
     private output$: Subject<Output> = new Subject();
     constructor(
         private rb: RBClient,
-        private info: { amrId: string, isConnect: boolean },
+        private info: TRANSACTION_INFO,
+        private connectStatus: CONNECT_STATUS,
         private map: MapType,
-        private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+        private amrStatus: AMR_STATUS
     ) {
 
-        this.rb.onReqTransaction(async (action) => {
+        this.rb.onControlTransaction(async (action) => {
             const { payload, serialNum } = action;
             const { id, cmd_id } = payload;
             switch (payload.cmd_id) {
                 case CMD_ID.UPDATE_MAP:
                     const { isUpdate } = payload
                     ROS.updatePosition({ data: isUpdate });
-                    this.rb.resPublish(RES_EX, `amr.res.updatePose.volatile`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }), { expiration: "2000" });
+                    this.rb.resPublish(
+                        RES_EX,
+                        `qams.${config.MAC}.res.updateMap`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                        { expiration: "2000" }
+                    );
                     const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
-                    this.rb.resPublish(RES_EX, `amr.res.emergencyStop.volatile`,
+                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.emergencyStop`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
-                    this.rb.resPublish(RES_EX, `amr.res.forceReset.volatile`,
+                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.forceReset`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
-                default:
                     break;
-            }
-        });
-
-        this.rb.onIOTransaction((action) => {
-            const { payload } = action;
-            const { cmd_id } = payload;
-            switch (cmd_id) {
                 case CMD_ID.HAS_CARGO:
                     ROS.sendHasCargo(payload.hasCargo);
                     break;
                 default:
                     break;
             }
-        })
+        });
 
         /** ROS subscribe */
 
         ROS.pose$.subscribe((pose) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
                 logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
             }
@@ -84,7 +82,7 @@ class Status {
         });
 
         ROS.getAmrError$.subscribe((msg: { data: string }) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             const jMsg = JSON.parse(msg.data) as {
                 warning_msg: string[];
                 warning_id: string[];
@@ -93,32 +91,38 @@ class Status {
         });
 
         ROS.getIOInfo$.subscribe((data) => {
-            if (!info.isConnect) return;
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(data), {
                 expiration: "2000"
             })
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
-            if (!info.isConnect) return;
+            this.amrStatus.currentId = (!this.amrStatus.poseAccurate && this.amrStatus.poseAccurate !== undefined) ? currentId : this.amrStatus.currentId
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
             })
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
-            if (!info.isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg))
+            if (!this.connectStatus.qams_isConnect) return;
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
 
         ROS.is_registered.subscribe(msg => {
-            if (!info.isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg));
-            this.amrStatus.amrIsRegistered = msg;
+            if (!this.connectStatus.qams_isConnect) return;
+            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
         });
 
+        ROS.has_mission.subscribe(msg => {
+            this.amrStatus.amrHasMission = msg
+            if (!this.connectStatus.qams_isConnect) return;
+            console.log(msg)
+        })
+
         ROS.getVerityCargo$.subscribe((msg) => {
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
+            this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
 

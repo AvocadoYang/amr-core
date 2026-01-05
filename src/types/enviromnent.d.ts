@@ -4,3 +4,4 @@ declare namespace NodeJS {
     NODE_CONFIG_ENV: string;
   };
 }
+

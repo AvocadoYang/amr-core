@@ -46,7 +46,7 @@ const TCNormalFormatter =
       return (
         `${isLog ? chalk.blue(input.timestamp) : input.timestamp} ` +
         `${isLog ? AMR_ID_COLOR(group.padEnd(8, " ")) : group.padEnd(8, " ")} ` +
-        `${isLog ? NORMAL('[normal]') : '[normal]'} (${type}) - ` +
+        `${isLog ? NORMAL('[info]') : '[info]'} (${type}) - ` +
         `${input.message} ` +
         `${Object.keys(meta).length
           ? JSON.stringify(meta, reduceFloatPrecision)

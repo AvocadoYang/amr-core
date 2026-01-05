@@ -1,7 +1,7 @@
-const PREFIX = "RABBIT/INPUT";
+const PREFIX = "HEARTBEAT/INPUT";
 
 
-export const CONNECT_WITH_QAMS = `${PREFIX}/QAMS_IS_CONNECTED` as const;
+export const CONNECT_WITH_QAMS = `${PREFIX}/CONNECT_WITH_QAMS` as const;
 export const connectWithQAMS = (data: {
     isConnected: boolean
 }) => {
@@ -13,6 +13,16 @@ export const connectWithQAMS = (data: {
 
 
 
+export const CONNECT_WITH_AMR_SERVICE = `${PREFIX}/CONNECT_WITH_AMR_SERVICE` as const;
+export const connectWithAmrService = (data: {
+    isConnected: boolean
+}) => {
+    return {
+        type: CONNECT_WITH_AMR_SERVICE,
+        ...data
+    }
+}
+
 export const CONNECT_WITH_ROS_BRIDGE = `${PREFIX}/CONNECT_WITH_ROS_BRIDGE` as const;
 export const connectWithRosBridge = (data: {
     isConnected: boolean
@@ -23,18 +33,21 @@ export const connectWithRosBridge = (data: {
     }
 }
 
-export const AMR_SERVICE_ISCONNECTED = `${PREFIX}/AMR_SERVICE_ISCONNECTED` as const;
-export const sendAmrServiceIsConnected = (data: { isConnected: boolean }) => {
+export const CONNECT_WITH_RABBIT_MQ = `${PREFIX}/CONNECT_WITH_RABBIT_MQ` as const;
+export const connectWithRabbitMq = (data: {
+    isConnected: boolean
+}) => {
     return {
-        type: AMR_SERVICE_ISCONNECTED,
+        type: CONNECT_WITH_RABBIT_MQ,
         ...data
     }
 }
 
 type AllCreator =
     | typeof connectWithQAMS
+    | typeof connectWithAmrService
     | typeof connectWithRosBridge
-    | typeof sendAmrServiceIsConnected
+    | typeof connectWithRabbitMq
 
 
 export type ALL_INPUT = ReturnType<AllCreator>;
