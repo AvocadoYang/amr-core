@@ -1,35 +1,31 @@
 import config from '../configs'
-import { cleanEnv, str } from "envalid";
-import dotenv from "dotenv";
 import * as ROS from '../ros'
-import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout } from "rxjs";
+import * as net from 'net';
+import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout, timestamp } from "rxjs";
 import axios from "axios";
-import { array, number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
+import { number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
 import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { bindingTable } from '~/mq/bindingTable';
-import { isConnected, Output } from '~/actions/networkManager/output';
-import { sendCancelMission, setMissionInfo } from '~/actions/mission/output';
+import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
+import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
+
 
 
 class NetWorkManager {
 
-  private ros_bridge_error_log = true
-  private ros_bridge_close_log = true
+  public server: net.Server
   private fleet_connect_log = true
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
 
-  private lastSendGoalId: string = "";
-  private lastTransactionId: string = "";
-  private lastMissionType: string = "";
-
   constructor(
-    private amrStatus: { amrHasMission: boolean, amrIsRegistered: boolean }
+    private amrStatus: AMR_STATUS,
+    private missionStatus: MISSION_STATUS
   ) {
     this.output$ = new Subject();
+    this.rosConnect();
   }
 
   public async fleetConnect() {
@@ -42,21 +38,23 @@ class NetWorkManager {
       message: string().required(),
     })
     try {
+      if (this.amrStatus.amrHasMission == undefined || this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
+        throw new CustomerError("5555", "amr status is null");
+      }
       const { data } = await axios.post(
         `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
         serialNumber: config.MAC,
-        lastSendGoalId: this.lastSendGoalId,
-        lastTransaction: this.lastTransactionId,
-        lastMissionType: this.lastMissionType,
-        amrIsRegistered: this.amrStatus.amrIsRegistered,
+        lastSendGoalId: this.missionStatus.lastSendGoalId,
+        amrHasMission: this.amrStatus.amrHasMission,
         timeout: 5000
       });
+
 
       const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
         throw new ValidationError(err, (err as YupValidationError).message)
       });
 
-      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.REGISTER_ERROR_NOT_IN_SYSTEM) {
+      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR && return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR) {
         SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
           type: "QAMS",
           status: { message, return_code, session }
@@ -66,7 +64,7 @@ class NetWorkManager {
         this.output$.next(isConnected({ isConnected: true, amrId, return_code, session, qamsSerialNum }));
       } else {
         this.output$.next(isConnected({ isConnected: false, amrId, return_code, session, qamsSerialNum }));
-        throw new CustomerError(return_code, "custom error");
+        throw new CustomerError(return_code, message);
       }
     } catch (error) {
       if (this.fleet_connect_log) {
@@ -78,10 +76,26 @@ class NetWorkManager {
             });
             break;
           case "custom":
-            SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
-              type: "QAMS",
-              status: { return_code: error.statusCode, description: error.message },
-            });
+            if (error.statusCode == "5555") {
+              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+                type: "QAMS",
+                status: {
+                  return_code: error.statusCode,
+                  amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
+                  currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
+                  poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
+                  description: error.message
+                },
+              });
+            } else {
+              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+                type: "QAMS",
+                status: {
+                  return_code: error.statusCode,
+                  description: error.message
+                },
+              });
+            }
             break;
           default:
             SysLoggerNormalError.error(`${error.message}, retry after 5s..`, {
@@ -99,35 +113,9 @@ class NetWorkManager {
   public rosConnect() {
     ROS.init();
     ROS.connected$.subscribe(() => {
-      SysLoggerNormal.info(`connect with ROS bridge`, {
-        type: "ros bridge",
-      });
-      this.ros_bridge_error_log = true;
-      this.ros_bridge_close_log = true;
       this.reconnectCount$.next(this.reconnectCount$.value + 1);
-      // ROS.testTop();
     });
 
-
-    ROS.connectionError$.subscribe((error: Error) => {
-      if (this.ros_bridge_error_log) {
-        SysLoggerNormalWarning.warn("ROS bridge connect error", {
-          type: "ros bridge",
-          status: error.message,
-        });
-        this.ros_bridge_error_log = false;
-      }
-
-    });
-
-    ROS.connectionClosed$.subscribe(() => {
-      if (this.ros_bridge_close_log) {
-        SysLoggerNormalWarning.warn("ROS bridge connection closed", {
-          type: "ros bridge",
-        });
-        this.ros_bridge_close_log = false;
-      }
-    });
 
     this.reconnectCount$.pipe(filter((v) => v > 1)).subscribe((count) => {
       SysLoggerNormal.info(`ROS bridge has been reconnected for ${count} time`, {
@@ -155,6 +143,7 @@ class NetWorkManager {
     )
       .pipe(
         distinctUntilChanged(),
+        tap((isConnected) => this.output$.next(ros_bridge_connected({ isConnected }))),
         switchMap((isConnected) => (isConnected ? EMPTY : interval(5000)))
       )
       .subscribe(() => {
@@ -171,11 +160,6 @@ class NetWorkManager {
     return this.amrId;
   }
 
-  public updateMissionStatus(action: { missionType: string, lastSendGoalId: string, lastTransactionId: string }) {
-    this.lastMissionType = action.missionType;
-    this.lastSendGoalId = action.lastSendGoalId;
-    this.lastTransactionId = action.lastTransactionId;
-  }
 }
 
 export default NetWorkManager

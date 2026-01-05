@@ -250,8 +250,13 @@ export const sendShortestPath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.shortestPath`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.SHORTEST_PATH, id }),
+            `qams.${config.MAC}.res.shortestPath`,
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.SHORTEST_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
         };
@@ -270,7 +275,7 @@ export const sendShortestPath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.shortestPath`,
+          `qams.${config.MAC}.res.shortestPath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.shortestPathServiceFailed,
             cmd_id: CMD_ID.SHORTEST_PATH,
@@ -301,8 +306,13 @@ export const sendReroutePath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.reroutePath`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.REROUTE_PATH, id }),
+            `qams.${config.MAC}.res.reroutePath`,
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.REROUTE_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
           TCLoggerNormal.info(`receive reroute path response from ros service`, {
@@ -321,7 +331,7 @@ export const sendReroutePath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.reroutePath`,
+          `qams.${config.MAC}.res.reroutePath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.reroutePathServiceFailed,
             cmd_id: CMD_ID.REROUTE_PATH,
@@ -353,15 +363,20 @@ export const sendIsAllowTarget = (() => {
         if ((res as { result: boolean }).result) {
           rb.resPublish(
             RES_EX,
-            `amr.res.${config.MAC}.promise.isAllow`,
-            sendBaseResponse({ amrId, return_code: ReturnCode.SUCCESS, cmd_id: CMD_ID.ALLOW_PATH, id }),
+            `qams.${config.MAC}.res.isAllow`,
+            sendBaseResponse({
+              amrId,
+              return_code: ReturnCode.SUCCESS,
+              cmd_id: CMD_ID.ALLOW_PATH,
+              id
+            }),
             { expiration: "10000" }
           )
           return;
         }
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.isAllow`,
+          `qams.${config.MAC}.res.isAllow`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.isAllowServiceFailed,
             cmd_id: CMD_ID.ALLOW_PATH,
@@ -378,7 +393,7 @@ export const sendIsAllowTarget = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `amr.res.${config.MAC}.promise.isAllow`,
+          `qams.${config.MAC}.res.isAllow`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.isAllowServiceFailed,
             cmd_id: CMD_ID.ALLOW_PATH,
@@ -606,7 +621,7 @@ export const is_registered = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: "/kenmec_fork/is_register",
+    name: `/kenmec_${config.AMR}/is_register`,
     messageType: "std_msgs/Bool",
   });
 
@@ -616,6 +631,41 @@ export const is_registered = (() => {
     })
   );
 })();
+
+export const has_mission = (() => {
+  const schema = object({
+    data: boolean().required("mission missed"),
+  }).required("amr info missed");
+
+  const topic = new ROSLIB.Topic<typeof boolean>({
+    ros,
+    name: `/kenmec_${config.AMR}/has_mission`,
+    messageType: "std_msgs/Bool",
+  });
+
+  return fromEventPattern<boolean>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+})();
+
+export const amrServiceHeartbeat = (() => {
+  const schema = object({
+    data: boolean().required("service heartbeat error"),
+  });
+  const topic = new ROSLIB.Topic<typeof boolean>({
+    ros,
+    name: `/kenmec_${config.AMR}/still_alive`,
+    messageType: "std_msgs/Bool",
+  });
+  return fromEventPattern<boolean>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+
+})()
 
 // 接收
 export const getHeartbeat$ = (() => {

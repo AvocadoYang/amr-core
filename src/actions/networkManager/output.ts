@@ -15,9 +15,20 @@ export const isConnected = (data: {
     }
 };
 
+export const ROS_BRIDGE_CONNECTED = `${PREFIX}/ROS_BRIDGE_CONNECTED` as const;
+export const ros_bridge_connected = (data: {
+    isConnected: boolean;
+}) => {
+    return {
+        type: ROS_BRIDGE_CONNECTED,
+        ...data
+    }
+}
+
 
 type AllTransaction =
     | typeof isConnected
+    | typeof ros_bridge_connected
 
 export type AllOutput = ReturnType<AllTransaction>;
 
