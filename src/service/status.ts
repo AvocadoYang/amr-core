@@ -106,6 +106,7 @@ class Status {
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
+            this.amrStatus.poseAccurate = msg;
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
@@ -118,7 +119,6 @@ class Status {
         ROS.has_mission.subscribe(msg => {
             this.amrStatus.amrHasMission = msg
             if (!this.connectStatus.qams_isConnect) return;
-            console.log(msg)
         })
 
         ROS.getVerityCargo$.subscribe((msg) => {
