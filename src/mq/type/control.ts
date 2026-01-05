@@ -11,14 +11,6 @@ interface Base<A> {
     payload: A
 }
 
-export type Register = {
-    cmd_id: CMD_ID.REGISTER,
-    amrId: string,
-    id: string,
-    heartbeat: number,
-    timestamp: number
-}
-export type REGISTER = Base<Register>;
 
 export type ShortestPath = {
     cmd_id: CMD_ID.SHORTEST_PATH,
@@ -113,7 +105,6 @@ export type HAS_CARGO = Base<HasCargo>;
 
 
 export type AllControl =
-    REGISTER |
     SHORTEST_PATH |
     IS_ALLOW_PATH |
     REROUTE_PATH |

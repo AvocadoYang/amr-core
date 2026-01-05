@@ -13,7 +13,6 @@ export enum CMD_ID {
   FORCE_RESET = "FR",
   CHECK_POSITION = "CP",
   CARGO_VERITY = "CV",
-  REGISTER = "RG",
   SHORTEST_PATH = "SP",
   REROUTE_PATH = "RP",
   ALLOW_PATH = "AP",

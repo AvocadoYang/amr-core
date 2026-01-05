@@ -98,7 +98,7 @@ class Status {
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
-            this.amrStatus.currentId = currentId;
+            this.amrStatus.currentId = (!this.amrStatus.poseAccurate && this.amrStatus.poseAccurate !== undefined) ? currentId : this.amrStatus.currentId
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
@@ -106,7 +106,6 @@ class Status {
         });
 
         ROS.currentPoseAccurate$.subscribe((msg) => {
-            this.amrStatus.poseAccurate = msg;
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
