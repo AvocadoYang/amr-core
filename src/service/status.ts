@@ -98,7 +98,10 @@ class Status {
         });
 
         ROS.currentId$.pipe(throttleTime(2000)).subscribe((currentId) => {
-            this.amrStatus.currentId = (!this.amrStatus.poseAccurate && this.amrStatus.poseAccurate !== undefined) ? currentId : this.amrStatus.currentId
+            this.amrStatus.currentId = (
+                !this.amrStatus.poseAccurate && this.amrStatus.poseAccurate !== undefined)
+                ? currentId
+                : this.amrStatus.currentId
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"

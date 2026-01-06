@@ -49,11 +49,10 @@ class NetWorkManager {
         timeout: 5000
       });
 
-
       const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
         throw new ValidationError(err, (err as YupValidationError).message)
       });
-
+      console.log(return_code, amrId, message, session, qamsSerialNum, '@@@@@@')
 
       if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR && return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR) {
         SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {

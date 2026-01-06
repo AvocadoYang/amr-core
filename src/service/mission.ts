@@ -53,6 +53,7 @@ export default class Mission {
             type: "ros handshake",
           }
         );
+        ROS.cancelCarStatusAnyway(actionId)
         return;
       };
 
