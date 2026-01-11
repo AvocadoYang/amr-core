@@ -41,6 +41,11 @@ class NetWorkManager {
       if (this.amrStatus.amrHasMission == undefined || this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
         throw new CustomerError("5555", "amr status is null");
       }
+
+      SysLoggerNormal.info("start registration process", {
+        type: "QAMS 🔗",
+        status: this.amrStatus
+      })
       const { data } = await axios.post(
         `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
         serialNumber: config.MAC,
@@ -52,11 +57,14 @@ class NetWorkManager {
       const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
         throw new ValidationError(err, (err as YupValidationError).message)
       });
-      console.log(return_code, amrId, message, session, qamsSerialNum, '@@@@@@')
 
-      if (registerReturnCode.includes(return_code as ReturnCode) && return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR && return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR) {
+      if (registerReturnCode.includes(return_code as ReturnCode) &&
+        return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR &&
+        return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR &&
+        return_code !== ReturnCode.RABBIT_CONNECT_ERROR_LOGIN_ERROR
+      ) {
         SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
-          type: "QAMS",
+          type: "QAMS 🤝",
           status: { message, return_code, session, amrId }
         });
         this.amrId = amrId;

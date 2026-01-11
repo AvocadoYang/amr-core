@@ -548,7 +548,6 @@ export default class RabbitClient {
 
             this.consume<AllControl>(q2a_controlQName, (msg) => {
                 this.controlTransactionOutput$.next(msg);
-
             }),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {

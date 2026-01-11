@@ -13,13 +13,16 @@ export enum CMD_ID {
   FORCE_RESET = "FR",
   CHECK_POSITION = "CP",
   CARGO_VERITY = "CV",
+  REGISTER = "RG",
   SHORTEST_PATH = "SP",
   REROUTE_PATH = "RP",
   ALLOW_PATH = "AP",
   REGISTERED = "RD",
+  PTVP_SWITCH = "PTVP_SWITCH",
 
   HAS_CARGO = "HC",
 
+  SYNC_DATA = "SYNC",
 
   ETX = "ETX"
 }

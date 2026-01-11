@@ -56,12 +56,24 @@ class Status {
                     )
                     break;
                 case CMD_ID.HAS_CARGO:
+                    console.log(payload, '@@@@@@')
                     ROS.sendHasCargo(payload.hasCargo);
+                    break;
+                case CMD_ID.PTVP_SWITCH:
+                    console.log(payload, '!!!!!!!!!')
                     break;
                 default:
                     break;
             }
         });
+
+        // this.rb.onResTransaction(async (action) => {
+        //     const { payload, serialNum} = action;
+        //     const { id, cmd_id } = payload;
+        //     switch(payload.cmd_id){
+        //         case
+        //     }
+        // })
 
         /** ROS subscribe */
 
@@ -139,10 +151,12 @@ class Status {
 
 
     private mock() {
-        //        interval(200).subscribe(() =>{
-        //   this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`,  sendPose({ x: 1, y:2, yaw: 3}), {
-        //     expiration: "3000"
-        //   })
+        // interval(200).subscribe(() => {
+
+        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`, sendPose({ x: 1, y: 2, yaw: 3 }), {
+        //         expiration: "3000"
+        //     })
+
         // })
 
         //   interval(4000).subscribe(() => {

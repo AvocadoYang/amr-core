@@ -24,8 +24,6 @@ export default class HeartbeatMonitor {
     private amr_service_connect$ = new BehaviorSubject<boolean>(false);
     private rabbit_connect$ = new BehaviorSubject<boolean>(false);
 
-    private qams_lostCount: number = 0;
-
     public tcp_server: net.Server;
     private socket: net.Socket = null;
 
@@ -66,18 +64,6 @@ export default class HeartbeatMonitor {
                             const now = Date.now();
                             // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
                             if (now - this.qamsLastHeartbeatTime > 4000) {
-                                this.qams_lostCount = this.qams_lostCount + 1;
-                                if (this.qams_lostCount < 2) {
-                                    TCLoggerNormalWarning.warn(`heartbeat delay, retry`, {
-                                        group: "transaction",
-                                        type: "heartbeat",
-                                    });
-                                }
-                            } else {
-                                this.qams_lostCount = 0;
-                            }
-
-                            if (this.qams_lostCount >= 2) {
                                 TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
                                     group: "transaction",
                                     type: "heartbeat",

@@ -101,6 +101,14 @@ export type HasCargo = {
 }
 export type HAS_CARGO = Base<HasCargo>;
 
+export type Pvtp_Switch = {
+    cmd_id: CMD_ID.PTVP_SWITCH,
+    id: string,
+    amrId: string,
+    enable: boolean
+}
+export type PVTP_SWITCH = Base<Pvtp_Switch>;
+
 
 
 
@@ -113,5 +121,7 @@ export type AllControl =
     UPDATE_POSE |
     EMERGENCY_STOP |
     FORCE_RESET |
-    HAS_CARGO;
+    HAS_CARGO |
+    PVTP_SWITCH
+    ;
 
