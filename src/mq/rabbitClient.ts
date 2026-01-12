@@ -89,11 +89,9 @@ export default class RabbitClient {
                         return from(this.consumeTopic());
                     }).pipe(
                         switchMap(() => NEVER),
-                        finalize(() => {
-                            this.stopConsumeQueue(dynamicListener)
-                        })
                     );
                 };
+                this.stopConsumeQueue(dynamicListener)
                 return EMPTY;
             })
         ).subscribe();
