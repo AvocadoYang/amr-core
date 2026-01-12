@@ -90,9 +90,10 @@ export default class RabbitClient {
                     }).pipe(
                         switchMap(() => NEVER),
                     );
+                } else {
+                    this.stopConsumeQueue(dynamicListener)
+                    return EMPTY;
                 };
-                this.stopConsumeQueue(dynamicListener)
-                return EMPTY;
             })
         ).subscribe();
 
