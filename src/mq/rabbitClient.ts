@@ -1,7 +1,7 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "~/logger/systemLogger";
-import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap } from "rxjs";
+import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap, tap } from "rxjs";
 import config from "~/configs"
 import * as faker from 'faker';
 import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormal, RabbitLoggerNormalError, RabbitLoggerNormalWarning } from "~/logger/rabbitLogger";
@@ -78,18 +78,18 @@ export default class RabbitClient {
             )
         ]).pipe(
             distinctUntilChanged((prev, curr) => {
+                console.log("prev: ", prev, "curr: ", curr)
                 return (prev[0] === curr[0]) &&
                     (prev[1] === curr[1]) &&
                     (prev[2] === curr[2]) &&
                     (prev[3] === curr[3]);
             }),
+            tap((data) => { console.log("result: ", data) }),
             switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected, amrServiceConnected]) => {
                 if (serviceConnected && rabbitConnected && rosbridgeConnected && amrServiceConnected) {
                     return defer(() => {
                         return from(this.consumeTopic());
-                    }).pipe(
-                        switchMap(() => NEVER),
-                    );
+                    })
                 } else {
                     this.stopConsumeQueue(dynamicListener)
                     return EMPTY;
@@ -103,7 +103,7 @@ export default class RabbitClient {
 
     public async connect() {
         try {
-            this.connection = await amqp.connect(this.url);
+            this.connection = await amqp.connect(`${this.url}?heartbeat=2`);
             this.connection.on("error", (err) => {
                 SysLoggerNormalError.error("Connection error", {
                     type: "rabbitmq service",
@@ -120,7 +120,8 @@ export default class RabbitClient {
 
                 this.channel = null;
                 this.consumedQueues.clear();
-                this.output$.next(isConnected({ isConnected: false }))
+                this.output$.next(isConnected({ isConnected: false }));
+                this.rabbitIsConnected$.next(false);
                 setTimeout(() => this.connect(), this.retryTime);
 
             });
@@ -565,7 +566,13 @@ export default class RabbitClient {
     }
 
     public async stopConsumeQueue(queueNames: string[] = []) {
-        if (!this.channel) return;
+        console.log('???????!!')
+        if (!this.channel) {
+            for (const queueName of queueNames) {
+                this.consumedQueues.delete(queueName);
+            }
+            return;
+        };
         for (const queueName of queueNames) {
             if (!this.consumedQueues.has(queueName)) continue;
             try {

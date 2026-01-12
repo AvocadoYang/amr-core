@@ -56,11 +56,10 @@ class Status {
                     )
                     break;
                 case CMD_ID.HAS_CARGO:
-                    console.log(payload, '@@@@@@')
                     ROS.sendHasCargo(payload.hasCargo);
                     break;
                 case CMD_ID.PTVP_SWITCH:
-                    console.log(payload, '!!!!!!!!!')
+                    // console.log(payload, '!!!!!!!!!')
                     break;
                 default:
                     break;
