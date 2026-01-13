@@ -547,13 +547,19 @@ export default class RabbitClient {
             }, true),
 
             this.consume<AllControl>(q2a_controlQName, (msg) => {
-                this.controlTransactionOutput$.next(msg);
+                const checkSession = (msg.session == this.info.session);
+                if (!checkSession) {
+                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
+                    if (canPass) this.controlTransactionOutput$.next(msg);
+                } else {
+                    this.controlTransactionOutput$.next(msg);
+                }
             }),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.SUCCESS;
+                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
                     if (canPass) this.resTransactionOutput$.next(msg);
                 } else {
                     this.resTransactionOutput$.next(msg);
@@ -566,11 +572,19 @@ export default class RabbitClient {
     }
 
     public async stopConsumeQueue(queueNames: string[] = []) {
-        console.log('???????!!')
+        RabbitLoggerNormal.info("run stop-consuming process", {
+            type: "stop consume",
+            status: { still_consume: [...this.consumedQueues.keys()], need_stop: queueNames }
+        })
         if (!this.channel) {
             for (const queueName of queueNames) {
                 this.consumedQueues.delete(queueName);
             }
+
+            RabbitLoggerNormal.info("end of stop-consuming process", {
+                type: "stop consume",
+                status: { still_consume: [...this.consumedQueues.keys()] }
+            })
             return;
         };
         for (const queueName of queueNames) {
@@ -586,6 +600,10 @@ export default class RabbitClient {
                 // channel 可能已經 close，忽略
             }
         }
+        RabbitLoggerNormal.info("end of stop-consuming process", {
+            type: "stop consume",
+            status: { still_consume: [...this.consumedQueues.keys()] }
+        })
     }
 
 
