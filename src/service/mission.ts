@@ -13,7 +13,6 @@ import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/
 
 export default class Mission {
   private output$: Subject<Output>
-  private executing: boolean = false;
 
   constructor(
     private rb: RBClient,
@@ -57,13 +56,11 @@ export default class Mission {
         return;
       };
 
-      this.executing = true;
-
       this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
 
     ROS.getReadStatus$.subscribe((readStatus) => {
-      if (!this.executing && !this.missionStatus.lastSendGoalId) {
+      if (!this.missionStatus.lastSendGoalId) {
         TCLoggerNormalWarning.warn(`No mission is currently in progress.`, {
           group: "ms",
           type: "abnormal read status",
@@ -103,7 +100,6 @@ export default class Mission {
 
       this.output$.next(sendAmrHasMission({ hasMission: false }))
 
-      this.executing = false;
     });
 
   }
@@ -150,10 +146,14 @@ export default class Mission {
         );
 
         ROS.writeStatus(status);
-        this.executing = true;
         break;
       case CMD_ID.WRITE_CANCEL:
         ROS.cancelCarStatusAnyway(payload.feedback_id);
+        TCLoggerNormal.info(`receive cancel mission`, {
+          group: "ms",
+          type: "cancel mission",
+          status: { cancel_id: payload.feedback_id, executing_id: this.missionStatus.lastTransactionId }
+        });
         this.rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.writeCancel`,
@@ -164,7 +164,6 @@ export default class Mission {
             id
           })
         );
-        this.updateStatue({ missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" });
         break;
       default:
         break;
@@ -188,8 +187,6 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    this.executing = false;
-
     TCLoggerNormal.info(`mission status`, {
       type: "mission status",
       status: this.missionStatus
