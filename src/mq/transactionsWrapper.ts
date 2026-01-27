@@ -78,6 +78,13 @@ export const sendIsRegistered = (isRegistered: boolean) => {
 export const sendCargoVerity = (msg: string) => {
     return {
         cmd_id: CMD_ID.CARGO_VERITY,
+        stackInfo: msg
+    }
+}
+
+export const sendStackInfo = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.STACK_INFO,
         checkResult: msg
     }
 }
@@ -93,7 +100,8 @@ type AllReqType =
     typeof sendCurrentId |
     typeof sendPoseAccurate |
     typeof sendCargoVerity |
-    typeof sendIsRegistered
+    typeof sendIsRegistered |
+    typeof sendStackInfo
 
 export type RequestMsgType = ReturnType<AllReqType>
 

@@ -680,3 +680,20 @@ export const getVerityCargo$ = (() => {
     })
   );
 })();
+
+export const getStackInfo$ = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_fork/cargo_info`,
+    messageType: "std_msgs/String",
+  });
+  const schema = object({
+    data: string().required("stack info missed"),
+  }).required("stack info missed");
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+})();
