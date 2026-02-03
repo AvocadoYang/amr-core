@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import config from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
@@ -139,6 +139,9 @@ class Status {
             this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
+        ROS.getStackInfo$.subscribe((msg) => {
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.stackInfo`, sendStackInfo(msg))
+        })
 
 
         this.mock();

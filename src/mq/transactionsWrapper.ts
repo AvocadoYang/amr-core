@@ -82,6 +82,14 @@ export const sendCargoVerity = (msg: string) => {
     }
 }
 
+export const sendStackInfo = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.STACK_INFO,
+        checkResult: msg
+    }
+}
+
+
 export const sendETX = () => {
     return {
         cmd_id: CMD_ID.ETX
@@ -100,6 +108,7 @@ type AllReqType =
     typeof sendPoseAccurate |
     typeof sendCargoVerity |
     typeof sendIsRegistered |
+    typeof sendStackInfo |
     typeof sendETX
 
 export type RequestMsgType = ReturnType<AllReqType>
