@@ -122,12 +122,12 @@ class Status {
         ROS.currentPoseAccurate$.subscribe((msg) => {
             this.amrStatus.poseAccurate = msg;
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
 
         ROS.is_registered.subscribe(msg => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
+            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
         });
 
         ROS.has_mission.subscribe(msg => {

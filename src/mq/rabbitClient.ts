@@ -373,16 +373,16 @@ export default class RabbitClient {
         await this.createExchange(IO_EX, "topic", { durable: true });
         await this.createExchange(CONTROL_EX, "topic", { durable: true });
 
-        await this.createQueue(q2a_controlQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.createQueue(q2a_controlQName, { durable: true });
         await this.bindQueue(q2a_controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
 
-        await this.createQueue(q2a_amrResponseQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.createQueue(q2a_amrResponseQName, { durable: true });
         await this.bindQueue(q2a_amrResponseQName, RES_EX, `amr.${config.MAC}.*.res`);
 
-        await this.createQueue(a2q_handshakeQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.createQueue(a2q_handshakeQName, { durable: true });
         await this.bindQueue(a2q_handshakeQName, CONTROL_EX, `qams.${config.MAC}.handshake.*`);
 
-        await this.createQueue(a2q_qamsResponseQName, { durable: true, arguments: { "x-queue-type": "quorum" } });
+        await this.createQueue(a2q_qamsResponseQName, { durable: true });
         await this.bindQueue(a2q_qamsResponseQName, RES_EX, `qams.${config.MAC}.res.*`);
 
         await this.createQueue(HEARTBEAT_PONG_QUEUE, { durable: true });

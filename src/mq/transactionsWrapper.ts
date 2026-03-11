@@ -148,3 +148,5 @@ export const sendWriteStatusResponse = (data: {
 
 type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse | typeof sendWriteStatusResponse;
 export type ResponseMsgType = ReturnType<AllResType>;
+
+
