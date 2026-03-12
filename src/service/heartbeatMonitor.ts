@@ -1,4 +1,4 @@
-import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, from, interval, map, of, Subject, switchMap, take, tap, timer } from "rxjs";
+import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, finalize, from, interval, map, of, Subject, switchMap, take, tap, timer } from "rxjs";
 import { CONNECT_WITH_AMR_SERVICE, CONNECT_WITH_QAMS, CONNECT_WITH_RABBIT_MQ, CONNECT_WITH_ROS_BRIDGE, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
 import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
@@ -30,6 +30,7 @@ export default class HeartbeatMonitor {
 
     public input$: Subject<Input> = new Subject();
     private output$: Subject<Output> = new Subject();
+    private qams_heartbeat$: BehaviorSubject<boolean> = new BehaviorSubject(true);
     constructor(
         private info: TRANSACTION_INFO,
         private connectStatus: CONNECT_STATUS,
@@ -50,33 +51,35 @@ export default class HeartbeatMonitor {
                     amrId: this.info.amrId
                 }), { expiration: "2000" }
             )
+            this.qams_heartbeat$.next(true);
         });
 
         this.input$.pipe(
             ofType(CONNECT_WITH_QAMS),
-            switchMap(({ isConnected }) => {
-                if (isConnected) {
+            tap((action) => {
+                if (action.isConnected) {
                     SysLoggerNormal.info(`connect with QAMS, start heartbeat detection`, {
                         type: "heartbeat",
                     });
-                    return timer(5000, 5000).pipe(
-                        tap(() => {
-                            const now = Date.now();
-                            // console.log("time sub:  ", now - this.qamsLastHeartbeatTime)
-                            if (now - this.qamsLastHeartbeatTime > 4000) {
-                                TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
-                                    group: "transaction",
-                                    type: "heartbeat",
-                                });
-                                this.output$.next(sendQAMSDisconnected({ isConnected: false }))
-                                this.input$.next(connectWithQAMS({ isConnected: false }));
-                            }
-                        })
-                    );
-                } else {
+                }
+            }),
+            switchMap(({ isConnected }) => {
+                if (!isConnected) {
                     this.connectStatus.qams_isConnect = false;
                     return EMPTY;
                 }
+                return this.qams_heartbeat$.pipe(
+                    switchMap(() => timer(2500, 5000)),
+                    tap(() => {
+                        TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
+                            group: "transaction",
+                            type: "heartbeat",
+                        });
+                        this.output$.next(sendQAMSDisconnected({ isConnected: false }))
+                        this.input$.next(connectWithQAMS({ isConnected: false }));
+
+                    })
+                )
             })
 
         ).subscribe();

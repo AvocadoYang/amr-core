@@ -78,13 +78,11 @@ export default class RabbitClient {
             )
         ]).pipe(
             distinctUntilChanged((prev, curr) => {
-                console.log("prev: ", prev, "curr: ", curr)
                 return (prev[0] === curr[0]) &&
                     (prev[1] === curr[1]) &&
                     (prev[2] === curr[2]) &&
                     (prev[3] === curr[3]);
             }),
-            tap((data) => { console.log("result: ", data) }),
             switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected, amrServiceConnected]) => {
                 if (serviceConnected && rabbitConnected && rosbridgeConnected && amrServiceConnected) {
                     return defer(() => {
