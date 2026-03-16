@@ -101,7 +101,7 @@ export default class RabbitClient {
 
     public async connect() {
         try {
-            this.connection = await amqp.connect(`${this.url}?heartbeat=2`);
+            this.connection = await amqp.connect(`${this.url}?heartbeat=5`);
             this.connection.on("error", (err) => {
                 SysLoggerNormalError.error("Connection error", {
                     type: "rabbitmq service",

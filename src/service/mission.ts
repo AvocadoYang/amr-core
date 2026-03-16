@@ -148,12 +148,6 @@ export default class Mission {
         ROS.writeStatus(status);
         break;
       case CMD_ID.WRITE_CANCEL:
-        ROS.cancelCarStatusAnyway(payload.feedback_id);
-        TCLoggerNormal.info(`receive cancel mission`, {
-          group: "ms",
-          type: "cancel mission",
-          status: { cancel_id: payload.feedback_id, executing_id: this.missionStatus.lastTransactionId }
-        });
         this.rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.writeCancel`,
@@ -164,6 +158,8 @@ export default class Mission {
             id
           })
         );
+        this.resetMissionStatus();
+        ROS.cancelCarStatusAnyway(payload.feedback_id);
         break;
       default:
         break;
@@ -187,7 +183,7 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    TCLoggerNormal.info(`mission status`, {
+    TCLoggerNormal.info(`reset mission status`, {
       type: "mission status",
       status: this.missionStatus
     })
