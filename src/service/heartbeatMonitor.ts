@@ -69,7 +69,7 @@ export default class HeartbeatMonitor {
                     return EMPTY;
                 }
                 return this.qams_heartbeat$.pipe(
-                    switchMap(() => timer(2500, 5000)),
+                    switchMap(() => timer(5000, 5000)),
                     tap(() => {
                         TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             group: "transaction",

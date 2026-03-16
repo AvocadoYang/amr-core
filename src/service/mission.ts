@@ -183,7 +183,7 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    TCLoggerNormal.info(`reset mission status`, {
+    TCLoggerNormalWarning.warn(`reset mission status`, {
       type: "mission status",
       status: this.missionStatus
     })

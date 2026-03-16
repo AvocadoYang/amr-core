@@ -591,7 +591,7 @@ export default class RabbitClient {
                 const tag = this.consumedQueues.get(queueName);
                 await this.channel.cancel(tag);
                 this.consumedQueues.delete(queueName);
-                RabbitLoggerNormal.info(` stop consume queue: ${queueName}`, {
+                RabbitLoggerNormalWarning.warn(` stop consume queue: ${queueName}`, {
                     type: "stop consume",
                 });
             } catch (e) {

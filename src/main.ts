@@ -66,11 +66,9 @@ class AmrCore {
         case IS_CONNECTED:
           try {
             const { isConnected, amrId, session, return_code, qamsSerialNum } = action;
-            let approveNotSameSession = false;
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
-              approveNotSameSession = this.registerProcess(action);
-              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession })
+              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
               this.rb.send(connectWithQAMS({ isConnected }));
               this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
               const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
@@ -137,26 +135,28 @@ class AmrCore {
 
 
   private registerProcess(action: ReturnType<typeof isConnected>): boolean {
-
     const { return_code } = action;
     switch (return_code) {
       case ReturnCode.SUCCESS:
         return false;
-      case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
+        ROS.cancelCarStatusAnyway("");
         return false;
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
         ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
         this.ms.resetMissionStatus();
         return false;
-      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
+      case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
         this.ms.resetMissionStatus();
         return false;
-      /** */
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION:
+        ROS.cancelCarStatusAnyway("");
+        this.ms.resetMissionStatus();
+        return false;
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
-        return true;
-      /**  */
+        return true
       default:
-        break;
+        return false
     }
 
     return false
