@@ -25,8 +25,7 @@ import {
 } from "~/types/fleetInfo";
 
 import * as SOCKET from "../socket";
-import logger from "~/logger";
-import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
+import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { RES_EX } from "~/mq/type/type";
 import { sendBaseResponse } from "~/mq/transactionsWrapper";
@@ -155,8 +154,8 @@ export const reroutePath = () => {
     return new Observable<{ result: boolean }>((subscriber) => {
       reroutePath$.subscribe((reroute_Path) => {
 
-        TCLoggerNormal.info("send reroute path", {
-          group: "tc",
+        infoLogger.info("send reroute path", {
+          title: "traffic",
           type: "reroute path [req]",
           status: reroute_Path.reroutePath
         })
@@ -170,15 +169,15 @@ export const reroutePath = () => {
             if (response.result as boolean) {
               SOCKET.sendReroutePathInProcess(response);
             }
-            TCLoggerNormal.info(`receive reroute path response from ros service`, {
-              group: "tc",
+            infoLogger.info(`receive reroute path response from ros service`, {
+              title: "traffic",
               type: "reroute path [res]",
               status: { serviceName: service.name, res: response }
             })
           },
           (error: string) => {
-            TCLoggerNormalError.error(`Service request is failed `, {
-              group: "tc",
+            errorLogger.error(`Service request is failed `, {
+              title: "traffic",
               type: "reroute path",
               status: error
             })
@@ -260,16 +259,16 @@ export const sendShortestPath = (() => {
             { expiration: "10000" }
           )
         };
-        TCLoggerNormal.info(`receive shortest path response from ros service`, {
-          group: "tc",
+        infoLogger.info(`receive shortest path response from ros service`, {
+          title: "traffic",
           type: "shortest path [res]",
           status: { serviceName: service.name, res: data }
         });
         return;
       },
       (error: string) => {
-        TCLoggerNormalError.error(`Service request is failed `, {
-          group: "tc",
+        errorLogger.error(`Service request is failed `, {
+          title: "traffic",
           type: "shortest path",
           status: error
         });
@@ -315,8 +314,8 @@ export const sendReroutePath = (() => {
             }),
             { expiration: "10000" }
           )
-          TCLoggerNormal.info(`receive reroute path response from ros service`, {
-            group: "tc",
+          infoLogger.info(`receive reroute path response from ros service`, {
+            title: "traffic",
             type: "reroute path [res]",
             status: { serviceName: service.name, res: data }
           });
@@ -324,8 +323,8 @@ export const sendReroutePath = (() => {
         };
       },
       (error: string) => {
-        TCLoggerNormalError.error(`Service request is failed `, {
-          group: "tc",
+        errorLogger.error(`Service request is failed `, {
+          title: "traffic",
           type: "reroute path",
           status: error
         });
@@ -352,8 +351,8 @@ export const sendIsAllowTarget = (() => {
   });
   return (rb: RBClient, nextLocation: { locationId: string, isAllow: boolean, amrId: string, id: string }) => {
     const { locationId, isAllow, amrId, id } = nextLocation;
-    TCLoggerNormal.info(`send allow location ${locationId}`, {
-      group: "tc",
+    infoLogger.info(`send allow location ${locationId}`, {
+      title: "traffic",
       type: "is_allow",
 
     })
@@ -386,8 +385,8 @@ export const sendIsAllowTarget = (() => {
         )
       },
       (error: string) => {
-        TCLoggerNormalError.error(`Service request is failed `, {
-          group: "tc",
+        errorLogger.error(`Service request is failed `, {
+          title: "traffic",
           type: "isAllow",
           status: error
         });
@@ -529,8 +528,8 @@ export const cancelCarStatusAnyway = (() => {
   });
 
   return (lastSendGoalId: string) => {
-    TCLoggerNormal.info("cancel mission", {
-      group: "ms",
+    infoLogger.info("cancel mission", {
+      title: "mission",
       type: "cancel mission",
       status: { mid: lastSendGoalId }
     })

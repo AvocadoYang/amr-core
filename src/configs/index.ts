@@ -1,4 +1,4 @@
-import { number, object, string } from "yup";
+import { boolean, number, object, string } from "yup";
 // eslint-disable-next-line no-restricted-imports
 import config from "config";
 import chalk from "chalk";
@@ -18,6 +18,8 @@ const schema = object({
   MISSION_CONTROL_PORT: number().integer().min(0).max(65535).required(),
   ROS_BRIDGE_URL: string().required(),
   IFACE_NAME: string().required(),
+  DEBUG_LOGGER: boolean().required(),
+  HEARTBEAT_LOGGER: boolean().required(),
   MAC: string().required(),
   LOG_LEVEL: string()
     .oneOf(["error", "warn", "info", "http", "verbose", "debug", "silly"])

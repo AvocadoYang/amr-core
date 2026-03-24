@@ -4,8 +4,7 @@ import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } fr
 import { ofType } from "~/helpers";
 import * as ROS from '../ros'
 import * as net from 'net';
-import { SysLoggerNormal } from "~/logger/systemLogger";
-import { TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
+import { infoLogger, rb_heartbeatLogger, warnLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { HEARTBEAT_EX } from "~/mq/type/type";
 import config from '../configs'
@@ -42,7 +41,11 @@ export default class HeartbeatMonitor {
             const { heartbeat, id } = payload;
             this.qamsLastHeartbeatTime = Date.now();
             let resHeartbeat = heartbeat + 1 > 9999 ? 0 : heartbeat + 1;
-
+            rb_heartbeatLogger.info("Receive heartbeat from QAMS", {
+                title: "system",
+                type: "receive",
+                status: { id, heartbeat }
+            })
             this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${config.MAC}`,
                 sendHeartBeatResponse({
                     id,
@@ -58,7 +61,8 @@ export default class HeartbeatMonitor {
             ofType(CONNECT_WITH_QAMS),
             tap((action) => {
                 if (action.isConnected) {
-                    SysLoggerNormal.info(`connect with QAMS, start heartbeat detection`, {
+                    infoLogger.info(`connect with QAMS, start heartbeat detection`, {
+                        title: "system",
                         type: "heartbeat",
                     });
                 }
@@ -71,8 +75,8 @@ export default class HeartbeatMonitor {
                 return this.qams_heartbeat$.pipe(
                     switchMap(() => timer(5000, 5000)),
                     tap(() => {
-                        TCLoggerNormalWarning.warn(`(QAMS) heartbeat timeout, disconnect`, {
-                            group: "transaction",
+                        warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
+                            title: "system",
                             type: "heartbeat",
                         });
                         this.output$.next(sendQAMSDisconnected({ isConnected: false }))
@@ -90,7 +94,8 @@ export default class HeartbeatMonitor {
             this.rabbit_connect$,
             this.amr_service_connect$
         ]).pipe(filter(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
-            SysLoggerNormal.info("service connect status", {
+            infoLogger.info("service connect status", {
+                title: "system",
                 type: "connect status",
                 status: {
                     qamsConnect: qamsConnect ? "✅" : "❌",
@@ -110,7 +115,7 @@ export default class HeartbeatMonitor {
             switchMap(() => {
                 return from(this.retryConnectQAMSWithDelay(1500)).pipe(
                     catchError((err) => {
-                        TCLoggerNormalWarning.warn(`reconnect failed: ${err}`);
+                        warnLogger.warn(`QAMS reconnect failed: ${err}`, { title: "system", type: "network" });
                         return of();
                     })
                 );
@@ -186,8 +191,9 @@ export default class HeartbeatMonitor {
         });
 
         this.tcp_server.listen(8532, () => {
-            SysLoggerNormal.info(`tcp server is running on ${8532}`, {
-                type: "tcp service"
+            infoLogger.info(`tcp server is running on ${8532}`, {
+                title: "system",
+                type: "tcp services"
             })
         })
 
@@ -220,8 +226,8 @@ export default class HeartbeatMonitor {
                         tap(() => {
                             const timestamp = Date.now();
                             if (timestamp - this.amrServiceLastReceiveHeartbeatTime > 2500) {
-                                TCLoggerNormalWarning.warn(`(TCP Service) heartbeat timeout, disconnect`, {
-                                    group: "transaction",
+                                warnLogger.warn(`(TCP Service) heartbeat timeout, disconnect`, {
+                                    title: "amr service",
                                     type: "heartbeat",
                                 });
                                 this.amr_service_connect$.next(false);

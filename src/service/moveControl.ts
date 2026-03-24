@@ -1,5 +1,5 @@
 import { Subject } from "rxjs";
-import { TCLoggerNormal } from "~/logger/trafficCenterLogger";
+import { infoLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
 import * as ROS from "../ros";
@@ -43,8 +43,8 @@ class MoveControl {
       switch (cmd_id) {
         case CMD_ID.SHORTEST_PATH:
           const { shortestPath, init, rotateFlag } = payload;
-          TCLoggerNormal.info("send shortest path", {
-            group: "tc",
+          infoLogger.info("send shortest path", {
+            title: "traffic",
             type: "shortest path [req]",
             status: { shortestPath, rotateFlag, init }
           });
@@ -75,8 +75,8 @@ class MoveControl {
           };
           break;
         case CMD_ID.REROUTE_PATH:
-          TCLoggerNormal.info("send reroute path", {
-            group: "tc",
+          infoLogger.info("send reroute path", {
+            title: "traffic",
             type: "shortest path [req]",
             status: { reroutePath: payload.reroutePath, rotateFlag: payload.rotateFlag }
           });

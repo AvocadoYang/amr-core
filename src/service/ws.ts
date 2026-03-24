@@ -1,8 +1,7 @@
 import { group } from 'console';
 import { from, fromEventPattern, Observable, Subject } from 'rxjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
-import { SysLoggerNormal } from '~/logger/systemLogger';
-import { TCLoggerNormal } from '~/logger/trafficCenterLogger';
+import { infoLogger } from '~/logger/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
 
 class WsServer {
@@ -13,8 +12,8 @@ class WsServer {
         const io = new SocketIOServer();
 
         io.on("connection", (socket) => {
-            TCLoggerNormal.info("connect with ROS fleet", {
-                group: "ws",
+            infoLogger.info("connect with ROS fleet", {
+                title: "ws",
                 type: "connect"
             })
             // this.onConnection(socket)
@@ -27,7 +26,8 @@ class WsServer {
 
         io.listen(8111);
 
-        SysLoggerNormal.info("create ws server on port 8111...", {
+        infoLogger.info("create ws server on port 8111...", {
+            title: "system",
             type: "ws"
         });
     };

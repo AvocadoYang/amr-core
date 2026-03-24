@@ -5,10 +5,10 @@ import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, 
 import axios from "axios";
 import { number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
 import { CustomerError } from "~/errorHandler/error";
-import { SysLoggerNormalError, SysLoggerNormal, SysLoggerNormalWarning } from "~/logger/systemLogger";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
+import { errorLogger, infoLogger } from '~/logger/logger';
 
 
 
@@ -42,7 +42,8 @@ class NetWorkManager {
         throw new CustomerError("5555", "amr status is null");
       }
 
-      SysLoggerNormal.info("start registration process", {
+      infoLogger.info("start registration process", {
+        title: "system",
         type: "QAMS 🔗",
         status: this.amrStatus
       })
@@ -63,7 +64,8 @@ class NetWorkManager {
         return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR &&
         return_code !== ReturnCode.RABBIT_CONNECT_ERROR_LOGIN_ERROR
       ) {
-        SysLoggerNormal.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
+        infoLogger.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
+          title: "system",
           type: "QAMS 🤝",
           status: { message, return_code, session, amrId }
         });
@@ -78,14 +80,16 @@ class NetWorkManager {
       if (this.fleet_connect_log) {
         switch (error.type) {
           case "yup":
-            SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+            errorLogger.error("can't connect with QAMS, retry after 5s..", {
+              title: "system",
               type: "QAMS",
               status: error.msg,
             });
             break;
           case "custom":
             if (error.statusCode == "5555") {
-              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+              errorLogger.error("can't connect with QAMS, retry after 5s..", {
+                title: "system",
                 type: "QAMS",
                 status: {
                   return_code: error.statusCode,
@@ -96,7 +100,8 @@ class NetWorkManager {
                 },
               });
             } else {
-              SysLoggerNormalError.error("can't connect with QAMS, retry after 5s..", {
+              errorLogger.error("can't connect with QAMS, retry after 5s..", {
+                title: "system",
                 type: "QAMS",
                 status: {
                   return_code: error.statusCode,
@@ -106,7 +111,8 @@ class NetWorkManager {
             }
             break;
           default:
-            SysLoggerNormalError.error(`${error.message}, retry after 5s..`, {
+            errorLogger.error(`${error.message}, retry after 5s..`, {
+              title: "system",
               type: "QAMS",
             });
             break;
@@ -126,7 +132,8 @@ class NetWorkManager {
 
 
     this.reconnectCount$.pipe(filter((v) => v > 1)).subscribe((count) => {
-      SysLoggerNormal.info(`ROS bridge has been reconnected for ${count} time`, {
+      infoLogger.info(`ROS bridge has been reconnected for ${count} time`, {
+        title: "system",
         type: "ros bridge",
       });
     });
@@ -136,9 +143,10 @@ class NetWorkManager {
       .subscribe(({ x, y, yaw }) => {
         if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1 && Math.abs(yaw)) {
           const pose = `(${x.toFixed(2)}, ${y.toFixed(2)}, ${yaw.toFixed(2)})`;
-          SysLoggerNormalError.error(
+          errorLogger.error(
             `Connected to ROS and get pose ${pose}, which is too close to (0, 0) and possible wrong. Please make sure AMR have reasonable initial pose.`,
             {
+              title: "system",
               type: "ros bridge",
             }
           );

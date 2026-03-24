@@ -2,7 +2,7 @@ import { interval, Subject } from "rxjs";
 import * as ROS from '../ros'
 import config from "../configs";
 import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
-import { TCLoggerNormal, TCLoggerNormalError, TCLoggerNormalWarning } from "~/logger/trafficCenterLogger";
+import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
 import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
@@ -45,10 +45,10 @@ export default class Mission {
       const actionId = status.goal_id.id;
 
       if (this.missionStatus.lastSendGoalId !== actionId) {
-        TCLoggerNormalError.error(
+        errorLogger.error(
           `execute action ID: ${this.missionStatus.lastSendGoalId} not equal to feedback action ID: ${actionId}`,
           {
-            group: "ms",
+            title: "mission",
             type: "ros handshake",
           }
         );
@@ -61,8 +61,8 @@ export default class Mission {
 
     ROS.getReadStatus$.subscribe((readStatus) => {
       if (!this.missionStatus.lastSendGoalId) {
-        TCLoggerNormalWarning.warn(`No mission is currently in progress.`, {
-          group: "ms",
+        warnLogger.warn(`No mission is currently in progress.`, {
+          title: "mission",
           type: "abnormal read status",
           status: readStatus
         });
@@ -84,8 +84,8 @@ export default class Mission {
         result_message: JSON.parse(newState.read.result_message),
       };
 
-      TCLoggerNormal.info(`mission [${this.missionStatus.missionType}] complete`, {
-        group: "ms",
+      infoLogger.info(`mission [${this.missionStatus.missionType}] complete`, {
+        title: "mission",
         type: "mission complete",
         status:
           this.missionStatus.missionType === "move"
@@ -112,8 +112,8 @@ export default class Mission {
         const { status } = payload;
         const { operation } = status.Body;
         const misType = operation.type;
-        TCLoggerNormal.info(`receive mission (${misType})`, {
-          group: "ms",
+        infoLogger.info(`receive mission (${misType})`, {
+          title: "mission",
           type: "new mission",
           status:
             misType === "move"
@@ -172,7 +172,8 @@ export default class Mission {
     this.missionStatus.targetLoc = data.targetLoc ?? this.missionStatus.targetLoc;
     this.missionStatus.lastTransactionId = data.lastTransactionId ?? this.missionStatus.lastTransactionId;
 
-    TCLoggerNormal.info(`mission status`, {
+    infoLogger.info(`mission status update`, {
+      title: "mission",
       type: "mission status",
       status: this.missionStatus
     })
@@ -183,7 +184,8 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    TCLoggerNormalWarning.warn(`reset mission status`, {
+    warnLogger.warn(`reset mission status`, {
+      title: "mission",
       type: "mission status",
       status: this.missionStatus
     })

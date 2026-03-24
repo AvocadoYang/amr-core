@@ -3,7 +3,6 @@ import { fromEventPattern, map, share, tap } from "rxjs";
 import { io, Socket } from "socket.io-client";
 import config from "~/configs";
 // import { SimplePose, formatPose, sanitizeDegree } from '~/helpers';
-import logger from "~/logger";
 import { Mission_Payload } from "~/types/fleetInfo";
 
 let socket: Socket;
@@ -197,10 +196,10 @@ export function sendPose(x: number, y: number, yaw: number) {
 }
 
 // 回傳已到座標到fleeet
-export function sendReachGoal(locationId: string) {
-  logger.http(`emit socket 'reach-goal' ${locationId}`);
-  socket.emit("reach-goal", { locationId });
-}
+// export function sendReachGoal(locationId: string) {
+//   logger.http(`emit socket 'reach-goal' ${locationId}`);
+//   socket.emit("reach-goal", { locationId });
+// }
 
 export const updatePosition$ = fromEventPattern<{ isUpdate: boolean }>((next) =>
   socket.on("write-new-position", next)

@@ -1,10 +1,9 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
-import { SysLoggerNormal, SysLoggerNormalError, SysLoggerNormalWarning } from "~/logger/systemLogger";
+import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
 import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap, tap } from "rxjs";
 import config from "~/configs"
 import * as faker from 'faker';
-import { RabbitLoggerBindingDebug, RabbitLoggerDebug, RabbitLoggerNormal, RabbitLoggerNormalError, RabbitLoggerNormalWarning } from "~/logger/rabbitLogger";
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
@@ -21,8 +20,6 @@ export default class RabbitClient {
     private machineID: string;
     private connection: amqp.ChannelModel | null = null
     private channel: amqp.Channel | null = null;
-    public debugLogger: winston.Logger;
-    private bindingLogger: winston.Logger;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
@@ -58,8 +55,6 @@ export default class RabbitClient {
         this.output$ = new Subject();
         this.input$ = new Subject();
         this.machineID = config.MAC;
-        this.debugLogger = RabbitLoggerDebug(true);
-        this.bindingLogger = RabbitLoggerBindingDebug(false);
         this.retryTime = option.retryTime ?? 3000
         this.url = `amqp://kenmec:kenmec@${config.RABBIT_MQ_HOST}:5672`
 
@@ -103,8 +98,9 @@ export default class RabbitClient {
         try {
             this.connection = await amqp.connect(`${this.url}?heartbeat=5`);
             this.connection.on("error", (err) => {
-                SysLoggerNormalError.error("Connection error", {
-                    type: "rabbitmq service",
+                errorLogger.error("Connection error", {
+                    title: "RabbitMQ",
+                    type: "network",
                     status: err.message
                 });
                 this.channel = null;
@@ -112,8 +108,9 @@ export default class RabbitClient {
             });
 
             this.connection.on("close", () => {
-                SysLoggerNormalWarning.warn("Connection closed. Reconnecting in 3s...", {
-                    type: "rabbitmq service"
+                warnLogger.warn("Connection closed. Reconnecting in 3s...", {
+                    title: "system",
+                    type: "network"
                 });
 
                 this.channel = null;
@@ -126,8 +123,9 @@ export default class RabbitClient {
 
             this.channel = await this.connection.createChannel();
 
-            SysLoggerNormal.info(`Connected to ${this.url}`, {
-                type: "rabbitmq service"
+            infoLogger.info(`Connected to ${this.url}`, {
+                title: "RabbitMQ",
+                type: "network"
             });
 
             this.error_logger_switch = true;
@@ -137,8 +135,9 @@ export default class RabbitClient {
 
         } catch (err) {
             if (this.error_logger_switch) {
-                SysLoggerNormalError.error("Connection failed", {
-                    type: "rabbitmq service",
+                errorLogger.error("Connection failed", {
+                    title: "RabbitMQ",
+                    type: "network",
                     status: (err as Error).message
                 });
                 this.error_logger_switch = false;
@@ -165,7 +164,8 @@ export default class RabbitClient {
         }
 
         const queue = await this.channel.assertQueue(queueName, queueOptions);
-        this.bindingLogger.info(` Queue "${queueName}" is ready. Options`, {
+        debugLogger.info(` Queue "${queueName}" is ready. Options`, {
+            title: "RabbitMQ",
             type: "queue setting",
             status: queueOptions
         });
@@ -188,7 +188,8 @@ export default class RabbitClient {
 
         const exchange = await this.channel.assertExchange(exchangeName, type, exchangeOptions);
 
-        this.bindingLogger.info(`Exchange "${exchangeName}" is ready.`, {
+        debugLogger.info(`Exchange "${exchangeName}" is ready.`, {
+            title: "RabbitMQ",
             type: "exchange setting",
             status: { type, ...exchangeOptions }
         });
@@ -200,7 +201,8 @@ export default class RabbitClient {
         if (!this.channel) throw new Error("Channel is not available");
         await this.channel.bindQueue(queueName, exchangeName, pattern);
 
-        this.bindingLogger.info(`Queue "${queueName}" bound to exchange "${exchangeName}"`, {
+        debugLogger.info(`Queue "${queueName}" bound to exchange "${exchangeName}"`, {
+            title: "RabbitMQ",
             type: "bind",
             status: { queue: queueName, exchange: exchangeName, pattern }
         });
@@ -211,7 +213,8 @@ export default class RabbitClient {
         // if (!this.channel) throw new Error("Channel is not available");
         if (!this.channel) return;
         this.channel.sendToQueue(queueName, Buffer.from(msg));
-        this.debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
+        debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
+            title: "RabbitMQ",
             type: "publish",
             status: JSON.parse(message)
         });
@@ -221,7 +224,8 @@ export default class RabbitClient {
         const msg = JSON.stringify({ sender: this.machineID, msg: message, flag: "RES" });
         if (!this.channel) throw new Error("Channel is not available");
         this.channel.sendToQueue(queueName, Buffer.from(msg));
-        this.debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
+        debugLogger.info(` send message ${cmd_id} to "${queueName}" -`, {
+            title: "RabbitMQ",
             type: "publish",
             status: JSON.parse(message)
         });
@@ -256,7 +260,8 @@ export default class RabbitClient {
             if (result) this.transactionMap.set(id, { id, count: 0 });
 
         } catch (err) {
-            RabbitLoggerNormalError.error(`${err.message}`, {
+            errorLogger.error(`${err.message}`, {
+                title: "RabbitMQ",
                 type: "rabbitmq service"
             });
         }
@@ -271,7 +276,8 @@ export default class RabbitClient {
         const flag = "RES";
         const messagePair = this.lastReceiveReq.get(message.id);
         if (!messagePair) {
-            RabbitLoggerNormalError.error("can not get request message for response", {
+            errorLogger.error("can not get request message for response", {
+                title: "RabbitMQ",
                 type: "unexpected error",
                 status: message
             });
@@ -295,10 +301,9 @@ export default class RabbitClient {
 
         try {
             const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg, options);
-
-
         } catch (err) {
-            RabbitLoggerNormalError.error(`${err.message}`, {
+            errorLogger.error(`${err.message}`, {
+                title: "RabbitMQ",
                 type: "rabbitmq service"
             });
         }
@@ -308,12 +313,14 @@ export default class RabbitClient {
         if (!this.channel) throw new Error("Channel is not available");
         const localChannel = this.channel;
         if (this.consumedQueues.has(queueName)) {
-            RabbitLoggerNormal.info(`Queue ${queueName} already being consumed.`, {
+            debugLogger.info(`Queue ${queueName} already being consumed.`, {
+                title: "RabbitMQ",
                 type: "consume queue"
             });
             return this.consumedQueues.get(queueName);
         } else {
-            RabbitLoggerNormal.info(`start consume queue: ${queueName}`, {
+            debugLogger.info(`start consume queue: ${queueName}`, {
+                title: "RabbitMQ",
                 type: "consume queue",
             });
         }
@@ -325,14 +332,16 @@ export default class RabbitClient {
                     const { payload, session } = data;
                     if (data.flag == 'RES') {
                         if (!blackList.includes(payload.cmd_id)) {
-                            this.debugLogger.info(`Receive [response] message (${payload.cmd_id}) -`, {
+                            rb_transactionLogger.info(`Receive [response] message (${payload.cmd_id}) -`, {
+                                title: "RabbitMQ",
                                 type: "receive",
                                 response: { ...payload, session }
                             });
                         }
                     } else {
                         if (!blackList.includes(payload.cmd_id)) {
-                            this.debugLogger.info(`Receive [request] message (${payload.cmd_id}) -`, {
+                            rb_transactionLogger.info(`Receive [request] message (${payload.cmd_id}) -`, {
+                                title: "RabbitMQ",
                                 type: "receive",
                                 request: { ...payload, session }
                             });
@@ -346,7 +355,8 @@ export default class RabbitClient {
                     onMessage(data);
 
                 } catch (err) {
-                    RabbitLoggerNormalError.error("Failed to parse message", {
+                    errorLogger.error("Failed to parse message", {
+                        title: "RabbitMQ",
                         type: "parse error",
                         status: err
                     })
@@ -417,8 +427,9 @@ export default class RabbitClient {
         await this.channel?.close();
         await this.connection?.close();
 
-        SysLoggerNormal.info(`Connection closed manually.`, {
-            type: "rabbitmq service"
+        infoLogger.info(`Connection closed manually.`, {
+            title: "Rabbitmq",
+            type: "network"
         })
     }
 
@@ -455,14 +466,23 @@ export default class RabbitClient {
                 this.channel.publish(exchange, key, buffer, publishOptions);
                 if (flag == "REQ") {
                     if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        this.debugLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                        rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                            title: "RabbitMQ",
                             type: "publish",
                             request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session }
                         });
                     }
                 } else {
+                    if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
+                        rb_heartbeatLogger.info("Send heartbeat to QAMS", {
+                            title: "system",
+                            type: "ack",
+                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat }
+                        })
+                    }
                     if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        this.debugLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                        rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                            title: "RabbitMQ",
                             type: "publish",
                             response: { ...jMsg.payload, session: jMsg.session }
                         });
@@ -478,8 +498,9 @@ export default class RabbitClient {
                 if (err.message == "Rabbit channel is not available") {
                     const data = JSON.parse(buffer.toString());
                     this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    RabbitLoggerNormalWarning.warn(
+                    warnLogger.warn(
                         `Rabbit channel is not available, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                        title: "RabbitMQ",
                         type: "transaction",
                         status: { exchange, key, data }
                     });
@@ -488,8 +509,9 @@ export default class RabbitClient {
                 if (attempts >= retries) {
                     const data = JSON.parse(buffer.toString());
                     this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    RabbitLoggerNormalWarning.warn(
+                    warnLogger.warn(
                         `Failed to publish after ${attempts} attempts: ${err.message}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                        title: "RabbitMQ",
                         type: "transaction",
                         status: { exchange, key, data }
                     });
@@ -505,8 +527,9 @@ export default class RabbitClient {
     private async flushPendingMessages() {
         if (!this.channel || this.pendingMessages.length === 0) return;
 
-        SysLoggerNormal.info(`Flushing ${this.pendingMessages.length} pending messages...`, {
-            type: "rabbitmq service"
+        infoLogger.info(`Flushing ${this.pendingMessages.length} pending messages...`, {
+            title: "RabbitMQ",
+            type: "flush cache"
         });
 
         const messages = [...this.pendingMessages];
@@ -570,7 +593,8 @@ export default class RabbitClient {
     }
 
     public async stopConsumeQueue(queueNames: string[] = []) {
-        RabbitLoggerNormal.info("run stop-consuming process", {
+        infoLogger.info("run stop-consuming process", {
+            title: "RabbitMQ",
             type: "stop consume",
             status: { still_consume: [...this.consumedQueues.keys()], need_stop: queueNames }
         })
@@ -579,7 +603,8 @@ export default class RabbitClient {
                 this.consumedQueues.delete(queueName);
             }
 
-            RabbitLoggerNormal.info("end of stop-consuming process", {
+            infoLogger.info("end of stop-consuming process", {
+                title: "RabbitMQ",
                 type: "stop consume",
                 status: { still_consume: [...this.consumedQueues.keys()] }
             })
@@ -591,14 +616,16 @@ export default class RabbitClient {
                 const tag = this.consumedQueues.get(queueName);
                 await this.channel.cancel(tag);
                 this.consumedQueues.delete(queueName);
-                RabbitLoggerNormalWarning.warn(` stop consume queue: ${queueName}`, {
+                warnLogger.warn(` stop consume queue: ${queueName}`, {
+                    title: "RabbitMQ",
                     type: "stop consume",
                 });
             } catch (e) {
                 // channel 可能已經 close，忽略
             }
         }
-        RabbitLoggerNormal.info("end of stop-consuming process", {
+        infoLogger.info("end of stop-consuming process", {
+            title: "RabbitMQ",
             type: "stop consume",
             status: { still_consume: [...this.consumedQueues.keys()] }
         })

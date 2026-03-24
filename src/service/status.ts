@@ -4,8 +4,8 @@ import config from "../configs";
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
+import { infoLogger } from '~/logger/logger';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
-import logger from '~/logger';
 import { ReturnCode } from '~/mq/type/returnCode';
 import { interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
@@ -79,7 +79,7 @@ class Status {
         ROS.pose$.subscribe((pose) => {
             if (!this.connectStatus.qams_isConnect) return;
             if (isDifferentPose(pose, this.lastPose, 0.01, 0.01)) {
-                logger.silly(`emit socket 'pose' ${formatPose(pose)}`);
+                infoLogger.silly(`emit socket 'pose' ${formatPose(pose)}`);
             }
             const machineOffset = {
                 x: -Math.sin((pose.yaw * Math.PI) / 180) * 0,
