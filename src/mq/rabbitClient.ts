@@ -560,7 +560,6 @@ export default class RabbitClient {
 
     private async consumeTopic() {
         if (!this.channel) return [];
-
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
                 if (msg.session !== this.info.session) return;

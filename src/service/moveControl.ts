@@ -12,7 +12,6 @@ import { AllRes } from "~/mq/type/res";
 import { TRANSACTION_INFO } from "~/types/status";
 
 class MoveControl {
-  private registering = false;
 
 
   private isAllowSub$: Subject<{ locationId: string, isAllow: boolean }> = new Subject();
@@ -42,11 +41,11 @@ class MoveControl {
       const { id, cmd_id, amrId } = payload;
       switch (cmd_id) {
         case CMD_ID.SHORTEST_PATH:
-          const { shortestPath, init, rotateFlag } = payload;
+          const { shortestPath, rotateFlag } = payload;
           infoLogger.info("send shortest path", {
             title: "traffic",
             type: "shortest path [req]",
-            status: { shortestPath, rotateFlag, init }
+            status: { shortestPath, rotateFlag }
           });
 
           ROS.sendShortestPath(this.rb, {
@@ -58,21 +57,7 @@ class MoveControl {
           break;
         case CMD_ID.ALLOW_PATH:
           const { isAllow, locationId } = payload;
-          if (this.registering) {
-            this.isAllowSub$.next({ locationId, isAllow })
-            this.rb.resPublish(
-              RES_EX,
-              `qams.${config.MAC}.res.isAllow`,
-              sendBaseResponse({
-                amrId, return_code: ReturnCode.SUCCESS,
-                cmd_id: CMD_ID.ALLOW_PATH,
-                id
-              }),
-              { expiration: "3000" }
-            )
-          } else {
-            ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
-          };
+          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
           break;
         case CMD_ID.REROUTE_PATH:
           infoLogger.info("send reroute path", {

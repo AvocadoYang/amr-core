@@ -17,8 +17,7 @@ export type ShortestPath = {
     amrId: string,
     id: string,
     shortestPath: string[],
-    rotateFlag: number[],
-    init: boolean
+    rotateFlag: number[]
 };
 export type SHORTEST_PATH = Base<ShortestPath>;
 

@@ -120,6 +120,18 @@ export const sendBaseResponse = (data: { cmd_id: CMD_ID, return_code: ReturnCode
     return data;
 }
 
+export const sendAllowPathResponse = (data: {
+    return_code: ReturnCode,
+    id: string,
+    amrId: string,
+    frontierLocationId: string
+}) => {
+    return {
+        cmd_id: CMD_ID.ALLOW_PATH,
+        ...data
+    }
+}
+
 export const sendHeartBeatResponse = (data: {
     return_code: ReturnCode,
     id: string,

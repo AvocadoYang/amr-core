@@ -28,7 +28,7 @@ import * as SOCKET from "../socket";
 import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { RES_EX } from "~/mq/type/type";
-import { sendBaseResponse } from "~/mq/transactionsWrapper";
+import { sendAllowPathResponse, sendBaseResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CMD_ID } from "~/mq/type/cmdId";
 import { group } from "console";
@@ -363,11 +363,12 @@ export const sendIsAllowTarget = (() => {
           rb.resPublish(
             RES_EX,
             `qams.${config.MAC}.res.isAllow`,
-            sendBaseResponse({
+            sendAllowPathResponse({
+              id,
               amrId,
+              frontierLocationId: locationId,
               return_code: ReturnCode.SUCCESS,
-              cmd_id: CMD_ID.ALLOW_PATH,
-              id
+
             }),
             { expiration: "10000" }
           )
@@ -376,10 +377,12 @@ export const sendIsAllowTarget = (() => {
         rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.isAllow`,
-          sendBaseResponse({
-            amrId, return_code: ReturnCode.isAllowServiceFailed,
-            cmd_id: CMD_ID.ALLOW_PATH,
-            id
+          sendAllowPathResponse({
+            id,
+            amrId,
+            frontierLocationId: locationId,
+            return_code: ReturnCode.isAllowServiceFailed,
+
           }),
           { expiration: "10000" }
         )
@@ -393,10 +396,12 @@ export const sendIsAllowTarget = (() => {
         rb.resPublish(
           RES_EX,
           `qams.${config.MAC}.res.isAllow`,
-          sendBaseResponse({
-            amrId, return_code: ReturnCode.isAllowServiceFailed,
-            cmd_id: CMD_ID.ALLOW_PATH,
-            id
+          sendAllowPathResponse({
+            id,
+            amrId,
+            frontierLocationId: locationId,
+            return_code: ReturnCode.isAllowServiceFailed,
+
           }),
           { expiration: "10000" }
         )
