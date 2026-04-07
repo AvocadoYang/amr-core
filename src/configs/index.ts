@@ -21,6 +21,20 @@ const schema = object({
   DEBUG_LOGGER: boolean().required(),
   HEARTBEAT_LOGGER: boolean().required(),
   MAC: string().required(),
+
+  RABBIT_MQ_HOST_1: string().required().default('127.0.0.1'),
+  RABBIT_MQ_UI_PORT_1: number().required().default(15672),
+  RABBIT_MQ_PORT_1: number().required().default(5672),
+  RABBIT_NODE_NAME_1: string().required().default('rabbit@rabbit1-101'),
+
+  RABBIT_MQ_HOST_2: string(),
+  RABBIT_MQ_UI_PORT_2: number(),
+  RABBIT_MQ_PORT_2: number(),
+  RABBIT_NODE_NAME_2: string(),
+
+  RABBIT_MQ_USER: string().required(),
+  RABBIT_MQ_PASSWORD: string().required(),
+
   LOG_LEVEL: string()
     .oneOf(["error", "warn", "info", "http", "verbose", "debug", "silly"])
     .required(),
@@ -30,4 +44,26 @@ const parsed = schema.validateSync(config);
 
 console.log("Parsed Config:", parsed);
 
-export default parsed;
+export const {
+  MISSION_CONTROL_HOST,
+  RABBIT_MQ_HOST,
+  AMR,
+  MISSION_CONTROL_PORT,
+  ROS_BRIDGE_URL,
+  IFACE_NAME,
+  DEBUG_LOGGER,
+  HEARTBEAT_LOGGER,
+  MAC,
+  RABBIT_MQ_HOST_1,
+  RABBIT_MQ_UI_PORT_1,
+  RABBIT_MQ_PORT_1,
+  RABBIT_NODE_NAME_1,
+  RABBIT_MQ_HOST_2,
+  RABBIT_MQ_UI_PORT_2,
+  RABBIT_MQ_PORT_2,
+  RABBIT_NODE_NAME_2,
+
+  RABBIT_MQ_USER,
+  RABBIT_MQ_PASSWORD,
+  LOG_LEVEL
+} = parsed;

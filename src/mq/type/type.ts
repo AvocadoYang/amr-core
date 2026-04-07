@@ -1,4 +1,4 @@
-import config from "~/configs"
+import { MAC } from "~/configs"
 
 // Exchanges
 export const HEARTBEAT_EX = "amr.heartbeat.topic";
@@ -10,11 +10,11 @@ export const IO_QUEUE = "qams.io.queue";
 export const HEARTBEAT_PONG_QUEUE = "qams.heartbeat.pong.queue"
 
 //Queues: Qams -> amr 
-export const heartbeatPingQName = `${config.MAC}.heartbeat.ping.queue`;
-export const a2q_handshakeQName = `${config.MAC}.qams.handshake.queue`;
-export const q2a_amrResponseQName = `${config.MAC}.amr.handshake.res.queue`;
-export const a2q_qamsResponseQName = `${config.MAC}.qams.control.res.queue`;
-export const q2a_controlQName = `${config.MAC}.amr.control.queue`;
+export const heartbeatPingQName = `${MAC}.heartbeat.ping.queue`;
+export const a2q_handshakeQName = `${MAC}.qams.handshake.queue`;
+export const q2a_amrResponseQName = `${MAC}.amr.handshake.res.queue`;
+export const a2q_qamsResponseQName = `${MAC}.qams.control.res.queue`;
+export const q2a_controlQName = `${MAC}.amr.control.queue`;
 
 export const dynamicListener = [
     heartbeatPingQName,

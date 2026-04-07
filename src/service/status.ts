@@ -1,13 +1,13 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
-import config from "../configs";
+import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import { ReturnCode } from '~/mq/type/returnCode';
-import { interval, Subject, throttleTime } from 'rxjs';
+import { config, interval, Subject, throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
 import { Output, setIsRegistered } from '~/actions/status/output';
@@ -34,23 +34,23 @@ class Status {
                     ROS.updatePosition({ data: isUpdate });
                     this.rb.resPublish(
                         RES_EX,
-                        `qams.${config.MAC}.res.updateMap`,
+                        `qams.${MAC}.res.updateMap`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     );
-                    const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+                    const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
-                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.emergencyStop`,
+                    this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
                     break;
                 case CMD_ID.FORCE_RESET:
                     ROS.forceResetButton();
-                    this.rb.resPublish(RES_EX, `qams.${config.MAC}.res.forceReset`,
+                    this.rb.resPublish(RES_EX, `qams.${MAC}.res.forceReset`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
@@ -86,7 +86,7 @@ class Status {
                 y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
             };
             const Pose = { x: pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`, sendPose(Pose), {
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.pose`, sendPose(Pose), {
                 expiration: "3000"
             })
             this.lastPose = pose;
@@ -98,12 +98,12 @@ class Status {
                 warning_msg: string[];
                 warning_id: string[];
             };
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg), { expiration: "3000" });
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.errorInfo`, sendErrorInfo(jMsg), { expiration: "3000" });
         });
 
         ROS.getIOInfo$.subscribe((data) => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(data), {
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.ioInfo`, sendIOInfo(data), {
                 expiration: "2000"
             })
         });
@@ -114,7 +114,7 @@ class Status {
                 ? currentId
                 : this.amrStatus.currentId
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId(currentId), {
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
             })
         });
@@ -122,12 +122,12 @@ class Status {
         ROS.currentPoseAccurate$.subscribe((msg) => {
             this.amrStatus.poseAccurate = msg;
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.poseAccurate`, sendPoseAccurate(msg), { expiration: "2000" })
         });
 
         ROS.is_registered.subscribe(msg => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.isRegistered`, sendIsRegistered(msg), { expiration: "2000" });
         });
 
         ROS.has_mission.subscribe(msg => {
@@ -136,11 +136,11 @@ class Status {
         })
 
         ROS.getVerityCargo$.subscribe((msg) => {
-            this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
+            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
         ROS.getStackInfo$.subscribe((msg) => {
-            this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.stackInfo`, sendStackInfo(msg))
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.stackInfo`, sendStackInfo(msg))
         })
 
 
@@ -155,7 +155,7 @@ class Status {
     private mock() {
         // interval(200).subscribe(() => {
 
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.pose`, sendPose({ x: 1, y: 2, yaw: 3 }), {
+        //     this.rb.reqPublish(IO_EX, `amr.io.${MAC}.pose`, sendPose({ x: 1, y: 2, yaw: 3 }), {
         //         expiration: "3000"
         //     })
 

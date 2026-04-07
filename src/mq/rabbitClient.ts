@@ -1,8 +1,8 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
-import { BehaviorSubject, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap, tap } from "rxjs";
-import config from "~/configs"
+import { BehaviorSubject, combineLatest, config, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap, tap } from "rxjs";
+import { MAC, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
@@ -16,19 +16,28 @@ import { TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
 
 export default class RabbitClient {
-    private url: string;
     private machineID: string;
     private connection: amqp.ChannelModel | null = null
     private channel: amqp.Channel | null = null;
+    private reconnecting = false;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
+
+    private url_1: string = ""
+    private url_2: string = ""
+    private urls: string[] = []
+    private ui_port: number[] = []
+    private node_name: string[] = []
+    private msRelationship: Map<string, { url: string, status: "mirror" | "leader" }> = new Map()
 
     private lastReceiveReq: Map<string, {
         session: string
     }> = new Map();
 
     private error_logger_switch: boolean = true;
+    private connectFailedLogger = true;
+    private connectCloseLogger = true;
 
     private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
     private output$: Subject<Output>
@@ -54,9 +63,10 @@ export default class RabbitClient {
     ) {
         this.output$ = new Subject();
         this.input$ = new Subject();
-        this.machineID = config.MAC;
+        this.connectSetting();
+        this.machineID = MAC;
         this.retryTime = option.retryTime ?? 3000
-        this.url = `amqp://kenmec:kenmec@${config.RABBIT_MQ_HOST}:5672`
+        // this.url = `amqp://kenmec:kenmec@${RABBIT_MQ_HOST}:5673`
 
         combineLatest([
             this.input$.pipe(
@@ -94,57 +104,118 @@ export default class RabbitClient {
         this.connect();
     }
 
+    private connectSetting() {
+        this.url_1 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_1}:${RABBIT_MQ_PORT_1}`
+        this.urls.push(this.url_1);
+        this.ui_port.push(RABBIT_MQ_UI_PORT_1);
+        this.node_name.push(RABBIT_NODE_NAME_1)
+        if (RABBIT_MQ_HOST_2 && RABBIT_MQ_PORT_2 && RABBIT_MQ_UI_PORT_2 && RABBIT_NODE_NAME_2) {
+            this.url_2 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_2}:${RABBIT_MQ_PORT_2}`
+            this.urls.push(this.url_2)
+            this.ui_port.push(RABBIT_MQ_UI_PORT_2)
+            this.node_name.push(RABBIT_NODE_NAME_2)
+        }
+        this.node_name.forEach((name, index) => {
+            this.msRelationship.set(name, { url: this.urls[index], "status": "mirror" })
+        });
+
+        // console.log(this.node_name, this.urls, this.ui_port)
+
+    }
+
     public async connect() {
+        console.log('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
         try {
-            this.connection = await amqp.connect(`${this.url}?heartbeat=5`);
+            const [connection, url] = await this.connectWithFailover();
+            this.connection = connection
+
             this.connection.on("error", (err) => {
-                errorLogger.error("Connection error", {
-                    title: "RabbitMQ",
-                    type: "network",
-                    status: err.message
-                });
-                this.channel = null;
+                if (this.connectCloseLogger) {
+                    errorLogger.error("Connection error", {
+                        title: "RabbitMQ",
+                        type: "network",
+                        status: err.message
+                    });
+                }
                 this.output$.next(isConnected({ isConnected: false }))
+                this.reconnect()
             });
 
-            this.connection.on("close", () => {
-                warnLogger.warn("Connection closed. Reconnecting in 3s...", {
-                    title: "system",
-                    type: "network"
-                });
-
-                this.channel = null;
-                this.consumedQueues.clear();
+            this.connection.on("close", async () => {
+                if (this.connectCloseLogger) {
+                    warnLogger.warn("Connection closed. Reconnecting in 3s...", {
+                        title: "RabbitMQ",
+                        type: "network"
+                    });
+                    this.connectCloseLogger = false;
+                }
                 this.output$.next(isConnected({ isConnected: false }));
                 this.rabbitIsConnected$.next(false);
-                setTimeout(() => this.connect(), this.retryTime);
+                this.reconnect()
 
             });
 
             this.channel = await this.connection.createChannel();
+            this.connectCloseLogger = true;
+            this.connectFailedLogger = true;
 
-            infoLogger.info(`Connected to ${this.url}`, {
+            infoLogger.info(`Connected to ${url}`, {
                 title: "RabbitMQ",
                 type: "network"
-            });
-
-            this.error_logger_switch = true;
+            })
             await this.init();
             this.rabbitIsConnected$.next(true);
             this.output$.next(isConnected({ isConnected: true }))
+            await this.flushPendingMessages();
 
         } catch (err) {
-            if (this.error_logger_switch) {
+            if (this.connectFailedLogger) {
                 errorLogger.error("Connection failed", {
                     title: "RabbitMQ",
                     type: "network",
                     status: (err as Error).message
                 });
-                this.error_logger_switch = false;
+                this.connectFailedLogger = false;
             }
-            setTimeout(() => this.connect(), this.retryTime);
+            this.reconnect()
         }
     }
+
+
+    private async reconnect() {
+        if (this.reconnecting) return;
+        this.reconnecting = true;
+
+        this.channel = null;
+        this.connection = null;
+
+        warnLogger.warn("Reconnecting RabbitMQ...", {
+            title: "RabbitMQ",
+            type: "network connection",
+        });
+
+        setTimeout(async () => {
+            await this.connect();
+            this.reconnecting = false;
+        }, this.retryTime);
+    }
+
+    private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
+        for (const url of this.urls) {
+            try {
+                // const conn = await amqp.connect(url);
+                const conn = await amqp.connect(url);
+                return [conn, url];
+            } catch (err) {
+                warnLogger.warn(`Failed to connect ${url}`, {
+                    title: "RabbitMQ",
+                    type: "network connection",
+                });
+            }
+        }
+        throw new Error("All RabbitMQ nodes unreachable");
+    }
+
 
 
     private async createQueue(
@@ -382,22 +453,22 @@ export default class RabbitClient {
         await this.createExchange(CONTROL_EX, "topic", { durable: true });
 
         await this.createQueue(q2a_controlQName, { durable: true });
-        await this.bindQueue(q2a_controlQName, CONTROL_EX, `amr.${config.MAC}.control.*`);
+        await this.bindQueue(q2a_controlQName, CONTROL_EX, `amr.${MAC}.control.*`);
 
         await this.createQueue(q2a_amrResponseQName, { durable: true });
-        await this.bindQueue(q2a_amrResponseQName, RES_EX, `amr.${config.MAC}.*.res`);
+        await this.bindQueue(q2a_amrResponseQName, RES_EX, `amr.${MAC}.*.res`);
 
         await this.createQueue(a2q_handshakeQName, { durable: true });
-        await this.bindQueue(a2q_handshakeQName, CONTROL_EX, `qams.${config.MAC}.handshake.*`);
+        await this.bindQueue(a2q_handshakeQName, CONTROL_EX, `qams.${MAC}.handshake.*`);
 
         await this.createQueue(a2q_qamsResponseQName, { durable: true });
-        await this.bindQueue(a2q_qamsResponseQName, RES_EX, `qams.${config.MAC}.res.*`);
+        await this.bindQueue(a2q_qamsResponseQName, RES_EX, `qams.${MAC}.res.*`);
 
         await this.createQueue(HEARTBEAT_PONG_QUEUE, { durable: true });
         await this.bindQueue(HEARTBEAT_PONG_QUEUE, HEARTBEAT_EX, `qams.heartbeat.pong.*`);
 
         await this.createQueue(heartbeatPingQName, { autoDelete: false });
-        await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${config.MAC}`);
+        await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${MAC}`);
         await this.channel.purgeQueue(heartbeatPingQName);
 
 

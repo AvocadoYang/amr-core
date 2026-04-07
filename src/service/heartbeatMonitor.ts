@@ -4,10 +4,10 @@ import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } fr
 import { ofType } from "~/helpers";
 import * as ROS from '../ros'
 import * as net from 'net';
-import { infoLogger, rb_heartbeatLogger, warnLogger } from "~/logger/logger";
+import { errorLogger, infoLogger, rb_heartbeatLogger, warnLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { HEARTBEAT_EX } from "~/mq/type/type";
-import config from '../configs'
+import { MAC } from '../configs'
 import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
@@ -17,6 +17,7 @@ export default class HeartbeatMonitor {
     private qamsLastHeartbeatTime: number = 0;
     private amrServiceLastReceiveHeartbeatTime: number = 0;
     private amrServiceHeartbeatCount = 0;
+    private toleranceTime = 0;
 
     private qams_connect$ = new BehaviorSubject<boolean>(false);
     private ros_bridge_connect$ = new BehaviorSubject<boolean>(false);
@@ -46,7 +47,7 @@ export default class HeartbeatMonitor {
                 type: "receive",
                 status: { id, heartbeat }
             })
-            this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${config.MAC}`,
+            this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${MAC}`,
                 sendHeartBeatResponse({
                     id,
                     heartbeat: resHeartbeat,
@@ -54,6 +55,7 @@ export default class HeartbeatMonitor {
                     amrId: this.info.amrId
                 }), { expiration: "2000" }
             )
+            this.toleranceTime = 0;
             this.qams_heartbeat$.next(true);
         });
 
@@ -72,9 +74,19 @@ export default class HeartbeatMonitor {
                     this.connectStatus.qams_isConnect = false;
                     return EMPTY;
                 }
+                this.toleranceTime = 0;
                 return this.qams_heartbeat$.pipe(
                     switchMap(() => timer(5000, 5000)),
                     tap(() => {
+                        if (this.toleranceTime < 1) {
+                            this.toleranceTime += 1;
+                            this.qams_heartbeat$.next(true);
+                            errorLogger.error("test time out retry", {
+                                title: "system",
+                                type: "heartbeat"
+                            })
+                            return;
+                        }
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",
                             type: "heartbeat",

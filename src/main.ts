@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import config from './configs'
+import { MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
 import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
 import { RBClient } from "./mq";
@@ -71,7 +71,7 @@ class AmrCore {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
               this.rb.send(connectWithQAMS({ isConnected }));
               this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
-              const { data } = await axios.get(`http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/test/map`);
+              const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
               this.map = data;
             } else {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })

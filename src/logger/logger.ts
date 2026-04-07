@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import * as path from 'path';
-import config from "../configs"
+import { DEBUG_LOGGER, HEARTBEAT_LOGGER } from "../configs"
 import { createLogger, transports, format } from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import { kenmecLogs } from '~/helpers/system';
@@ -164,7 +164,7 @@ export const rb_heartbeatLogger = createLogger({
         format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         format.printf(logFormatter(true, "AMR_HEARTBEAT")),
       ),
-      silent: !config.HEARTBEAT_LOGGER,
+      silent: !HEARTBEAT_LOGGER,
     }),
     setDailyReport("AMR_HEARTBEAT", "/heartbeat", "200m"),
   ],
@@ -180,7 +180,7 @@ export const debugLogger = createLogger({
         format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         format.printf(logFormatter(true, "DEBUG")),
       ),
-      silent: !config.DEBUG_LOGGER,
+      silent: !DEBUG_LOGGER,
     }),
   ],
 });

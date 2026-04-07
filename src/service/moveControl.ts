@@ -4,7 +4,6 @@ import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
 import * as ROS from "../ros";
 import { RES_EX } from "~/mq/type/type";
-import config from "../configs";
 import { sendBaseResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { AllControl } from "~/mq/type/control";

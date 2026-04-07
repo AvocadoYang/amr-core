@@ -14,7 +14,7 @@ import { boolean, number, object, string } from "yup";
 
 import chalk from "chalk";
 import { sampleInterval, tfTransformToCoords } from "~/helpers";
-import config from "~/configs";
+import { AMR, MAC, ROS_BRIDGE_URL } from "~/configs";
 import { SimplePose } from "~/helpers/geometry";
 import {
   MyRosMessage,
@@ -24,7 +24,6 @@ import {
   Mission_Payload,
 } from "~/types/fleetInfo";
 
-import * as SOCKET from "../socket";
 import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { RES_EX } from "~/mq/type/type";
@@ -57,11 +56,11 @@ const terminalStates = [
 ] as const;
 
 export function init() {
-  ros.connect(config.ROS_BRIDGE_URL);
+  ros.connect(ROS_BRIDGE_URL);
 }
 
 export function reconnect() {
-  ros.connect(config.ROS_BRIDGE_URL);
+  ros.connect(ROS_BRIDGE_URL);
 }
 
 export const connected$ = fromEventPattern<never>((next) => {
@@ -129,7 +128,7 @@ export const getIOInfo$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/io_info`,
+    name: `/kenmec_${AMR}/io_info`,
     messageType: "std_msgs/String",
   });
 
@@ -149,7 +148,7 @@ export const reroutePath = () => {
     const service = new ROSLIB.Service({
       ros,
       name: "/fleet_manager/update_path",
-      serviceType: `kenmec_${config.AMR}_socket/update_path`,
+      serviceType: `kenmec_${AMR}_socket/update_path`,
     });
     return new Observable<{ result: boolean }>((subscriber) => {
       reroutePath$.subscribe((reroute_Path) => {
@@ -167,7 +166,7 @@ export const reroutePath = () => {
           (response) => {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             if (response.result as boolean) {
-              SOCKET.sendReroutePathInProcess(response);
+              // SOCKET.sendReroutePathInProcess(response);
             }
             infoLogger.info(`receive reroute path response from ros service`, {
               title: "traffic",
@@ -191,8 +190,8 @@ export const reroutePath = () => {
 export const getFeedbackFromMoveAction$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/fleet_manager/mission/feedback`,
-    messageType: `kenmec_${config.AMR}_socket/MissionActionFeedback`,
+    name: `/kenmec_${AMR}/fleet_manager/mission/feedback`,
+    messageType: `kenmec_${AMR}_socket/MissionActionFeedback`,
   });
 
   return fromEventPattern<FeedbackOfMove>((next) => {
@@ -205,7 +204,7 @@ export const getFeedbackFromMoveAction$ = (() => {
 export const getLeaveLocation$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/navigation/is_away`,
+    name: `/kenmec_${AMR}/navigation/is_away`,
     messageType: "std_msgs/String",
   });
 
@@ -219,7 +218,7 @@ export const getLeaveLocation$ = (() => {
 export const getArriveTarget$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/navigation/is_arrive`,
+    name: `/kenmec_${AMR}/navigation/is_arrive`,
     messageType: "std_msgs/String",
   });
 
@@ -235,7 +234,7 @@ export const sendShortestPath = (() => {
   const service = new ROSLIB.Service({
     ros,
     name: "/fleet_manager/shortest_path",
-    serviceType: `kenmec_${config.AMR}_socket/shortest_path`,
+    serviceType: `kenmec_${AMR}_socket/shortest_path`,
   });
 
   return (rb: RBClient, data: { shortestPath: string[], id: string, amrId: string }) => {
@@ -249,7 +248,7 @@ export const sendShortestPath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `qams.${config.MAC}.res.shortestPath`,
+            `qams.${MAC}.res.shortestPath`,
             sendBaseResponse({
               amrId,
               return_code: ReturnCode.SUCCESS,
@@ -274,7 +273,7 @@ export const sendShortestPath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.shortestPath`,
+          `qams.${MAC}.res.shortestPath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.shortestPathServiceFailed,
             cmd_id: CMD_ID.SHORTEST_PATH,
@@ -292,7 +291,7 @@ export const sendReroutePath = (() => {
   const service = new ROSLIB.Service({
     ros,
     name: "/fleet_manager/update_path",
-    serviceType: `kenmec_${config.AMR}_socket/update_path`,
+    serviceType: `kenmec_${AMR}_socket/update_path`,
   });
   return (rb: RBClient, data: { reroutePath: string[], id: string, amrId: string }) => {
     const { reroutePath, id, amrId } = data;
@@ -305,7 +304,7 @@ export const sendReroutePath = (() => {
         if (data.result as boolean) {
           rb.resPublish(
             RES_EX,
-            `qams.${config.MAC}.res.reroutePath`,
+            `qams.${MAC}.res.reroutePath`,
             sendBaseResponse({
               amrId,
               return_code: ReturnCode.SUCCESS,
@@ -330,7 +329,7 @@ export const sendReroutePath = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.reroutePath`,
+          `qams.${MAC}.res.reroutePath`,
           sendBaseResponse({
             amrId, return_code: ReturnCode.reroutePathServiceFailed,
             cmd_id: CMD_ID.REROUTE_PATH,
@@ -347,7 +346,7 @@ export const sendIsAllowTarget = (() => {
   const service = new ROSLIB.Service({
     ros,
     name: "/fleet_manager/allow_path",
-    serviceType: `kenmec_${config.AMR}_socket/TrafficStatus`,
+    serviceType: `kenmec_${AMR}_socket/TrafficStatus`,
   });
   return (rb: RBClient, nextLocation: { locationId: string, isAllow: boolean, amrId: string, id: string }) => {
     const { locationId, isAllow, amrId, id } = nextLocation;
@@ -362,7 +361,7 @@ export const sendIsAllowTarget = (() => {
         if ((res as { result: boolean }).result) {
           rb.resPublish(
             RES_EX,
-            `qams.${config.MAC}.res.isAllow`,
+            `qams.${MAC}.res.isAllow`,
             sendAllowPathResponse({
               id,
               amrId,
@@ -376,7 +375,7 @@ export const sendIsAllowTarget = (() => {
         }
         rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.isAllow`,
+          `qams.${MAC}.res.isAllow`,
           sendAllowPathResponse({
             id,
             amrId,
@@ -395,7 +394,7 @@ export const sendIsAllowTarget = (() => {
         });
         rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.isAllow`,
+          `qams.${MAC}.res.isAllow`,
           sendAllowPathResponse({
             id,
             amrId,
@@ -418,8 +417,8 @@ export const sendIsAllowTarget = (() => {
 export const writeStatus = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/fleet_manager/mission/goal`,
-    messageType: `kenmec_${config.AMR}_socket/MissionActionGoal`,
+    name: `/kenmec_${AMR}/fleet_manager/mission/goal`,
+    messageType: `kenmec_${AMR}_socket/MissionActionGoal`,
   });
 
   return (msg: Mission_Payload) => {
@@ -449,7 +448,7 @@ export const writeStatus = (() => {
 export const sendHasCargo = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/is_cargo`,
+    name: `/kenmec_${AMR}/is_cargo`,
     messageType: "std_msgs/Bool",
   })
   return (msg: boolean) => {
@@ -462,8 +461,8 @@ export const sendHasCargo = (() => {
 export const getReadStatus$ = (() => {
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/fleet_manager/mission/result`,
-    messageType: `kenmec_${config.AMR}_socket/MissionActionResult`,
+    name: `/kenmec_${AMR}/fleet_manager/mission/result`,
+    messageType: `kenmec_${AMR}_socket/MissionActionResult`,
   });
 
   return fromEventPattern<MyRosMessage>((next) =>
@@ -498,7 +497,7 @@ export const getRealTimeReadStatus$ = (() => {
 export const getAmrError$ = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/error_info`,
+    name: `/kenmec_${AMR}/error_info`,
     messageType: "std_msgs/String",
   });
   return fromEventPattern((next) => {
@@ -528,7 +527,7 @@ export const updatePosition = (() => {
 export const cancelCarStatusAnyway = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/fleet_manager/mission/cancel`,
+    name: `/kenmec_${AMR}/fleet_manager/mission/cancel`,
     messageType: "actionlib_msgs/GoalID",
   });
 
@@ -555,7 +554,7 @@ export const topicTask$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: `/kenmec_${config.AMR}/joystick_status`,
+    name: `/kenmec_${AMR}/joystick_status`,
     messageType: "std_msgs/String",
   });
 
@@ -590,7 +589,7 @@ export const currentId$ = (() => {
 export const pause = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/fleet_manager/pause`,
+    name: `/kenmec_${AMR}/fleet_manager/pause`,
     messageType: "std_msgs/String",
   });
 
@@ -607,7 +606,7 @@ export const currentPoseAccurate$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: `/kenmec_${config.AMR}/localization_check`,
+    name: `/kenmec_${AMR}/localization_check`,
     messageType: "std_msgs/Bool",
   });
 
@@ -625,7 +624,7 @@ export const is_registered = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: `/kenmec_${config.AMR}/is_register`,
+    name: `/kenmec_${AMR}/is_register`,
     messageType: "std_msgs/Bool",
   });
 
@@ -643,7 +642,7 @@ export const has_mission = (() => {
 
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: `/kenmec_${config.AMR}/has_mission`,
+    name: `/kenmec_${AMR}/has_mission`,
     messageType: "std_msgs/Bool",
   });
 
@@ -660,7 +659,7 @@ export const amrServiceHeartbeat = (() => {
   });
   const topic = new ROSLIB.Topic<typeof boolean>({
     ros,
-    name: `/kenmec_${config.AMR}/still_alive`,
+    name: `/kenmec_${AMR}/still_alive`,
     messageType: "std_msgs/Bool",
   });
   return fromEventPattern<boolean>((next) =>
@@ -675,7 +674,7 @@ export const amrServiceHeartbeat = (() => {
 export const getHeartbeat$ = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/heartbeat_resp`,
+    name: `/kenmec_${AMR}/heartbeat_resp`,
     messageType: "std_msgs/String",
   });
   const schema = object({
@@ -693,7 +692,7 @@ export const getHeartbeat$ = (() => {
 export const heartbeat = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_${config.AMR}/heartbeat`,
+    name: `/kenmec_${AMR}/heartbeat`,
     messageType: "std_msgs/String",
   });
 

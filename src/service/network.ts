@@ -1,4 +1,4 @@
-import config from '../configs'
+import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from '../configs'
 import * as ROS from '../ros'
 import * as net from 'net';
 import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout, timestamp } from "rxjs";
@@ -48,8 +48,8 @@ class NetWorkManager {
         status: this.amrStatus
       })
       const { data } = await axios.post(
-        `http://${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
-        serialNumber: config.MAC,
+        `http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
+        serialNumber: MAC,
         lastSendGoalId: this.missionStatus.lastSendGoalId,
         amrHasMission: this.amrStatus.amrHasMission,
         timeout: 5000
@@ -64,7 +64,7 @@ class NetWorkManager {
         return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR &&
         return_code !== ReturnCode.RABBIT_CONNECT_ERROR_LOGIN_ERROR
       ) {
-        infoLogger.info(`connect to QAMS ${config.MISSION_CONTROL_HOST}:${config.MISSION_CONTROL_PORT}`, {
+        infoLogger.info(`connect to QAMS ${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}`, {
           title: "system",
           type: "QAMS 🤝",
           status: { message, return_code, session, amrId }

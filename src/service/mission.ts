@@ -1,6 +1,6 @@
 import { interval, Subject } from "rxjs";
 import * as ROS from '../ros'
-import config from "../configs";
+import { MAC } from "../configs";
 import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
 import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
@@ -56,7 +56,7 @@ export default class Mission {
         return;
       };
 
-      this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
+      this.rb.reqPublish(IO_EX, `amr.io.${MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
 
     ROS.getReadStatus$.subscribe((readStatus) => {
@@ -95,7 +95,7 @@ export default class Mission {
       this.resetMissionStatus();
 
 
-      this.rb.reqPublish(CONTROL_EX, `qams.${config.MAC}.handshake.readStatus`, sendReadStatus(newState));
+      this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
 
 
       this.output$.next(sendAmrHasMission({ hasMission: false }))
@@ -135,7 +135,7 @@ export default class Mission {
 
         this.rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.writeStatus`,
+          `qams.${MAC}.res.writeStatus`,
           sendWriteStatusResponse({
             return_code: ReturnCode.SUCCESS,
             amrId,
@@ -150,7 +150,7 @@ export default class Mission {
       case CMD_ID.WRITE_CANCEL:
         this.rb.resPublish(
           RES_EX,
-          `qams.${config.MAC}.res.writeCancel`,
+          `qams.${MAC}.res.writeCancel`,
           sendBaseResponse({
             cmd_id,
             return_code: ReturnCode.SUCCESS,
@@ -201,7 +201,7 @@ export default class Mission {
   private mock() {
 
     // interval(200).subscribe(() => {
-    //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.feedback`, sendFeedBack(JSON.stringify(fakeFeedBack)), { expiration: "2000"})
+    //     this.rb.reqPublish(IO_EX, `amr.io.${MAC}.feedback`, sendFeedBack(JSON.stringify(fakeFeedBack)), { expiration: "2000"})
     // })
 
 
@@ -214,7 +214,7 @@ export default class Mission {
     //             result_message: "test", 
     //         }
     //     }
-    //     this.rb.reqPublish(IO_EX,`amr.io.${config.MAC}.handshake.readStatus` ,sendReadStatus(fake), {
+    //     this.rb.reqPublish(IO_EX,`amr.io.${MAC}.handshake.readStatus` ,sendReadStatus(fake), {
     //         persistent: true
     //     });
     // }, 10000)
