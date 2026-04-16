@@ -707,7 +707,7 @@ export const forceResetButton = (() => {
   // Create a topic instance
   const topic = new ROSLIB.Topic({
     ros,
-    name: "/kenmec_fork/set_recovery",
+    name: `/kenmec_${AMR}/set_recovery`,
     messageType: "std_msgs/Bool",
   });
 
@@ -720,7 +720,7 @@ export const forceResetButton = (() => {
 export const getVerityCargo$ = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_fork/cargo_result`,
+    name: `/kenmec_${AMR}/cargo_result`,
     messageType: "std_msgs/String",
   });
   const schema = object({
@@ -737,12 +737,30 @@ export const getVerityCargo$ = (() => {
 export const getStackInfo$ = (() => {
   const topic = new ROSLIB.Topic({
     ros,
-    name: `/kenmec_fork/cargo_info`,
+    name: `/kenmec_${AMR}/cargo_info`,
     messageType: "std_msgs/String",
   });
   const schema = object({
     data: string().required("stack info missed"),
   }).required("stack info missed");
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+})();
+
+
+export const systemState = (() => {
+  const schema = object({
+    data: string().required("systemState missed"),
+  }).required("systemState info missed");
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/system_state`,
+    messageType: "std_msgs/String",
+  });
 
   return fromEventPattern<string>((next) =>
     topic.subscribe((msg) => {

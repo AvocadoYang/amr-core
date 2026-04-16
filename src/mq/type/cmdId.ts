@@ -22,6 +22,7 @@ export enum CMD_ID {
   PTVP_SWITCH = "PTVP_SWITCH",
 
   HAS_CARGO = "HC",
+  SYSTEM_STATE = "SS",
 
   SYNC_DATA = "SYNC",
 

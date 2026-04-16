@@ -96,6 +96,14 @@ export const sendETX = () => {
     }
 }
 
+export const sendSystemState = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.SYSTEM_STATE,
+        state: msg
+    }
+}
+
+
 
 type AllReqType =
     typeof sendHeartbeat |
@@ -109,7 +117,8 @@ type AllReqType =
     typeof sendCargoVerity |
     typeof sendIsRegistered |
     typeof sendStackInfo |
-    typeof sendETX
+    typeof sendETX |
+    typeof sendSystemState
 
 export type RequestMsgType = ReturnType<AllReqType>
 
@@ -156,6 +165,7 @@ export const sendWriteStatusResponse = (data: {
         ...data
     }
 }
+
 
 
 type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse | typeof sendWriteStatusResponse;

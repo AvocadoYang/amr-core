@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
@@ -141,6 +141,11 @@ class Status {
 
         ROS.getStackInfo$.subscribe((msg) => {
             this.rb.reqPublish(IO_EX, `amr.io.${MAC}.stackInfo`, sendStackInfo(msg))
+        })
+
+        ROS.systemState.subscribe((msg) => {
+            console.log(msg, "@@@@@@@@@@@@@")
+            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
         })
 
 
