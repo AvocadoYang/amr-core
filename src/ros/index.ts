@@ -572,7 +572,7 @@ export const currentId$ = (() => {
 
   const topic = new ROSLIB.Topic<typeof string>({
     ros,
-    name: "/kenmec_fork/current_id",
+    name: `/kenmec_${AMR}/current_id`,
     messageType: "std_msgs/Int32",
   });
 
