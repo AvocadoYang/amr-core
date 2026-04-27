@@ -20,12 +20,11 @@ export enum CMD_ID {
   ALLOW_PATH = "AP",
   REGISTERED = "RD",
   PTVP_SWITCH = "PTVP_SWITCH",
-
+  FORCE_REBIND_LOCATION = "FL",
   HAS_CARGO = "HC",
   SYSTEM_STATE = "SS",
-
+  HAS_MISSION = 'HM',
   SYNC_DATA = "SYNC",
-
   ETX = "ETX"
 }
 

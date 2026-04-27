@@ -103,6 +103,13 @@ export const sendSystemState = (msg: string) => {
     }
 }
 
+export const sendForceRebindLocation = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.FORCE_REBIND_LOCATION,
+        locationId: msg
+    }
+}
+
 
 
 type AllReqType =
@@ -118,7 +125,8 @@ type AllReqType =
     typeof sendIsRegistered |
     typeof sendStackInfo |
     typeof sendETX |
-    typeof sendSystemState
+    typeof sendSystemState |
+    typeof sendForceRebindLocation
 
 export type RequestMsgType = ReturnType<AllReqType>
 

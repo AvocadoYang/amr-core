@@ -768,3 +768,23 @@ export const systemState = (() => {
     })
   );
 })();
+
+
+
+
+export const forceRebindLocation = (() => {
+  const schema = object({
+    data: number().required("location missed"),
+  }).required("location info missed");
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${AMR}/force_rebind_location`,
+    messageType: "std_msgs/Int32",
+  });
+
+  return fromEventPattern<string>((next) =>
+    topic.subscribe((msg) => {
+      next(schema.validateSync(msg).data);
+    })
+  );
+})();
