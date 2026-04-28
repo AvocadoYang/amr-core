@@ -120,6 +120,7 @@ class Status {
                 !this.amrStatus.poseAccurate && this.amrStatus.poseAccurate !== undefined)
                 ? currentId
                 : this.amrStatus.currentId
+
             if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${MAC}.currentId`, sendCurrentId(currentId), {
                 expiration: "2000"
@@ -151,7 +152,7 @@ class Status {
         })
 
         ROS.systemState.subscribe((msg) => {
-            console.log(msg, "@@@@@@@@@@@@@")
+
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
         })
 

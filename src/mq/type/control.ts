@@ -129,6 +129,6 @@ export type AllControl =
     FORCE_RESET |
     HAS_CARGO |
     PVTP_SWITCH |
-    ForceShutdown
+    FORCE_SHUTDOWN
     ;
 

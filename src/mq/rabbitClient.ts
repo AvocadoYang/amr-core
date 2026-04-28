@@ -124,7 +124,6 @@ export default class RabbitClient {
     }
 
     public async connect() {
-        console.log('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
         try {
             const [connection, url] = await this.connectWithFailover();
             this.connection = connection
