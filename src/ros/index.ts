@@ -456,6 +456,17 @@ export const sendHasCargo = (() => {
   }
 })();
 
+export const sendForceShutdown = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${AMR}/force_shutdown`,
+    messageType: "std_msgs/Bool",
+  })
+  return (msg: boolean) => {
+    topic.publish({ data: msg })
+  }
+})();
+
 
 // 插車回傳任務狀況
 export const getReadStatus$ = (() => {

@@ -92,6 +92,13 @@ export type ForceReset = {
 }
 export type FORCE_RESET = Base<ForceReset>
 
+export type ForceShutdown = {
+    cmd_id: CMD_ID.FORCE_SHUTDOWN,
+    id: string,
+    amrId: string,
+}
+export type FORCE_SHUTDOWN = Base<ForceShutdown>
+
 export type HasCargo = {
     cmd_id: CMD_ID.HAS_CARGO,
     amrId: string,
@@ -121,6 +128,7 @@ export type AllControl =
     EMERGENCY_STOP |
     FORCE_RESET |
     HAS_CARGO |
-    PVTP_SWITCH
+    PVTP_SWITCH |
+    ForceShutdown
     ;
 

@@ -110,6 +110,12 @@ export const sendForceRebindLocation = (msg: string) => {
     }
 }
 
+export const sendForceShutdown = () => {
+    return {
+        cmd_id: CMD_ID.FORCE_SHUTDOWN,
+    }
+}
+
 
 
 type AllReqType =
@@ -126,7 +132,8 @@ type AllReqType =
     typeof sendStackInfo |
     typeof sendETX |
     typeof sendSystemState |
-    typeof sendForceRebindLocation
+    typeof sendForceRebindLocation |
+    typeof sendForceShutdown
 
 export type RequestMsgType = ReturnType<AllReqType>
 

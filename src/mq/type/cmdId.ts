@@ -25,6 +25,7 @@ export enum CMD_ID {
   SYSTEM_STATE = "SS",
   HAS_MISSION = 'HM',
   SYNC_DATA = "SYNC",
+  FORCE_SHUTDOWN = "FS",
   ETX = "ETX"
 }
 

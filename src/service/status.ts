@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
@@ -57,6 +57,13 @@ class Status {
                     break;
                 case CMD_ID.HAS_CARGO:
                     ROS.sendHasCargo(payload.hasCargo);
+                    break;
+                case CMD_ID.FORCE_SHUTDOWN:
+                    ROS.sendForceShutdown(true);
+                    this.rb.resPublish(RES_EX, `qams.${MAC}.res.shutdown`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                        { expiration: "2000" }
+                    )
                     break;
                 case CMD_ID.PTVP_SWITCH:
                     // console.log(payload, '!!!!!!!!!')
@@ -144,11 +151,8 @@ class Status {
         })
 
         ROS.systemState.subscribe((msg) => {
+            console.log(msg, "@@@@@@@@@@@@@")
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
-        })
-
-        ROS.forceRebindLocation.subscribe((msg) => {
-            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
         })
 
 
@@ -202,11 +206,6 @@ class Status {
         //     }
         //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(JSON.stringify(data)));
         // })
-
-
-        setTimeout(() => {
-            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(3000)))
-        }, 10000)
 
     }
 
