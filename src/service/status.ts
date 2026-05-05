@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
@@ -155,6 +155,11 @@ class Status {
 
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
         })
+
+        ROS.forceRebindLocation.subscribe((msg) => {
+            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
+        })
+
 
 
         this.mock();
