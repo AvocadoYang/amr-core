@@ -449,9 +449,9 @@ export const sendHasCargo = (() => {
   const topic = new ROSLIB.Topic({
     ros,
     name: `/kenmec_${AMR}/is_cargo`,
-    messageType: "std_msgs/Bool",
+    messageType: "std_msgs/String",
   })
-  return (msg: boolean) => {
+  return (msg: string) => {
     topic.publish({ data: msg })
   }
 })();

@@ -103,7 +103,7 @@ export type HasCargo = {
     cmd_id: CMD_ID.HAS_CARGO,
     amrId: string,
     id: string,
-    hasCargo: boolean
+    hasCargo: string
 }
 export type HAS_CARGO = Base<HasCargo>;
 
