@@ -293,11 +293,12 @@ export const sendReroutePath = (() => {
     name: "/fleet_manager/update_path",
     serviceType: `kenmec_${AMR}_socket/update_path`,
   });
-  return (rb: RBClient, data: { reroutePath: string[], id: string, amrId: string }) => {
-    const { reroutePath, id, amrId } = data;
+  return (rb: RBClient, data: { reroutePath: string[], id: string, amrId: string, asidePoint: string }) => {
+    const { reroutePath, id, amrId, asidePoint } = data;
     service.callService(
       {
-        shortestPath: reroutePath,
+        updatePath: reroutePath,
+        asidePoint
       },
       (data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -365,6 +366,7 @@ export const sendIsAllowTarget = (() => {
             sendAllowPathResponse({
               id,
               amrId,
+              isAllow,
               frontierLocationId: locationId,
               return_code: ReturnCode.SUCCESS,
 
@@ -380,6 +382,7 @@ export const sendIsAllowTarget = (() => {
             id,
             amrId,
             frontierLocationId: locationId,
+            isAllow,
             return_code: ReturnCode.isAllowServiceFailed,
 
           }),
@@ -398,6 +401,7 @@ export const sendIsAllowTarget = (() => {
           sendAllowPathResponse({
             id,
             amrId,
+            isAllow,
             frontierLocationId: locationId,
             return_code: ReturnCode.isAllowServiceFailed,
 

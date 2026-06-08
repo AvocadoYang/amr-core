@@ -148,6 +148,7 @@ export const sendAllowPathResponse = (data: {
     return_code: ReturnCode,
     id: string,
     amrId: string,
+    isAllow: boolean,
     frontierLocationId: string
 }) => {
     return {

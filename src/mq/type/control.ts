@@ -25,6 +25,7 @@ export type ReroutePath = {
     cmd_id: CMD_ID.REROUTE_PATH,
     amrId: string,
     id: string,
+    asidePoint: string,
     reroutePath: string[],
     rotateFlag: number[],
 }

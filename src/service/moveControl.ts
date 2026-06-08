@@ -64,7 +64,7 @@ class MoveControl {
             type: "shortest path [req]",
             status: { reroutePath: payload.reroutePath, rotateFlag: payload.rotateFlag }
           });
-          ROS.sendReroutePath(this.rb, { reroutePath: payload.reroutePath, id, amrId });
+          ROS.sendReroutePath(this.rb, { reroutePath: payload.reroutePath, id, amrId, asidePoint: payload.asidePoint });
           break;
         default:
           break;
