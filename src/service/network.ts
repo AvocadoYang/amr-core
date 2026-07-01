@@ -8,7 +8,7 @@ import { CustomerError } from "~/errorHandler/error";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
-import { errorLogger, infoLogger } from '~/logger/logger';
+import { errorLogger, infoLogger, warnLogger } from '~/logger/logger';
 
 
 
@@ -42,6 +42,13 @@ class NetWorkManager {
         throw new CustomerError("5555", "amr status is null");
       }
 
+      if (this.amrStatus.poseAccurate) {
+        warnLogger.warn(`AMR localization warning`, {
+          title: 'system',
+          type: 'amr status'
+        })
+        throw new CustomerError("5554", "amr status is warning");
+      }
       infoLogger.info("start registration process", {
         title: "system",
         type: "QAMS 🔗",
