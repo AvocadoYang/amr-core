@@ -415,11 +415,8 @@ export default class RabbitClient {
                                 type: "receive",
                                 request: { ...payload, session }
                             });
-                            this.lastReceiveReq.set(payload.id, { session })
                         }
-                        if (payload.cmd_id == CMD_ID.HEARTBEAT) {
-                            this.lastReceiveReq.set(payload.id, { session })
-                        }
+                        this.lastReceiveReq.set(payload.id, { session })
                     }
 
                     onMessage(data);
