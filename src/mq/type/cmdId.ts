@@ -38,7 +38,8 @@ export const blackList = [
   CMD_ID.ERROR_INFO,
   CMD_ID.REGISTERED,
   CMD_ID.CHECK_POSITION,
-  CMD_ID.HAS_CARGO
+  CMD_ID.HAS_CARGO,
+  CMD_ID.EMERGENCY_STOP
 ]
 
 export const fakeFeedBack = {
