@@ -5,7 +5,6 @@ import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status, 
 import { RBClient } from "./mq";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
-import { AMR_HAS_MISSION, MISSION_INFO } from "./actions/mission/output";
 import { ReturnCode } from "./mq/type/returnCode";
 import { MapType } from "./types/map";
 import axios from "axios";
@@ -36,7 +35,7 @@ class AmrCore {
   private missionStatus: MISSION_STATUS =
     { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" }
   private amrStatus: AMR_STATUS =
-    { amrHasMission: false, poseAccurate: false, currentId: "1" };
+    { amrHasMission: false, poseAccurate: undefined, currentId: undefined };
   private info: TRANSACTION_INFO =
     { amrId: "", qamsSerialNum: "", session: "", return_code: "", approveNotSameSession: false }
   private connectStatus: CONNECT_STATUS =

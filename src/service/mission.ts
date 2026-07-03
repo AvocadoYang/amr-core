@@ -59,7 +59,7 @@ export default class Mission {
       this.rb.reqPublish(IO_EX, `amr.io.${MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
 
-    ROS.getReadStatus$.subscribe((readStatus) => {
+    ROS.getReadStatus$.subscribe(async (readStatus) => {
       if (!this.missionStatus.lastSendGoalId) {
         warnLogger.warn(`No mission is currently in progress.`, {
           title: "mission",
@@ -92,13 +92,12 @@ export default class Mission {
             ? { mid: this.missionStatus.lastSendGoalId, dest: this.missionStatus.targetLoc, mission: copyMsg }
             : { mid: this.missionStatus.lastSendGoalId, mission: copyMsg },
       });
-      this.resetMissionStatus();
 
 
-      this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
-
-
-      this.output$.next(sendAmrHasMission({ hasMission: false }))
+      const result = await this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
+      if (result) {
+        this.resetMissionStatus();
+      }
 
     });
 

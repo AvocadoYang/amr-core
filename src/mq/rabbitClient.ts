@@ -322,19 +322,19 @@ export default class RabbitClient {
 
         const sMsg = JSON.stringify(jMsg);
         const buffer = Buffer.from(sMsg);
-
+        let result = false
         try {
-            const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg);
+            result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg);
 
             // 發送成功才記錄 transaction
             if (result) this.transactionMap.set(id, { id, count: 0 });
-
         } catch (err) {
             errorLogger.error(`${err.message}`, {
                 title: "RabbitMQ",
                 type: "rabbitmq service"
             });
         }
+        return result
     }
 
     public async resPublish(
@@ -530,7 +530,10 @@ export default class RabbitClient {
                 const publishOptions = expiration
                     ? { expiration }
                     : undefined;
-                this.channel.publish(exchange, key, buffer, publishOptions);
+                const result = await this.channel.publish(exchange, key, buffer, publishOptions);
+                if (!result) {
+                    throw new Error("Failed to send msg")
+                }
                 if (flag == "REQ") {
                     if (!blackList.includes(jMsg.payload.cmd_id)) {
                         rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {

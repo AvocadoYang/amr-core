@@ -38,7 +38,7 @@ class NetWorkManager {
       message: string().required(),
     })
     try {
-      if (this.amrStatus.amrHasMission == undefined || this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
+      if (this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
         throw new CustomerError("5555", "amr status is null");
       }
 
@@ -52,7 +52,7 @@ class NetWorkManager {
       infoLogger.info("start registration process", {
         title: "system",
         type: "QAMS 🔗",
-        status: this.amrStatus
+        status: { ...this.amrStatus, lastMissionId: this.missionStatus.lastSendGoalId }
       })
       const { data } = await axios.post(
         `http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
