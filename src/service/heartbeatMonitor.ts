@@ -1,6 +1,6 @@
-import { BehaviorSubject, catchError, combineLatest, EMPTY, filter, finalize, from, interval, map, of, Subject, switchMap, take, tap, timer } from "rxjs";
-import { CONNECT_WITH_AMR_SERVICE, CONNECT_WITH_QAMS, CONNECT_WITH_RABBIT_MQ, CONNECT_WITH_ROS_BRIDGE, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
-import { amrServiceIsConnected, Output, reconnectQAMS, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
+import { BehaviorSubject, EMPTY, interval, of, Subject, switchMap, take, tap, timer } from "rxjs";
+import { CONNECT_WITH_QAMS, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
+import { amrServiceIsConnected, Output, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
 import * as ROS from '../ros'
 import * as net from 'net';
@@ -10,7 +10,7 @@ import { HEARTBEAT_EX } from "~/mq/type/type";
 import { MAC } from '../configs'
 import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
+import { MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { number, object, ValidationError } from "yup";
 
 export default class HeartbeatMonitor {
@@ -19,10 +19,7 @@ export default class HeartbeatMonitor {
     private amrServiceHeartbeatCount = 0;
     private toleranceTime = 0;
 
-    private qams_connect$ = new BehaviorSubject<boolean>(false);
-    private ros_bridge_connect$ = new BehaviorSubject<boolean>(false);
     private amr_service_connect$ = new BehaviorSubject<boolean>(false);
-    private rabbit_connect$ = new BehaviorSubject<boolean>(false);
 
     public tcp_server: net.Server;
     private socket: net.Socket = null;
@@ -33,7 +30,6 @@ export default class HeartbeatMonitor {
     private qams_heartbeat$: BehaviorSubject<boolean> = new BehaviorSubject(true);
     constructor(
         private info: TRANSACTION_INFO,
-        private connectStatus: CONNECT_STATUS,
         private rb: RBClient,
         private missionStatus: MISSION_STATUS
     ) {
@@ -71,7 +67,6 @@ export default class HeartbeatMonitor {
             }),
             switchMap(({ isConnected }) => {
                 if (!isConnected) {
-                    this.connectStatus.qams_isConnect = false;
                     return EMPTY;
                 }
                 this.toleranceTime = 0;
@@ -100,64 +95,7 @@ export default class HeartbeatMonitor {
 
         ).subscribe();
 
-        combineLatest([
-            this.qams_connect$,
-            this.ros_bridge_connect$,
-            this.rabbit_connect$,
-            this.amr_service_connect$
-        ]).pipe(filter(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
-            infoLogger.info("service connect status", {
-                title: "system",
-                type: "connect status",
-                status: {
-                    qamsConnect: qamsConnect ? "✅" : "❌",
-                    rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
-                    rabbitConnect: rabbitConnect ? "✅" : "❌",
-                    amrServiceConnect: amrServiceConnect ? "✅" : "❌"
-                }
-            });
-            this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect })
-            return (
-                qamsConnect == false &&
-                rosbridgeConnect == true &&
-                rabbitConnect == true &&
-                amrServiceConnect == true
-            )
-        }),
-            switchMap(() => {
-                return from(this.retryConnectQAMSWithDelay(1500)).pipe(
-                    catchError((err) => {
-                        warnLogger.warn(`QAMS reconnect failed: ${err}`, { title: "system", type: "network" });
-                        return of();
-                    })
-                );
-            })
-        ).subscribe();
-
-        this.input$.subscribe((action) => {
-            const { isConnected } = action;
-            switch (action.type) {
-                case CONNECT_WITH_QAMS:
-                    this.qams_connect$.next(isConnected);
-                    break;
-                case CONNECT_WITH_ROS_BRIDGE:
-                    this.ros_bridge_connect$.next(isConnected);
-                    break
-                case CONNECT_WITH_RABBIT_MQ:
-                    this.rabbit_connect$.next(isConnected)
-
-                    break;
-                default:
-                    break;
-            }
-        });
-
         this.createAmrServiceFn();
-    }
-
-    private async retryConnectQAMSWithDelay(delayMs: number) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        this.output$.next(reconnectQAMS())
     }
 
     private createAmrServiceFn() {
@@ -256,15 +194,6 @@ export default class HeartbeatMonitor {
         ).subscribe();
 
 
-    }
-
-    private setServiceConnectStatus(status:
-        { qamsConnect: boolean, rosbridgeConnect: boolean, rabbitConnect: boolean, amrServiceConnect: boolean }
-    ) {
-        this.connectStatus.qams_isConnect = status.qamsConnect;
-        this.connectStatus.rosbridge_isConnect = status.rosbridgeConnect;
-        this.connectStatus.rabbitMQ_isConnect = status.rabbitConnect;
-        this.connectStatus.amr_service_isConnect = status.amrServiceConnect;
     }
 
     public send(action: Input) {

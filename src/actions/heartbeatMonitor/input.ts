@@ -23,31 +23,9 @@ export const connectWithAmrService = (data: {
     }
 }
 
-export const CONNECT_WITH_ROS_BRIDGE = `${PREFIX}/CONNECT_WITH_ROS_BRIDGE` as const;
-export const connectWithRosBridge = (data: {
-    isConnected: boolean
-}) => {
-    return {
-        type: CONNECT_WITH_ROS_BRIDGE,
-        ...data
-    }
-}
-
-export const CONNECT_WITH_RABBIT_MQ = `${PREFIX}/CONNECT_WITH_RABBIT_MQ` as const;
-export const connectWithRabbitMq = (data: {
-    isConnected: boolean
-}) => {
-    return {
-        type: CONNECT_WITH_RABBIT_MQ,
-        ...data
-    }
-}
-
 type AllCreator =
     | typeof connectWithQAMS
     | typeof connectWithAmrService
-    | typeof connectWithRosBridge
-    | typeof connectWithRabbitMq
 
 
 export type ALL_INPUT = ReturnType<AllCreator>;

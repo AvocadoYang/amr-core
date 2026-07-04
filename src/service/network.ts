@@ -19,6 +19,7 @@ class NetWorkManager {
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
+  private connectingInProgress = false;
 
   constructor(
     private amrStatus: AMR_STATUS,
@@ -28,7 +29,14 @@ class NetWorkManager {
     this.rosConnect();
   }
 
+  /** Entry point for a fresh QAMS (re)connection attempt. No-op if an attempt (including its internal retries) is already running, so callers can invoke it freely without spawning parallel retry loops. */
   public async fleetConnect() {
+    if (this.connectingInProgress) return;
+    this.connectingInProgress = true;
+    await this.attemptConnect();
+  }
+
+  private async attemptConnect() {
     const schema = object({
       applicant: string().required(),
       amrId: string(),
@@ -78,6 +86,7 @@ class NetWorkManager {
         });
         this.amrId = amrId;
         this.fleet_connect_log = true;
+        this.connectingInProgress = false;
         this.output$.next(isConnected({ isConnected: true, amrId, return_code, session, qamsSerialNum }));
       } else {
         this.output$.next(isConnected({ isConnected: false, amrId, return_code, session, qamsSerialNum }));
@@ -126,7 +135,7 @@ class NetWorkManager {
         }
         this.fleet_connect_log = false;
       }
-      setTimeout(async () => await this.fleetConnect(), 3500)
+      setTimeout(async () => await this.attemptConnect(), 3500)
     }
 
   }

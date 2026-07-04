@@ -1,16 +1,15 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
-import { BehaviorSubject, combineLatest, config, defer, distinctUntilChanged, EMPTY, filter, finalize, from, map, NEVER, startWith, Subject, switchMap, tap } from "rxjs";
+import { Subject } from "rxjs";
 import { MAC, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
-import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, dynamicListener, HEARTBEAT_PONG_QUEUE } from "./type/type";
+import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, HEARTBEAT_PONG_QUEUE } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
-import { AMR_SERVICE_ISCONNECTED, CONNECT_WITH_QAMS, CONNECT_WITH_ROS_BRIDGE, Input } from "~/actions/rabbitmq/input";
 import { ReturnCode } from "./type/returnCode";
 import { TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
@@ -39,9 +38,7 @@ export default class RabbitClient {
     private connectFailedLogger = true;
     private connectCloseLogger = true;
 
-    private rabbitIsConnected$ = new BehaviorSubject<boolean>(false);
     private output$: Subject<Output>
-    public input$: Subject<Input>
 
     private pendingMessages: {
         exchange: string;
@@ -62,44 +59,10 @@ export default class RabbitClient {
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
-        this.input$ = new Subject();
         this.connectSetting();
         this.machineID = MAC;
         this.retryTime = option.retryTime ?? 3000
         // this.url = `amqp://kenmec:kenmec@${RABBIT_MQ_HOST}:5673`
-
-        combineLatest([
-            this.input$.pipe(
-                filter((action) => action.type == CONNECT_WITH_QAMS),
-                map((data) => data.isConnected), startWith(false)
-            ),
-            this.rabbitIsConnected$.pipe(startWith(false)),
-            this.input$.pipe(
-                filter((action) => action.type == CONNECT_WITH_ROS_BRIDGE),
-                map((data) => data.isConnected), startWith(false)
-            ),
-            this.input$.pipe(filter((action) => action.type == AMR_SERVICE_ISCONNECTED),
-                map((data) => data.isConnected), startWith(false)
-            )
-        ]).pipe(
-            distinctUntilChanged((prev, curr) => {
-                return (prev[0] === curr[0]) &&
-                    (prev[1] === curr[1]) &&
-                    (prev[2] === curr[2]) &&
-                    (prev[3] === curr[3]);
-            }),
-            switchMap(([serviceConnected, rabbitConnected, rosbridgeConnected, amrServiceConnected]) => {
-                if (serviceConnected && rabbitConnected && rosbridgeConnected && amrServiceConnected) {
-                    return defer(() => {
-                        return from(this.consumeTopic());
-                    })
-                } else {
-                    this.stopConsumeQueue(dynamicListener)
-                    return EMPTY;
-                };
-            })
-        ).subscribe();
-
 
         this.connect();
     }
@@ -149,7 +112,6 @@ export default class RabbitClient {
                     this.connectCloseLogger = false;
                 }
                 this.output$.next(isConnected({ isConnected: false }));
-                this.rabbitIsConnected$.next(false);
                 this.reconnect()
 
             });
@@ -163,7 +125,6 @@ export default class RabbitClient {
                 type: "network"
             })
             await this.init();
-            this.rabbitIsConnected$.next(true);
             this.output$.next(isConnected({ isConnected: true }))
             await this.flushPendingMessages();
 
@@ -623,12 +584,8 @@ export default class RabbitClient {
         }
     }
 
-    public send(action: Input) {
-        this.input$.next(action);
-    }
 
-
-    private async consumeTopic() {
+    public async consumeTopic() {
         if (!this.channel) return [];
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
