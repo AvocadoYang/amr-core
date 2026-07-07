@@ -3,8 +3,8 @@ import * as ROS from '../ros'
 import * as net from 'net';
 import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout, timestamp } from "rxjs";
 import axios from "axios";
-import { number, object, string, ValidationError, ValidationError as YupValidationError } from "yup";
-import { CustomerError } from "~/errorHandler/error";
+import { number, object, string, ValidationError as YupValidationError } from "yup";
+import { CustomerError, ValidationError } from "~/errorHandler/error";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
@@ -94,44 +94,40 @@ class NetWorkManager {
       }
     } catch (error) {
       if (this.fleet_connect_log) {
-        switch (error.type) {
-          case "yup":
+        if (error instanceof ValidationError) {
+          errorLogger.error("can't connect with QAMS, retry after 5s..", {
+            title: "system",
+            type: "QAMS",
+            status: error.msg,
+          });
+        } else if (error instanceof CustomerError) {
+          if (error.statusCode == "5555") {
             errorLogger.error("can't connect with QAMS, retry after 5s..", {
               title: "system",
               type: "QAMS",
-              status: error.msg,
+              status: {
+                return_code: error.statusCode,
+                amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
+                currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
+                poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
+                description: error.message
+              },
             });
-            break;
-          case "custom":
-            if (error.statusCode == "5555") {
-              errorLogger.error("can't connect with QAMS, retry after 5s..", {
-                title: "system",
-                type: "QAMS",
-                status: {
-                  return_code: error.statusCode,
-                  amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
-                  currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
-                  poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
-                  description: error.message
-                },
-              });
-            } else {
-              errorLogger.error("can't connect with QAMS, retry after 5s..", {
-                title: "system",
-                type: "QAMS",
-                status: {
-                  return_code: error.statusCode,
-                  description: error.message
-                },
-              });
-            }
-            break;
-          default:
-            errorLogger.error(`${error.message}, retry after 5s..`, {
+          } else {
+            errorLogger.error("can't connect with QAMS, retry after 5s..", {
               title: "system",
               type: "QAMS",
+              status: {
+                return_code: error.statusCode,
+                description: error.message
+              },
             });
-            break;
+          }
+        } else {
+          errorLogger.error(`${error instanceof Error ? error.message : String(error)}, retry after 5s..`, {
+            title: "system",
+            type: "QAMS",
+          });
         }
         this.fleet_connect_log = false;
       }

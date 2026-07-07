@@ -58,7 +58,7 @@ class AmrCore {
   private reconnectingQams = false;
 
   constructor() {
-    this.rb = new RBClient(this.info, this.consumedQueues);
+    this.rb = new RBClient(this.info, this.consumedQueues, this.connectStatus);
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus)
     this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager(this.amrStatus, this.missionStatus);
@@ -105,7 +105,7 @@ class AmrCore {
         }
 
         this.reconnectingQams = false;
-        return from(this.rb.consumeTopic());
+        return from([this.rb.consumeTopic(), this.hb.send(heartbeat_connectWithQAMS({ isConnected: true }))]);
       })
     ).subscribe();
 
@@ -117,7 +117,7 @@ class AmrCore {
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
-              this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
+              this.rb.clearCache()
               const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
               this.map = data;
             } else {

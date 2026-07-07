@@ -5,13 +5,13 @@ import { Subject } from "rxjs";
 import { MAC, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
-import { RequestMsgType, ResponseMsgType } from "./transactionsWrapper";
+import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
 import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, HEARTBEAT_PONG_QUEUE } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { ReturnCode } from "./type/returnCode";
-import { TRANSACTION_INFO } from "~/types/status";
+import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
 
 export default class RabbitClient {
@@ -22,6 +22,9 @@ export default class RabbitClient {
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
+
+    private controlCache: { tag: "CONTROL", data: AllControl }[] = [];
+    private responseCache: { tag: "RESPONSE", data: AllRes }[] = [];
 
     private url_1: string = ""
     private url_2: string = ""
@@ -56,6 +59,7 @@ export default class RabbitClient {
     constructor(
         private info: TRANSACTION_INFO,
         private consumedQueues: Map<string, string>,
+        private connectStatus: CONNECT_STATUS,
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
@@ -277,7 +281,7 @@ export default class RabbitClient {
             serialNum: this.machineID,
             session: this.info.session,
             flag,
-            timestamp: formatDate(),
+            timestamp: String(new Date().getTime()),
             payload: { id, ...message, amrId: this.info.amrId }
         };
 
@@ -312,7 +316,7 @@ export default class RabbitClient {
                 type: "unexpected error",
                 status: message
             });
-            return;
+            return false;
         }
         const jMsg = {
             id: message.id,
@@ -320,7 +324,7 @@ export default class RabbitClient {
             serialNum: this.machineID,
             session: messagePair.session,
             flag,
-            timestamp: formatDate(),
+            timestamp: String(new Date().getTime()),
             payload: message
         };
         this.lastReceiveReq.delete(message.id);
@@ -589,11 +593,15 @@ export default class RabbitClient {
         if (!this.channel) return [];
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
+                if (!this.connectStatus.qams_isConnect) return;
                 if (msg.session !== this.info.session) return;
                 this.heartbeatOutput$.next(msg);
             }, true),
 
             this.consume<AllControl>(q2a_controlQName, (msg) => {
+                if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
+                    this.controlCache.push({ tag: "CONTROL", data: msg });
+                };
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -604,6 +612,9 @@ export default class RabbitClient {
             }),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
+                if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
+                    this.responseCache.push({ tag: "RESPONSE", data: msg });
+                };
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -625,6 +636,7 @@ export default class RabbitClient {
             status: { still_consume: [...this.consumedQueues.keys()], need_stop: queueNames }
         })
         if (!this.channel) {
+
             for (const queueName of queueNames) {
                 this.consumedQueues.delete(queueName);
             }
@@ -639,7 +651,9 @@ export default class RabbitClient {
         for (const queueName of queueNames) {
             if (!this.consumedQueues.has(queueName)) continue;
             try {
+
                 const tag = this.consumedQueues.get(queueName);
+
                 await this.channel.cancel(tag);
                 this.consumedQueues.delete(queueName);
                 warnLogger.warn(` stop consume queue: ${queueName}`, {
@@ -657,5 +671,41 @@ export default class RabbitClient {
         })
     }
 
+    public clearCache() {
+        console.log('@@@@@@@@@@@@@@@@@@@@')
+        const allCache = [...this.controlCache, ...this.responseCache]
+        const logString = allCache.length ? `start cleaning up cache message, num: ${allCache.length}` : "cache is empty"
+        infoLogger.info(logString, {
+            title: "system",
+            type: "flush cache"
+        })
+        if (!allCache.length) return;
+        const sortCache = allCache.sort((a, b) => {
+            const aTimeStamp = a.data.timeStamp;
+            const bTimeStamp = b.data.timeStamp;
+            return Number(aTimeStamp) - Number(bTimeStamp)
+        });
+        sortCache.forEach((cache) => {
+            const { data } = cache;
+            const checkSession = (data.session == this.info.session);
+            if (!checkSession) {
+                const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
+                if (!canPass) return
+            }
+            if (cache.tag == "CONTROL") {
+                this.controlTransactionOutput$.next(cache.data);
+                return;
+            }
+            if (cache.tag == "RESPONSE") {
+                this.resTransactionOutput$.next(cache.data);
+                return;
+            }
+        });
+    }
+
 
 }
+function uuid(): string {
+    throw new Error("Function not implemented.");
+}
+

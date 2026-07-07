@@ -71,17 +71,17 @@ export default class HeartbeatMonitor {
                 }
                 this.toleranceTime = 0;
                 return this.qams_heartbeat$.pipe(
-                    switchMap(() => timer(5000, 5000)),
+                    switchMap(() => timer(1500, 2000)),
                     tap(() => {
-                        if (this.toleranceTime < 1) {
-                            this.toleranceTime += 1;
-                            this.qams_heartbeat$.next(true);
-                            errorLogger.error("test time out retry", {
-                                title: "system",
-                                type: "heartbeat"
-                            })
-                            return;
-                        }
+                        // if (this.toleranceTime < 1) {
+                        //     this.toleranceTime += 1;
+                        //     this.qams_heartbeat$.next(true);
+                        //     errorLogger.error("test time out retry", {
+                        //         title: "system",
+                        //         type: "heartbeat"
+                        //     })
+                        //     return;
+                        // }
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",
                             type: "heartbeat",
