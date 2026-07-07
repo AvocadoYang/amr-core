@@ -17,7 +17,8 @@ export default class Mission {
 
   constructor(
     private rb: RBClient,
-    private missionStatus: MISSION_STATUS
+    private missionStatus: MISSION_STATUS,
+    private amrStatus: AMR_STATUS
   ) {
     this.output$ = new Subject();
 
@@ -111,6 +112,7 @@ export default class Mission {
       console.log(result, '@@@@@@@@@@@@@@@@@@')
       if (result) {
         this.resetMissionStatus();
+        this.amrStatus.amrHasMission = false;
       }
 
     });

@@ -140,7 +140,9 @@ class Status {
 
         ROS.has_mission.subscribe(msg => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.amrStatus.amrHasMission = msg
+            if (msg) {
+                this.amrStatus.amrHasMission = msg
+            }
         })
 
         ROS.getVerityCargo$.subscribe((msg) => {

@@ -62,7 +62,7 @@ class AmrCore {
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus)
     this.ws = new WsServer();
     this.netWorkManager = new NetWorkManager(this.amrStatus, this.missionStatus);
-    this.ms = new MissionManager(this.rb, this.missionStatus);
+    this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
@@ -198,8 +198,6 @@ class AmrCore {
       default:
         return false
     }
-
-    return false
 
   }
 
