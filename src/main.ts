@@ -84,7 +84,6 @@ class AmrCore {
             amrServiceConnect: amrServiceConnect ? "✅" : "❌"
           }
         });
-        this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
       }),
       switchMap(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
         const dependenciesReady = rosbridgeConnect && rabbitConnect && amrServiceConnect;
@@ -105,7 +104,23 @@ class AmrCore {
         }
 
         this.reconnectingQams = false;
-        return from([this.rb.consumeTopic(), this.hb.send(heartbeat_connectWithQAMS({ isConnected: true }))]);
+        return from(this.rb.consumeTopic()).pipe(
+          tap(() =>
+            this.setServiceConnectStatus({
+              qamsConnect,
+              rosbridgeConnect,
+              rabbitConnect,
+              amrServiceConnect,
+            })
+          ),
+          tap(() =>
+            this.hb.send(
+              heartbeat_connectWithQAMS({
+                isConnected: true,
+              })
+            )
+          )
+        );
       })
     ).subscribe();
 
