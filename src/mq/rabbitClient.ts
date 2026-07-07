@@ -293,8 +293,8 @@ export default class RabbitClient {
 
             // 發送成功才記錄 transaction
             if (result) this.transactionMap.set(id, { id, count: 0 });
-        } catch (err) {
-            errorLogger.error(`${err.message}`, {
+        } catch (err: unknown) {
+            errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
                 type: "rabbitmq service"
             });
@@ -336,8 +336,8 @@ export default class RabbitClient {
 
         try {
             const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg, options);
-        } catch (err) {
-            errorLogger.error(`${err.message}`, {
+        } catch (err: unknown) {
+            errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
                 type: "rabbitmq service"
             });
@@ -525,12 +525,12 @@ export default class RabbitClient {
                 }
 
                 return true;
-            } catch (err) {
+            } catch (err: unknown) {
                 if (this.isVolatile(exchange, key)) {
                     return false;
                 }
                 attempts++;
-                if (err.message == "Rabbit channel is not available") {
+                if (getErrorMessage(err) == "Rabbit channel is not available") {
                     const data = JSON.parse(buffer.toString());
                     this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
                     warnLogger.warn(
@@ -545,7 +545,7 @@ export default class RabbitClient {
                     const data = JSON.parse(buffer.toString());
                     this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
                     warnLogger.warn(
-                        `Failed to publish after ${attempts} attempts: ${err.message}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                        `Failed to publish after ${attempts} attempts: ${getErrorMessage(err)}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
                         title: "RabbitMQ",
                         type: "transaction",
                         status: { exchange, key, data }
@@ -707,5 +707,9 @@ export default class RabbitClient {
 }
 function uuid(): string {
     throw new Error("Function not implemented.");
+}
+
+function getErrorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
 }
 
