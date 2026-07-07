@@ -105,14 +105,17 @@ class AmrCore {
 
         this.reconnectingQams = false;
         return from(this.rb.consumeTopic()).pipe(
-          tap(() =>
-            this.setServiceConnectStatus({
-              qamsConnect,
-              rosbridgeConnect,
-              rabbitConnect,
-              amrServiceConnect,
-            })
-          ),
+          tap(() => {
+            setTimeout(() => {
+              this.setServiceConnectStatus({
+                qamsConnect,
+                rosbridgeConnect,
+                rabbitConnect,
+                amrServiceConnect,
+              });
+              this.rb.clearCache();
+            }, qamsConnect ? 5000 : 0)
+          }),
           tap(() =>
             this.hb.send(
               heartbeat_connectWithQAMS({
@@ -132,7 +135,6 @@ class AmrCore {
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
-              this.rb.clearCache()
               const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
               this.map = data;
             } else {
