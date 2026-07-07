@@ -1,4 +1,4 @@
-import { interval, Subject } from "rxjs";
+import { interval, Subject, firstValueFrom } from "rxjs";
 import * as ROS from '../ros'
 import { MAC } from "../configs";
 import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
@@ -13,6 +13,7 @@ import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/
 
 export default class Mission {
   private output$: Subject<Output>
+  private missionCompleteSignal$: Subject<boolean> = new Subject<boolean>()
 
   constructor(
     private rb: RBClient,
@@ -23,6 +24,14 @@ export default class Mission {
     this.rb.onControlTransaction((action) => {
       this.reqProcess(action);
     });
+
+    this.rb.onResTransaction((action) => {
+      const { payload } = action;
+      if (payload.cmd_id == CMD_ID.READ_STATUS) {
+        console.log(action, '@@@@@@@@@@@@@@')
+        this.missionCompleteSignal$.next(true)
+      }
+    })
 
 
 
@@ -94,7 +103,12 @@ export default class Mission {
       });
 
 
-      const result = await this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
+      this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
+      const result = await firstValueFrom(
+        this.missionCompleteSignal$
+      )
+
+      console.log(result, '@@@@@@@@@@@@@@@@@@')
       if (result) {
         this.resetMissionStatus();
       }
