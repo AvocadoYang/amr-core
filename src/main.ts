@@ -106,15 +106,13 @@ class AmrCore {
         this.reconnectingQams = false;
         return from(this.rb.consumeTopic()).pipe(
           tap(() => {
-            setTimeout(() => {
-              this.setServiceConnectStatus({
-                qamsConnect,
-                rosbridgeConnect,
-                rabbitConnect,
-                amrServiceConnect,
-              });
-              this.rb.clearCache();
-            }, qamsConnect ? 5000 : 0)
+            this.setServiceConnectStatus({
+              qamsConnect,
+              rosbridgeConnect,
+              rabbitConnect,
+              amrServiceConnect,
+            });
+            this.rb.clearCache();
           }),
           tap(() =>
             this.hb.send(

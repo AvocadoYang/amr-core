@@ -109,7 +109,6 @@ export default class Mission {
         this.missionCompleteSignal$
       )
 
-      console.log(result, '@@@@@@@@@@@@@@@@@@')
       if (result) {
         this.resetMissionStatus();
         this.amrStatus.amrHasMission = false;
@@ -199,7 +198,7 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    warnLogger.warn(`reset mission status`, {
+    infoLogger.info(`reset mission status`, {
       title: "mission",
       type: "mission status",
       status: this.missionStatus

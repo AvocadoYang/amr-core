@@ -591,6 +591,8 @@ export default class RabbitClient {
 
     public async consumeTopic() {
         if (!this.channel) return [];
+        await this.flushPendingMessages();
+
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
                 if (!this.connectStatus.qams_isConnect) return;
@@ -598,23 +600,10 @@ export default class RabbitClient {
                 this.heartbeatOutput$.next(msg);
             }, true),
 
-            this.consume<AllControl>(q2a_controlQName, (msg) => {
-                if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                    this.controlCache.push({ tag: "CONTROL", data: msg });
-                };
-                const checkSession = (msg.session == this.info.session);
-                if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                    if (canPass) this.controlTransactionOutput$.next(msg);
-                } else {
-                    this.controlTransactionOutput$.next(msg);
-                }
-            }),
-
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
-                if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                    this.responseCache.push({ tag: "RESPONSE", data: msg });
-                };
+                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
+                //     this.responseCache.push({ tag: "RESPONSE", data: msg });
+                // };
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -622,10 +611,21 @@ export default class RabbitClient {
                 } else {
                     this.resTransactionOutput$.next(msg);
                 };
+            }),
+
+            this.consume<AllControl>(q2a_controlQName, (msg) => {
+                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
+                //     this.controlCache.push({ tag: "CONTROL", data: msg });
+                // };
+                const checkSession = (msg.session == this.info.session);
+                if (!checkSession) {
+                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
+                    if (canPass) this.controlTransactionOutput$.next(msg);
+                } else {
+                    this.controlTransactionOutput$.next(msg);
+                }
             })
         ]);
-        await this.flushPendingMessages();
-
         return tags;
     }
 
@@ -672,7 +672,6 @@ export default class RabbitClient {
     }
 
     public clearCache() {
-        console.log('@@@@@@@@@@@@@@@@@@@@')
         const allCache = [...this.controlCache, ...this.responseCache]
         const logString = allCache.length ? `start cleaning up cache message, num: ${allCache.length}` : "cache is empty"
         infoLogger.info(logString, {
