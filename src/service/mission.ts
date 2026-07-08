@@ -56,7 +56,7 @@ export default class Mission {
 
       if (this.missionStatus.lastSendGoalId !== actionId) {
         errorLogger.error(
-          `execute action ID: ${this.missionStatus.lastSendGoalId} not equal to feedback action ID: ${actionId}`,
+          `execute action ID: ${this.missionStatus.lastSendGoalId ? this.missionStatus.lastSendGoalId : "None"} not equal to feedback action ID: ${actionId}`,
           {
             title: "mission",
             type: "ros handshake",

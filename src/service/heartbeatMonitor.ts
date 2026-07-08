@@ -4,7 +4,7 @@ import { amrServiceIsConnected, Output, sendQAMSDisconnected } from "~/actions/h
 import { ofType } from "~/helpers";
 import * as ROS from '../ros'
 import * as net from 'net';
-import { errorLogger, infoLogger, rb_heartbeatLogger, warnLogger } from "~/logger/logger";
+import { errorLogger, infoLogger, rb_heartbeatLogger, warnLogger, debugLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { HEARTBEAT_EX } from "~/mq/type/type";
 import { MAC } from '../configs'
@@ -41,7 +41,12 @@ export default class HeartbeatMonitor {
             rb_heartbeatLogger.info("Receive heartbeat from QAMS", {
                 title: "system",
                 type: "receive",
-                status: { id, heartbeat }
+                status: { id, heartbeat, session: action.session }
+            })
+            debugLogger.info("Receive heartbeat from QAMS", {
+                title: "system",
+                type: "receive",
+                status: { id, heartbeat, session: action.session }
             })
             this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${MAC}`,
                 sendHeartBeatResponse({

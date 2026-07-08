@@ -512,7 +512,12 @@ export default class RabbitClient {
                         rb_heartbeatLogger.info("Send heartbeat to QAMS", {
                             title: "system",
                             type: "ack",
-                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat }
+                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                        })
+                        debugLogger.info("Send heartbeat to QAMS", {
+                            title: "system",
+                            type: "ack",
+                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
                         })
                     }
                     if (!blackList.includes(jMsg.payload.cmd_id)) {
