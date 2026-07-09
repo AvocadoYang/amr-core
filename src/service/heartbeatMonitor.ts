@@ -1,4 +1,4 @@
-import { BehaviorSubject, EMPTY, interval, of, Subject, switchMap, take, tap, timer } from "rxjs";
+import { BehaviorSubject, EMPTY, skip, interval, of, Subject, switchMap, take, tap, timer } from "rxjs";
 import { CONNECT_WITH_QAMS, connectWithQAMS, Input } from "~/actions/heartbeatMonitor/input";
 import { amrServiceIsConnected, Output, sendQAMSDisconnected } from "~/actions/heartbeatMonitor/output";
 import { ofType } from "~/helpers";
@@ -42,12 +42,7 @@ export default class HeartbeatMonitor {
                 title: "system",
                 type: "receive",
                 status: { id, heartbeat, session: action.session }
-            })
-            debugLogger.info("Receive heartbeat from QAMS", {
-                title: "system",
-                type: "receive",
-                status: { id, heartbeat, session: action.session }
-            })
+            });
             this.rb.resPublish(HEARTBEAT_EX, `qams.heartbeat.pong.${MAC}`,
                 sendHeartBeatResponse({
                     id,
@@ -75,12 +70,14 @@ export default class HeartbeatMonitor {
                 }
             }),
             switchMap(({ isConnected }) => {
+                const CHECK_INTERVAL = 700;   // 對齊 emitter 間隔
+                const MISS_THRESHOLD = 3;     // 連續漏 3 次才判斷斷線
                 if (!isConnected) {
                     return EMPTY;
                 }
                 this.toleranceTime = 0;
                 return this.qams_heartbeat$.pipe(
-                    switchMap(() => timer(1500, 2000)),
+                    switchMap(() => timer(800, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
                     tap(() => {
                         // if (this.toleranceTime < 1) {
                         //     this.toleranceTime += 1;
@@ -92,6 +89,10 @@ export default class HeartbeatMonitor {
                         //     return;
                         // }
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
+                            title: "system",
+                            type: "heartbeat",
+                        });
+                        rb_heartbeatLogger.info(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",
                             type: "heartbeat",
                         });
