@@ -68,6 +68,10 @@ export default class HeartbeatMonitor {
                         title: "system",
                         type: "heartbeat",
                     });
+                    debugLogger.info(`connect with QAMS, start heartbeat detection`, {
+                        title: "system",
+                        type: "heartbeat",
+                    });
                 }
             }),
             switchMap(({ isConnected }) => {
