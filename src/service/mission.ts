@@ -110,7 +110,7 @@ export default class Mission {
       )
 
       if (result) {
-        this.resetMissionStatus();
+        this.resetMissionStatus("READ_STATUS");
         this.amrStatus.amrHasMission = false;
       }
 
@@ -172,7 +172,7 @@ export default class Mission {
             id
           })
         );
-        this.resetMissionStatus();
+        this.resetMissionStatus("WRITE_CANCEL");
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         break;
       default:
@@ -193,12 +193,12 @@ export default class Mission {
     })
   };
 
-  public resetMissionStatus() {
+  public resetMissionStatus(from: string) {
     this.missionStatus.missionType = "";
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
-    infoLogger.info(`reset mission status`, {
+    infoLogger.info(`reset mission status from [${from}]`, {
       title: "mission",
       type: "mission status",
       status: this.missionStatus

@@ -199,14 +199,14 @@ class AmrCore {
         return false;
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
         ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
-        this.ms.resetMissionStatus();
+        this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
         return false;
       case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
-        this.ms.resetMissionStatus();
+        this.ms.resetMissionStatus("MISSION_TIMEOUT_LOGIN_SUCCESS");
         return false;
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION:
         ROS.cancelCarStatusAnyway("");
-        this.ms.resetMissionStatus();
+        this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION");
         return false;
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
         return true
