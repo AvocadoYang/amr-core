@@ -29,8 +29,8 @@ export default class Mission {
     this.rb.onResTransaction((action) => {
       const { payload } = action;
       if (payload.cmd_id == CMD_ID.READ_STATUS) {
-        console.log(action, '@@@@@@@@@@@@@@')
-        this.missionCompleteSignal$.next(true)
+        this.resetMissionStatus("READ_STATUS");
+        this.amrStatus.amrHasMission = false;
       }
     })
 
