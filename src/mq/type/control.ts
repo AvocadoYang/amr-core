@@ -37,7 +37,9 @@ export type IsAllowPath = {
     amrId: string,
     id: string,
     isAllow: boolean,
-    locationId: string
+    locationId: string,
+    lastArriveLoc: string,
+    nextTargetLoc: string
 }
 export type IS_ALLOW_PATH = Base<IsAllowPath>
 

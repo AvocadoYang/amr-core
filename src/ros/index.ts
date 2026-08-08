@@ -350,8 +350,8 @@ export const sendIsAllowTarget = (() => {
     name: "/fleet_manager/allow_path",
     serviceType: `kenmec_${AMR}_socket/TrafficStatus`,
   });
-  return (rb: RBClient, nextLocation: { locationId: string, isAllow: boolean, amrId: string, id: string }) => {
-    const { locationId, isAllow, amrId, id } = nextLocation;
+  return (rb: RBClient, nextLocation: { locationId: string, isAllow: boolean, amrId: string, id: string, lastArriveLoc: string, nextTargetLoc: string }) => {
+    const { locationId, isAllow, amrId, id, nextTargetLoc, lastArriveLoc } = nextLocation;
     infoLogger.info(`send allow location ${locationId}`, {
       title: "traffic",
       type: "is_allow",
@@ -368,6 +368,8 @@ export const sendIsAllowTarget = (() => {
               id,
               amrId,
               isAllow,
+              lastArriveLoc,
+              nextTargetLoc,
               frontierLocationId: locationId,
               return_code: ReturnCode.SUCCESS,
 
@@ -383,6 +385,8 @@ export const sendIsAllowTarget = (() => {
             id,
             amrId,
             frontierLocationId: locationId,
+            lastArriveLoc,
+            nextTargetLoc,
             isAllow,
             return_code: ReturnCode.isAllowServiceFailed,
 
@@ -403,6 +407,8 @@ export const sendIsAllowTarget = (() => {
             id,
             amrId,
             isAllow,
+            lastArriveLoc,
+            nextTargetLoc,
             frontierLocationId: locationId,
             return_code: ReturnCode.isAllowServiceFailed,
 

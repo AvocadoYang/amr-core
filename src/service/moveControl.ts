@@ -55,8 +55,8 @@ class MoveControl {
 
           break;
         case CMD_ID.ALLOW_PATH:
-          const { isAllow, locationId } = payload;
-          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id });
+          const { isAllow, locationId, lastArriveLoc, nextTargetLoc } = payload;
+          ROS.sendIsAllowTarget(this.rb, { locationId, isAllow, amrId, id, lastArriveLoc, nextTargetLoc });
           break;
         case CMD_ID.REROUTE_PATH:
           infoLogger.info("send reroute path", {
