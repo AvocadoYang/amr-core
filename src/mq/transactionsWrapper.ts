@@ -47,6 +47,13 @@ export const sendErrorInfo = (errorInfo: {
     }
 }
 
+export const sendErrorInfoCRD = (msg: string) => {
+    return {
+        cmd_id: CMD_ID.ERROR_INFO,
+        msg: msg
+    }
+}
+
 export const sendIOInfo = (io: string) => {
     return {
         cmd_id: CMD_ID.IO_INFO,

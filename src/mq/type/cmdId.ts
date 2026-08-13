@@ -6,6 +6,7 @@ export enum CMD_ID {
   READ_STATUS = "RS",
   WRITE_CANCEL = "WC",
   ERROR_INFO = "EI",
+  ERROR_INFO_CRD = "EIC",
   UPDATE_MAP = "UM",
   IO_INFO = "IO",
   CURRENT_ID = "CI",
@@ -26,6 +27,7 @@ export enum CMD_ID {
   HAS_MISSION = 'HM',
   SYNC_DATA = "SYNC",
   FORCE_SHUTDOWN = "FS",
+  MOVEMENT_CONFIG = 'MC',
   ETX = "ETX"
 }
 

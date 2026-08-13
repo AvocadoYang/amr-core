@@ -1,7 +1,7 @@
 import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendErrorInfoCRD, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
@@ -44,6 +44,13 @@ class Status {
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
                     this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
+                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                        { expiration: "2000" }
+                    )
+                    break;
+                case CMD_ID.MOVEMENT_CONFIG:
+                    ROS.moveConfig(payload.payload);
+                    this.rb.resPublish(RES_EX, `qams.${MAC}.res.movement_configs`,
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
@@ -106,6 +113,12 @@ class Status {
                 warning_id: string[];
             };
             this.rb.reqPublish(IO_EX, `amr.io.${MAC}.errorInfo`, sendErrorInfo(jMsg), { expiration: "3000" });
+        });
+
+             ROS.getAmrErrorCrd$.subscribe((msg: { data: string }) => {
+            if (!this.connectStatus.qams_isConnect) return;
+      
+            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.errorInfoCRD`, sendErrorInfoCRD(msg.data), { expiration: "3000" });
         });
 
         ROS.getIOInfo$.subscribe((data) => {

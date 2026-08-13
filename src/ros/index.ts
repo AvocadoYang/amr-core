@@ -529,6 +529,19 @@ export const getAmrError$ = (() => {
   });
 })();
 
+export const getAmrErrorCrd$ = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${AMR}/error_reason`,
+    messageType: "std_msgs/String",
+  });
+  return fromEventPattern((next) => {
+    topic.subscribe((msg: string) => {
+      next(msg);
+    });
+  });
+})();
+
 // 小車氣體
 export const updatePosition = (() => {
   // Create a topic instance
@@ -612,6 +625,19 @@ export const pause = (() => {
   const topic = new ROSLIB.Topic({
     ros,
     name: `/kenmec_${AMR}/fleet_manager/pause`,
+    messageType: "std_msgs/String",
+  });
+
+  return (msg) => {
+    // Publish the cancel message
+    topic.publish({ data: msg });
+  };
+})();
+
+export const moveConfig = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${AMR}/timer_set`,
     messageType: "std_msgs/String",
   });
 

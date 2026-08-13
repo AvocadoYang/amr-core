@@ -88,6 +88,14 @@ export type EmergencyStop = {
 }
 export type EMERGENCY_STOP = Base<EmergencyStop>;
 
+export type UpdateMovementConfig = {
+    cmd_id: CMD_ID.MOVEMENT_CONFIG,
+    id: string,
+    amrId: string,
+    payload: string
+}
+export type UPDATE_MOVEMENT_CONFIG = Base<UpdateMovementConfig>;
+
 export type ForceReset = {
     cmd_id: CMD_ID.FORCE_RESET,
     id: string,
@@ -133,6 +141,7 @@ export type AllControl =
     FORCE_RESET |
     HAS_CARGO |
     PVTP_SWITCH |
-    FORCE_SHUTDOWN
+    FORCE_SHUTDOWN |
+    UPDATE_MOVEMENT_CONFIG
     ;
 
