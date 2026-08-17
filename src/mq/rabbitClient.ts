@@ -103,6 +103,7 @@ export default class RabbitClient {
                         status: err.message
                     });
                 }
+                this.consumedQueues.clear()
                 this.output$.next(isConnected({ isConnected: false }))
                 this.reconnect()
             });
@@ -115,6 +116,7 @@ export default class RabbitClient {
                     });
                     this.connectCloseLogger = false;
                 }
+                this.consumedQueues.clear()
                 this.output$.next(isConnected({ isConnected: false }));
                 this.reconnect()
 
