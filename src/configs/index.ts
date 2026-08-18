@@ -34,6 +34,7 @@ const schema = object({
 
   RABBIT_MQ_USER: string().required(),
   RABBIT_MQ_PASSWORD: string().required(),
+  RABBIT_MQ_HEARTBEAT: number().required().default(10),
 
   LOG_LEVEL: string()
     .oneOf(["error", "warn", "info", "http", "verbose", "debug", "silly"])
@@ -65,5 +66,6 @@ export const {
 
   RABBIT_MQ_USER,
   RABBIT_MQ_PASSWORD,
+  RABBIT_MQ_HEARTBEAT,
   LOG_LEVEL
 } = parsed;

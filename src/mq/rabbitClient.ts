@@ -2,7 +2,7 @@ import * as amqp from "amqplib";
 import winston from 'winston';
 import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
 import { Subject } from "rxjs";
-import { MAC, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
+import { MAC, RABBIT_MQ_HEARTBEAT, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
@@ -72,12 +72,12 @@ export default class RabbitClient {
     }
 
     private connectSetting() {
-        this.url_1 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_1}:${RABBIT_MQ_PORT_1}`
+        this.url_1 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_1}:${RABBIT_MQ_PORT_1}?heartbeat=${RABBIT_MQ_HEARTBEAT}`
         this.urls.push(this.url_1);
         this.ui_port.push(RABBIT_MQ_UI_PORT_1);
         this.node_name.push(RABBIT_NODE_NAME_1)
         if (RABBIT_MQ_HOST_2 && RABBIT_MQ_PORT_2 && RABBIT_MQ_UI_PORT_2 && RABBIT_NODE_NAME_2) {
-            this.url_2 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_2}:${RABBIT_MQ_PORT_2}`
+            this.url_2 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_2}:${RABBIT_MQ_PORT_2}?heartbeat=${RABBIT_MQ_HEARTBEAT}`
             this.urls.push(this.url_2)
             this.ui_port.push(RABBIT_MQ_UI_PORT_2)
             this.node_name.push(RABBIT_NODE_NAME_2)
@@ -169,8 +169,7 @@ export default class RabbitClient {
     private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
         for (const url of this.urls) {
             try {
-                // const conn = await amqp.connect(url);
-                const conn = await amqp.connect(url);
+                const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000 });
                 return [conn, url];
             } catch (err) {
                 warnLogger.warn(`Failed to connect ${url}`, {
