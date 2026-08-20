@@ -23,9 +23,6 @@ export default class RabbitClient {
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
-    private controlCache: { tag: "CONTROL", data: AllControl }[] = [];
-    private responseCache: { tag: "RESPONSE", data: AllRes }[] = [];
-
     private url_1: string = ""
     private url_2: string = ""
     private urls: string[] = []
@@ -293,9 +290,10 @@ export default class RabbitClient {
         exchangeName: string,
         routingKey: string,
         message: RequestMsgType,
-        options?: PublishOptions
+        options?: PublishOptions,
+        customId?: string
     ) {
-        const id = faker.datatype.uuid();
+        const id = customId ?? faker.datatype.uuid();
         const flag = "REQ";
 
         const jMsg = {
@@ -504,89 +502,69 @@ export default class RabbitClient {
         mode: string = "normal"
     ): Promise<boolean> {
 
-        const {
-            expiration,
-            retries = 3,
-            retryDelay = 3000,
-        } = options;
+        const { expiration } = options;
 
-        let attempts = 0;
-
-        while (attempts < retries) {
-            try {
-                if (!this.channel) throw new Error("Rabbit channel is not available");
-                const publishOptions = expiration
-                    ? { expiration }
-                    : undefined;
-                const buffered = this.channel.publish(exchange, key, buffer, publishOptions);
-                if (flag == "REQ") {
-                    if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                            title: "RabbitMQ",
-                            type: "publish",
-                            request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session }
-                        });
-                    }
-                } else {
-                    if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
-                        rb_heartbeatLogger.info("Send heartbeat to QAMS", {
-                            title: "system",
-                            type: "ack",
-                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                        })
-                        debugLogger.info("Send heartbeat to QAMS", {
-                            title: "system",
-                            type: "ack",
-                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                        })
-                    }
-                    if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                            title: "RabbitMQ",
-                            type: "publish",
-                            response: { ...jMsg.payload, session: jMsg.session }
-                        });
-                    }
-                }
-
-                if (!buffered) {
-                    // publish() returning false is Node stream backpressure, not a failed
-                    // publish - the message is already queued for delivery. Wait for 'drain'
-                    // instead of retrying, otherwise a retry would re-send and duplicate it.
-                    await new Promise<void>((resolve) => this.channel!.once("drain", resolve));
-                }
-
-                return true;
-            } catch (err: unknown) {
-                if (this.isVolatile(exchange, key)) {
-                    return false;
-                }
-                attempts++;
-                if (getErrorMessage(err) == "Rabbit channel is not available") {
-                    const data = JSON.parse(buffer.toString());
-                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    warnLogger.warn(
-                        `Rabbit channel is not available, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+        try {
+            if (!this.channel) throw new Error("Rabbit channel is not available");
+            const publishOptions = expiration
+                ? { expiration }
+                : undefined;
+            const buffered = this.channel.publish(exchange, key, buffer, publishOptions);
+            if (flag == "REQ") {
+                if (!blackList.includes(jMsg.payload.cmd_id)) {
+                    rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
                         title: "RabbitMQ",
-                        type: "transaction",
-                        status: { exchange, key, data }
+                        type: "publish",
+                        request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session }
                     });
-                    return false;
                 }
-                if (attempts >= retries) {
-                    const data = JSON.parse(buffer.toString());
-                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    warnLogger.warn(
-                        `Failed to publish after ${attempts} attempts: ${getErrorMessage(err)}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+            } else {
+                if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
+                    rb_heartbeatLogger.info("Send heartbeat to QAMS", {
+                        title: "system",
+                        type: "ack",
+                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                    })
+                    debugLogger.info("Send heartbeat to QAMS", {
+                        title: "system",
+                        type: "ack",
+                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                    })
+                }
+                if (!blackList.includes(jMsg.payload.cmd_id)) {
+                    rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
                         title: "RabbitMQ",
-                        type: "transaction",
-                        status: { exchange, key, data }
+                        type: "publish",
+                        response: { ...jMsg.payload, session: jMsg.session }
                     });
-                    return false;
                 }
-
-                await new Promise((r) => setTimeout(r, retryDelay));
             }
+
+            if (!buffered) {
+                // publish() returning false is Node stream backpressure, not a failed
+                // publish - the message is already queued for delivery. Wait for 'drain'
+                // instead of retrying, otherwise a retry would re-send and duplicate it.
+                await new Promise<void>((resolve) => this.channel!.once("drain", resolve));
+            }
+
+            return true;
+        } catch (err: unknown) {
+            if (this.isVolatile(exchange, key)) {
+                return false;
+            }
+            // channel.publish() doesn't throw for transient network/broker failures - those surface
+            // asynchronously via the channel's error/close events (handled in connect()), which already
+            // trigger a reconnect + flushPendingMessages(). The only realistic failure here is the
+            // channel not existing yet, so just queue for that flush instead of retrying blind.
+            const data = JSON.parse(buffer.toString());
+            this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
+            warnLogger.warn(
+                `Failed to publish (${getErrorMessage(err)}), store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                title: "RabbitMQ",
+                type: "transaction",
+                status: { exchange, key, data }
+            });
+            return false;
         }
     }
 
@@ -633,9 +611,12 @@ export default class RabbitClient {
             }, true),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
-                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                //     this.responseCache.push({ tag: "RESPONSE", data: msg });
-                // };
+                // register response establishes a brand new session, so it can never match
+                // this.info.session yet - it must always be forwarded regardless of session.
+                if (msg.payload.cmd_id === CMD_ID.REGISTER) {
+                    this.resTransactionOutput$.next(msg);
+                    return;
+                }
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -646,9 +627,6 @@ export default class RabbitClient {
             }),
 
             this.consume<AllControl>(q2a_controlQName, (msg) => {
-                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                //     this.controlCache.push({ tag: "CONTROL", data: msg });
-                // };
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -702,38 +680,6 @@ export default class RabbitClient {
             status: { still_consume: [...this.consumedQueues.keys()] }
         })
     }
-
-    public clearCache() {
-        const allCache = [...this.controlCache, ...this.responseCache]
-        const logString = allCache.length ? `start cleaning up cache message, num: ${allCache.length}` : "cache is empty"
-        infoLogger.info(logString, {
-            title: "system",
-            type: "flush cache"
-        })
-        if (!allCache.length) return;
-        const sortCache = allCache.sort((a, b) => {
-            const aTimeStamp = a.data.timeStamp;
-            const bTimeStamp = b.data.timeStamp;
-            return Number(aTimeStamp) - Number(bTimeStamp)
-        });
-        sortCache.forEach((cache) => {
-            const { data } = cache;
-            const checkSession = (data.session == this.info.session);
-            if (!checkSession) {
-                const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                if (!canPass) return
-            }
-            if (cache.tag == "CONTROL") {
-                this.controlTransactionOutput$.next(cache.data);
-                return;
-            }
-            if (cache.tag == "RESPONSE") {
-                this.resTransactionOutput$.next(cache.data);
-                return;
-            }
-        });
-    }
-
 
 }
 function uuid(): string {

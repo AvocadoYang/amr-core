@@ -2,21 +2,19 @@ import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
-import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
+import { CMD_ID } from '~/mq/type/cmdId';
 import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import { ReturnCode } from '~/mq/type/returnCode';
-import { config, interval, Subject, throttleTime } from 'rxjs';
+import { throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
-import { Output, setIsRegistered } from '~/actions/status/output';
 import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
 
 
 class Status {
     private lastPose: SimplePose = { x: 0, y: 0, yaw: 0 };
-    private output$: Subject<Output> = new Subject();
     constructor(
         private rb: RBClient,
         private info: TRANSACTION_INFO,
@@ -161,60 +159,6 @@ class Status {
         ROS.forceRebindLocation.subscribe((msg) => {
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
         })
-
-
-
-        this.mock();
-    }
-
-    public subscribe(cb: (action: Output) => void) {
-        return this.output$.subscribe(cb);
-    }
-
-
-    private mock() {
-        // interval(200).subscribe(() => {
-
-        //     this.rb.reqPublish(IO_EX, `amr.io.${MAC}.pose`, sendPose({ x: 1, y: 2, yaw: 3 }), {
-        //         expiration: "3000"
-        //     })
-
-        // })
-
-        //   interval(4000).subscribe(() => {
-        //     const jMsg = {
-        //         warning_msg: ["1", "2"],
-        //         warning_id: ["3", "4"]
-        //     }
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.errorInfo`, sendErrorInfo(jMsg));
-        // })
-
-        //     interval(100).subscribe(() =>{
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.ioInfo`, sendIOInfo(JSON.stringify(fakeIoInfo)), {
-        //         expiration: "1000"
-        //     });
-        // })
-
-        // interval(2000).subscribe(() => {
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.currentId`, sendCurrentId("100"), {
-        //         expiration: "2000"
-        //     })
-        // })
-
-        // interval(200).subscribe(() => {
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.isAccurate`, sendPoseAccurate(true))
-        // })
-
-        // interval(3000).subscribe(() => {
-        //     const data = {
-        //         c_gen: "123",
-        //         c_type: "test",
-        //         result: true,
-        //         status: "hi"
-        //     }
-        //     this.rb.reqPublish(IO_EX, `amr.io.${config.MAC}.handshake.cargoVerity`, sendCargoVerity(JSON.stringify(data)));
-        // })
-
     }
 
 }

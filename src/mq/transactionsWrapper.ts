@@ -116,6 +116,17 @@ export const sendForceShutdown = () => {
     }
 }
 
+export const sendRegisterRequest = (data: {
+    serialNumber: string,
+    lastSendGoalId: string,
+    amrHasMission: boolean,
+}) => {
+    return {
+        cmd_id: CMD_ID.REGISTER,
+        ...data
+    }
+}
+
 
 
 type AllReqType =
@@ -133,7 +144,8 @@ type AllReqType =
     typeof sendETX |
     typeof sendSystemState |
     typeof sendForceRebindLocation |
-    typeof sendForceShutdown
+    typeof sendForceShutdown |
+    typeof sendRegisterRequest
 
 export type RequestMsgType = ReturnType<AllReqType>
 
@@ -164,6 +176,8 @@ export const sendHeartBeatResponse = (data: {
     id: string,
     amrId: string,
     heartbeat: number,
+    rosbridgeConnect: boolean,
+    amrServiceConnect: boolean,
 }) => {
     return {
         cmd_id: CMD_ID.HEARTBEAT,
