@@ -123,6 +123,28 @@ export default class RabbitClient {
             });
 
             this.channel = await this.connection.createChannel();
+
+            this.channel.on("error", (err) => {
+                errorLogger.error("Channel error", {
+                    title: "RabbitMQ",
+                    type: "network",
+                    status: err.message
+                });
+                this.consumedQueues.clear()
+                this.output$.next(isConnected({ isConnected: false }))
+                this.reconnect()
+            });
+
+            this.channel.on("close", () => {
+                warnLogger.warn("Channel closed. Reconnecting in 3s...", {
+                    title: "RabbitMQ",
+                    type: "network"
+                });
+                this.consumedQueues.clear()
+                this.output$.next(isConnected({ isConnected: false }));
+                this.reconnect()
+            });
+
             this.connectCloseLogger = true;
             this.connectFailedLogger = true;
 
@@ -496,10 +518,7 @@ export default class RabbitClient {
                 const publishOptions = expiration
                     ? { expiration }
                     : undefined;
-                const result = await this.channel.publish(exchange, key, buffer, publishOptions);
-                if (!result) {
-                    throw new Error("Failed to send msg")
-                }
+                const buffered = this.channel.publish(exchange, key, buffer, publishOptions);
                 if (flag == "REQ") {
                     if (!blackList.includes(jMsg.payload.cmd_id)) {
                         rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
@@ -528,6 +547,13 @@ export default class RabbitClient {
                             response: { ...jMsg.payload, session: jMsg.session }
                         });
                     }
+                }
+
+                if (!buffered) {
+                    // publish() returning false is Node stream backpressure, not a failed
+                    // publish - the message is already queued for delivery. Wait for 'drain'
+                    // instead of retrying, otherwise a retry would re-send and duplicate it.
+                    await new Promise<void>((resolve) => this.channel!.once("drain", resolve));
                 }
 
                 return true;
