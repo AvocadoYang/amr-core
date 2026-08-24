@@ -81,8 +81,8 @@ class AmrCore {
           type: "connect status",
           status: {
             qamsConnect: qamsConnect ? "✅" : "❌",
-            rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
             rabbitConnect: rabbitConnect ? "✅" : "❌",
+            rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
             amrServiceConnect: amrServiceConnect ? "✅" : "❌"
           }
         });
@@ -90,21 +90,15 @@ class AmrCore {
         // actually stop status/telemetry traffic instead of staying stuck at the last "true"
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
       }),
-      switchMap(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
-        // rosbridge/amrService being down no longer tears down the QAMS session - it only blocks
-        // *new* registration attempts; an already-established session and its consumers stay alive.
-        const canRegister = rosbridgeConnect && rabbitConnect && amrServiceConnect;
-
-        if (!canRegister) return EMPTY;
+      switchMap(([qamsConnect, rabbitConnect]) => {
+        if (!rabbitConnect) return EMPTY;
 
         if (!qamsConnect) {
           // fleetConnect() no-ops if an attempt (incl. its own retry loop) is already in flight
           return from(Promise.resolve(this.netWorkManager.fleetConnect()));
         }
 
-        return from(
-          Promise.resolve(this.hb.send(heartbeat_connectWithQAMS({ isConnected: true })))
-        );
+        return EMPTY;
       })
     ).subscribe();
 
@@ -121,6 +115,7 @@ class AmrCore {
             } else {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
             }
+            this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
             this.qams_connect$.next(isConnected);
           } catch (err) {
             this.hb.send(heartbeat_connectWithQAMS({ isConnected: false }))

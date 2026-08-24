@@ -11,7 +11,6 @@ export enum ReturnCode {
 
     FORMAT_ERROR_LOGIN_ERROR = "3441",
     NOT_IN_SYSTEM_LOGIN_ERROR = "3442",
-    RABBIT_CONNECT_ERROR_LOGIN_ERROR = "3443",
 
     shortestPathServiceFailed = "0001",
     isAllowServiceFailed = "0002",
@@ -32,6 +31,5 @@ export const registerReturnCode = [
     ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS,
     ReturnCode.FORMAT_ERROR_LOGIN_ERROR,
     ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR,
-    ReturnCode.RABBIT_CONNECT_ERROR_LOGIN_ERROR,
 ]
 

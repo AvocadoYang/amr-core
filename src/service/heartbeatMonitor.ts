@@ -82,15 +82,6 @@ export default class HeartbeatMonitor {
                 return this.qams_heartbeat$.pipe(
                     switchMap(() => timer(800, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
                     tap(() => {
-                        // if (this.toleranceTime < 1) {
-                        //     this.toleranceTime += 1;
-                        //     this.qams_heartbeat$.next(true);
-                        //     errorLogger.error("test time out retry", {
-                        //         title: "system",
-                        //         type: "heartbeat"
-                        //     })
-                        //     return;
-                        // }
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",
                             type: "heartbeat",
