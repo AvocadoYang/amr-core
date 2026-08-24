@@ -144,19 +144,22 @@ class Status {
         })
 
         ROS.getVerityCargo$.subscribe((msg) => {
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
         ROS.getStackInfo$.subscribe((msg) => {
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(IO_EX, `amr.io.${MAC}.stackInfo`, sendStackInfo(msg))
         })
 
         ROS.systemState.subscribe((msg) => {
-
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
         })
 
         ROS.forceRebindLocation.subscribe((msg) => {
+            if (!this.connectStatus.qams_isConnect) return;
             this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
         })
     }
