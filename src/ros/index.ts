@@ -529,7 +529,6 @@ export const getAmrError$ = (() => {
   });
 })();
 
-// 小車氣體
 export const updatePosition = (() => {
   // Create a topic instance
   const topic = new ROSLIB.Topic({

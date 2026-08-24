@@ -140,7 +140,10 @@ export default class HeartbeatMonitor {
             });
 
             this.amr_service_connect$.next(true);
-            this.output$.next(amrServiceIsConnected({ isConnected: true }))
+            this.output$.next(amrServiceIsConnected({ isConnected: true }));
+            setTimeout(() => {
+                ROS.updatePosition({ data: true });
+            }, 3000)
 
         });
 

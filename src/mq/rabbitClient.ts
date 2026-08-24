@@ -153,7 +153,6 @@ export default class RabbitClient {
             });
             throw new Error();
         }
-
     }
 
 
