@@ -13,7 +13,7 @@ import { connectWithQAMS as heartbeat_connectWithQAMS } from './actions/heartbea
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
 import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, from, switchMap, tap } from "rxjs";
-import { infoLogger } from "./logger/logger";
+import { errorLogger, infoLogger } from "./logger/logger";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -110,8 +110,7 @@ class AmrCore {
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
-              const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
-              this.map = data;
+              this.fetchMap();
             } else {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
             }
@@ -200,6 +199,21 @@ class AmrCore {
     this.info.session = session;
     this.info.return_code = return_code
     this.info.approveNotSameSession = approveNotSameSession
+  }
+
+  // Fire-and-forget: a slow/failed map fetch must never delay arming the heartbeat
+  // watchdog or be mistaken for a QAMS connection failure (see IS_CONNECTED above).
+  private async fetchMap() {
+    try {
+      const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`, { timeout: 5000 });
+      this.map = data;
+    } catch (err) {
+      errorLogger.error("failed to fetch map from QAMS", {
+        title: "system",
+        type: "map",
+        status: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 
   private resetAmrStatus() {

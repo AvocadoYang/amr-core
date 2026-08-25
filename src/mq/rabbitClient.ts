@@ -76,6 +76,7 @@ export default class RabbitClient {
 
             this.channel.on("error", (err) => this.handleDisconnect("Channel error", err));
             this.channel.on("close", () => this.handleDisconnect("Channel closed"));
+            this.channel.prefetch(10)
 
 
             this.reconnectAttempts = 0;
@@ -357,7 +358,15 @@ export default class RabbitClient {
                                 request: { ...payload, session }
                             });
                         }
-                        this.lastReceiveReq.set(payload.id, { session })
+                        if (payload.id) {
+                            this.lastReceiveReq.set(payload.id, { session })
+                        } else {
+                            warnLogger.warn(`Receive request (${payload.cmd_id}) with empty id, skip correlation tracking`, {
+                                title: "RabbitMQ",
+                                type: "receive",
+                                status: { ...payload, session }
+                            });
+                        }
                     }
 
                     onMessage(data);
