@@ -74,13 +74,13 @@ export default class HeartbeatMonitor {
             }),
             switchMap(({ isConnected }) => {
                 const CHECK_INTERVAL = 700;   // 對齊 emitter 間隔
-                const MISS_THRESHOLD = 3;     // 連續漏 3 次才判斷斷線
+                const MISS_THRESHOLD = 8;     // 連續漏 8 次才判斷斷線，容忍偶發的 event loop 延遲
                 if (!isConnected) {
                     return EMPTY;
                 }
                 this.toleranceTime = 0;
                 return this.qams_heartbeat$.pipe(
-                    switchMap(() => timer(800, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
+                    switchMap(() => timer(1500, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
                     tap(() => {
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",

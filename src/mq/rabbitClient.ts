@@ -47,17 +47,15 @@ export default class RabbitClient {
     public transactionMap: Map<string, { id: string, count: number }> = new Map();
 
     private retryTime: number;
-    private maxRetryTime: number;
     constructor(
         private info: TRANSACTION_INFO,
         private consumedQueues: Map<string, string>,
         private connectStatus: CONNECT_STATUS,
-        option: { retryTime?: number; maxRetryTime?: number } = {}
+        option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
         this.machineID = MAC;
-        this.retryTime = option.retryTime ?? 3000
-        this.maxRetryTime = option.maxRetryTime ?? 30000
+        this.retryTime = option.retryTime ?? 5000
 
         this.connect();
     }
@@ -124,7 +122,7 @@ export default class RabbitClient {
         if (this.reconnecting || this.manualClose) return;
         this.reconnecting = true;
 
-        const delay = Math.min(this.retryTime * 2 ** this.reconnectAttempts, this.maxRetryTime);
+        const delay = this.retryTime;
         this.reconnectAttempts++;
 
         infoLogger.info(`Reconnecting RabbitMQ in ${delay}ms (attempt ${this.reconnectAttempts})...`, {
@@ -142,7 +140,8 @@ export default class RabbitClient {
     }
 
     private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
-        const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT * 1000}`;
+        // AMQP heartbeat is specified in seconds (unlike keepAliveDelay below, which is ms) - do not scale it.
+        const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT}`;
         try {
             const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000 });
             return [conn, url];
@@ -572,8 +571,22 @@ export default class RabbitClient {
 
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
-                if (!this.connectStatus.qams_isConnect) return;
-                if (msg.session !== this.info.session) return;
+                if (!this.connectStatus.qams_isConnect) {
+                    debugLogger.info("Drop heartbeat ping: QAMS not connected yet", {
+                        title: "RabbitMQ",
+                        type: "heartbeat",
+                        status: { session: msg.session }
+                    });
+                    return;
+                }
+                if (msg.session !== this.info.session) {
+                    debugLogger.info("Drop heartbeat ping: session mismatch", {
+                        title: "RabbitMQ",
+                        type: "heartbeat",
+                        status: { expected: this.info.session, received: msg.session }
+                    });
+                    return;
+                }
                 this.heartbeatOutput$.next(msg);
             }, true),
 
