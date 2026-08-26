@@ -1,27 +1,31 @@
-import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from '../configs'
+import { MAC } from '../configs'
 import * as ROS from '../ros'
 import * as net from 'net';
-import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap, timeout, timestamp } from "rxjs";
-import axios from "axios";
-import { number, object, string, ValidationError as YupValidationError } from "yup";
+import { randomUUID } from 'crypto';
+import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, merge, Subject, switchMap, switchMapTo, take, tap } from "rxjs";
 import { CustomerError, ValidationError } from "~/errorHandler/error";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
 import { errorLogger, infoLogger, warnLogger } from '~/logger/logger';
+import { RBClient } from '~/mq';
+import { sendRegisterRequest } from '~/mq/transactionsWrapper';
+import { CMD_ID } from '~/mq/type/cmdId';
+import { CONTROL_EX } from '~/mq/type/type';
+import { REGISTER_RES } from '~/mq/type/res';
 
 
 
 class NetWorkManager {
 
   public server: net.Server
-  private fleet_connect_log = true
   private amrId: string = '';
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
   private connectingInProgress = false;
 
   constructor(
+    private rb: RBClient,
     private amrStatus: AMR_STATUS,
     private missionStatus: MISSION_STATUS
   ) {
@@ -36,56 +40,57 @@ class NetWorkManager {
     await this.attemptConnect();
   }
 
+  /** Resolves with the first REGISTER response matching requestId, or rejects on timeout. */
+  private waitForRegisterResponse(requestId: string, timeoutMs = 5000): Promise<REGISTER_RES> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        sub.unsubscribe();
+        reject(new CustomerError("5557", "register response timeout"));
+      }, timeoutMs);
+      const sub = this.rb.onResTransaction((action) => {
+        if (action.payload.cmd_id === CMD_ID.REGISTER && action.payload.id === requestId) {
+          clearTimeout(timer);
+          sub.unsubscribe();
+          resolve(action as REGISTER_RES);
+        }
+      });
+    });
+  }
+
   private async attemptConnect() {
-    const schema = object({
-      applicant: string().required(),
-      amrId: string(),
-      qamsSerialNum: string(),
-      session: string(),
-      return_code: string().required(),
-      message: string().required(),
-    })
     try {
-      if (this.amrStatus.currentId == undefined || this.amrStatus.poseAccurate == undefined) {
-        throw new CustomerError("5555", "amr status is null");
+
+      const requestId = randomUUID();
+      const responsePromise = this.waitForRegisterResponse(requestId);
+      const published = await this.rb.reqPublish(
+        CONTROL_EX,
+        `qams.register.req.${MAC}`,
+        sendRegisterRequest({
+          serialNumber: MAC,
+          lastSendGoalId: this.missionStatus.lastSendGoalId,
+          amrHasMission: this.amrStatus.amrHasMission,
+        }),
+        { expiration: "3000" },
+        requestId
+      );
+      if (!published) {
+        throw new CustomerError("5556", "failed to publish register request to QAMS");
       }
 
-      if (this.amrStatus.poseAccurate) {
-        warnLogger.warn(`AMR localization warning`, {
-          title: 'system',
-          type: 'amr status'
-        })
-        throw new CustomerError("5554", "amr status is warning");
-      }
-      infoLogger.info("start registration process", {
-        title: "system",
-        type: "QAMS 🔗",
-        status: { ...this.amrStatus, lastMissionId: this.missionStatus.lastSendGoalId }
-      })
-      const { data } = await axios.post(
-        `http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/amr/establish-connection`, {
-        serialNumber: MAC,
-        lastSendGoalId: this.missionStatus.lastSendGoalId,
-        amrHasMission: this.amrStatus.amrHasMission,
-        timeout: 5000
-      });
+      const response = await responsePromise;
+      const { session, payload } = response;
+      const { return_code, amrId, message, qamsSerialNum } = payload;
 
-      const { return_code, amrId, message, session, qamsSerialNum } = await schema.validate(data).catch((err) => {
-        throw new ValidationError(err, (err as YupValidationError).message)
-      });
-
-      if (registerReturnCode.includes(return_code as ReturnCode) &&
+      if (registerReturnCode.includes(return_code) &&
         return_code !== ReturnCode.NOT_IN_SYSTEM_LOGIN_ERROR &&
-        return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR &&
-        return_code !== ReturnCode.RABBIT_CONNECT_ERROR_LOGIN_ERROR
+        return_code !== ReturnCode.FORMAT_ERROR_LOGIN_ERROR
       ) {
-        infoLogger.info(`connect to QAMS ${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}`, {
+        infoLogger.info(`connect to QAMS`, {
           title: "system",
           type: "QAMS 🤝",
           status: { message, return_code, session, amrId }
         });
         this.amrId = amrId;
-        this.fleet_connect_log = true;
         this.connectingInProgress = false;
         this.output$.next(isConnected({ isConnected: true, amrId, return_code, session, qamsSerialNum }));
       } else {
@@ -93,45 +98,42 @@ class NetWorkManager {
         throw new CustomerError(return_code, message);
       }
     } catch (error) {
-      if (this.fleet_connect_log) {
-        if (error instanceof ValidationError) {
+      if (error instanceof ValidationError) {
+        errorLogger.error("can't connect with QAMS, retry after 5s..", {
+          title: "system",
+          type: "QAMS",
+          status: error.msg,
+        });
+      } else if (error instanceof CustomerError) {
+        if (error.statusCode == "5555") {
+          errorLogger.error("can't connect with QAMS because of amr status is null, retry after 5s..", {
+            title: "system",
+            type: "QAMS",
+            status: {
+              return_code: error.statusCode,
+              amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
+              currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
+              poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
+              description: error.message
+            },
+          });
+        } else {
           errorLogger.error("can't connect with QAMS, retry after 5s..", {
             title: "system",
             type: "QAMS",
-            status: error.msg,
-          });
-        } else if (error instanceof CustomerError) {
-          if (error.statusCode == "5555") {
-            errorLogger.error("can't connect with QAMS, retry after 5s..", {
-              title: "system",
-              type: "QAMS",
-              status: {
-                return_code: error.statusCode,
-                amrHasMission: this.amrStatus.amrHasMission ? this.amrStatus.amrHasMission : "null",
-                currentId: this.amrStatus.currentId ? this.amrStatus.currentId : "null",
-                poseAccurate: this.amrStatus.poseAccurate ? this.amrStatus.poseAccurate : "null",
-                description: error.message
-              },
-            });
-          } else {
-            errorLogger.error("can't connect with QAMS, retry after 5s..", {
-              title: "system",
-              type: "QAMS",
-              status: {
-                return_code: error.statusCode,
-                description: error.message
-              },
-            });
-          }
-        } else {
-          errorLogger.error(`${error instanceof Error ? error.message : String(error)}, retry after 5s..`, {
-            title: "system",
-            type: "QAMS",
+            status: {
+              return_code: error.statusCode,
+              description: error.message
+            },
           });
         }
-        this.fleet_connect_log = false;
+      } else {
+        errorLogger.error(`${error instanceof Error ? error.message : String(error)}, retry after 5s..`, {
+          title: "system",
+          type: "QAMS",
+        });
       }
-      setTimeout(async () => await this.attemptConnect(), 3500)
+      setTimeout(async () => await this.attemptConnect(), 5000)
     }
 
   }

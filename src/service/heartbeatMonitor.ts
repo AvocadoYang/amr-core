@@ -10,7 +10,7 @@ import { HEARTBEAT_EX } from "~/mq/type/type";
 import { MAC } from '../configs'
 import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
+import { CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { number, object, ValidationError } from "yup";
 
 export default class HeartbeatMonitor {
@@ -31,7 +31,8 @@ export default class HeartbeatMonitor {
     constructor(
         private info: TRANSACTION_INFO,
         private rb: RBClient,
-        private missionStatus: MISSION_STATUS
+        private missionStatus: MISSION_STATUS,
+        private connectStatus: CONNECT_STATUS
     ) {
         this.rb.onHeartbeat((action) => {
             const { payload } = action;
@@ -48,7 +49,9 @@ export default class HeartbeatMonitor {
                     id,
                     heartbeat: resHeartbeat,
                     return_code: ReturnCode.SUCCESS,
-                    amrId: this.info.amrId
+                    amrId: this.info.amrId,
+                    rosbridgeConnect: this.connectStatus.rosbridge_isConnect,
+                    amrServiceConnect: this.connectStatus.amr_service_isConnect
                 }), { expiration: "2000" }
             )
             this.toleranceTime = 0;
@@ -71,23 +74,14 @@ export default class HeartbeatMonitor {
             }),
             switchMap(({ isConnected }) => {
                 const CHECK_INTERVAL = 700;   // 對齊 emitter 間隔
-                const MISS_THRESHOLD = 3;     // 連續漏 3 次才判斷斷線
+                const MISS_THRESHOLD = 8;     // 連續漏 8 次才判斷斷線，容忍偶發的 event loop 延遲
                 if (!isConnected) {
                     return EMPTY;
                 }
                 this.toleranceTime = 0;
                 return this.qams_heartbeat$.pipe(
-                    switchMap(() => timer(800, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
+                    switchMap(() => timer(1500, CHECK_INTERVAL).pipe(skip(MISS_THRESHOLD))),
                     tap(() => {
-                        // if (this.toleranceTime < 1) {
-                        //     this.toleranceTime += 1;
-                        //     this.qams_heartbeat$.next(true);
-                        //     errorLogger.error("test time out retry", {
-                        //         title: "system",
-                        //         type: "heartbeat"
-                        //     })
-                        //     return;
-                        // }
                         warnLogger.warn(`(QAMS) heartbeat timeout, disconnect`, {
                             title: "system",
                             type: "heartbeat",
@@ -146,7 +140,10 @@ export default class HeartbeatMonitor {
             });
 
             this.amr_service_connect$.next(true);
-            this.output$.next(amrServiceIsConnected({ isConnected: true }))
+            this.output$.next(amrServiceIsConnected({ isConnected: true }));
+            setTimeout(() => {
+                ROS.updatePosition({ data: true });
+            }, 3000)
 
         });
 

@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
-import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status, WsServer } from "./service";
+import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
 import { RBClient } from "./mq";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
@@ -12,9 +12,8 @@ import * as ROS from './ros'
 import { connectWithQAMS as heartbeat_connectWithQAMS } from './actions/heartbeatMonitor/input'
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
-import { BehaviorSubject, combineLatest, distinctUntilChanged, delay, EMPTY, from, switchMap, tap } from "rxjs";
-import { infoLogger } from "./logger/logger";
-import { dynamicListener } from "./mq/type/type";
+import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, from, switchMap, tap } from "rxjs";
+import { errorLogger, infoLogger } from "./logger/logger";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -33,7 +32,7 @@ class AmrCore {
   private missionStatus: MISSION_STATUS =
     { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" }
   private amrStatus: AMR_STATUS =
-    { amrHasMission: false, poseAccurate: undefined, currentId: undefined };
+    { amrHasMission: false, poseAccurate: false, currentId: "5305" };
   private info: TRANSACTION_INFO =
     { amrId: "", qamsSerialNum: "", session: "", return_code: "", approveNotSameSession: false }
   private connectStatus: CONNECT_STATUS =
@@ -44,7 +43,6 @@ class AmrCore {
   private rb: RBClient;
   private ms: MissionManager;
   private mc: MoveControl;
-  private ws: WsServer;
   private st: Status;
   private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
@@ -54,74 +52,53 @@ class AmrCore {
   private amr_service_connect$ = new BehaviorSubject<boolean>(false);
   private rabbit_connect$ = new BehaviorSubject<boolean>(false);
 
-  // guards against firing a second QAMS reconnect while one (including its internal retry loop) is already in flight
-  private reconnectingQams = false;
-
   constructor() {
     this.rb = new RBClient(this.info, this.consumedQueues, this.connectStatus);
-    this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus)
-    this.ws = new WsServer();
-    this.netWorkManager = new NetWorkManager(this.amrStatus, this.missionStatus);
+    this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus)
+    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus);
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
+    // Start consuming as soon as the AMQP channel is up (fresh connect or reconnect) - independent
+    // of QAMS/rosbridge/amrService state, so consumers are already attached (no lost-message window)
+    // by the time a register request goes out, and never get torn down again while the process runs.
+    this.rabbit_connect$.pipe(
+      distinctUntilChanged(),
+      switchMap((rabbitConnect: boolean) => (rabbitConnect ? from(this.rb.consumeTopic()) : EMPTY))
+    ).subscribe();
+
     combineLatest([
       this.qams_connect$,
-      this.ros_bridge_connect$,
       this.rabbit_connect$,
+      this.ros_bridge_connect$,
       this.amr_service_connect$
     ]).pipe(
       distinctUntilChanged((prev, curr) => prev.every((value, index) => value === curr[index])),
-      tap(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
+      tap(([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
         infoLogger.info("service connect status", {
           title: "system",
           type: "connect status",
           status: {
             qamsConnect: qamsConnect ? "✅" : "❌",
-            rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
             rabbitConnect: rabbitConnect ? "✅" : "❌",
+            rosbridgeConnect: rosbridgeConnect ? "✅" : "❌",
             amrServiceConnect: amrServiceConnect ? "✅" : "❌"
           }
         });
+        // always reflect live state, even mid-outage, so Status' publish guards (qams_isConnect)
+        // actually stop status/telemetry traffic instead of staying stuck at the last "true"
+        this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
       }),
-      switchMap(([qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect]) => {
-        const dependenciesReady = rosbridgeConnect && rabbitConnect && amrServiceConnect;
-
-        if (!dependenciesReady) {
-          this.reconnectingQams = false;
-          return from(this.rb.stopConsumeQueue(dynamicListener));
-        }
+      switchMap(([qamsConnect, rabbitConnect]) => {
+        if (!rabbitConnect) return EMPTY;
 
         if (!qamsConnect) {
-          if (this.reconnectingQams) return EMPTY;
-          this.reconnectingQams = true;
-          // must finish unsubscribing from every queue before opening a new QAMS session, otherwise a stale consumer can still be draining messages tied to the old session while the new handshake starts
-          return from(this.rb.stopConsumeQueue(dynamicListener)).pipe(
-            delay(1500),
-            tap(() => this.netWorkManager.fleetConnect())
-          );
+          // fleetConnect() no-ops if an attempt (incl. its own retry loop) is already in flight
+          return from(Promise.resolve(this.netWorkManager.fleetConnect()));
         }
 
-        this.reconnectingQams = false;
-        return from(this.rb.consumeTopic()).pipe(
-          tap(() => {
-            this.setServiceConnectStatus({
-              qamsConnect,
-              rosbridgeConnect,
-              rabbitConnect,
-              amrServiceConnect,
-            });
-            this.rb.clearCache();
-          }),
-          tap(() =>
-            this.hb.send(
-              heartbeat_connectWithQAMS({
-                isConnected: true,
-              })
-            )
-          )
-        );
+        return EMPTY;
       })
     ).subscribe();
 
@@ -133,11 +110,11 @@ class AmrCore {
             if (isConnected) {
               this.info.qamsSerialNum = qamsSerialNum;
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
-              const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
-              this.map = data;
+              this.fetchMap();
             } else {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
             }
+            this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
             this.qams_connect$.next(isConnected);
           } catch (err) {
             this.hb.send(heartbeat_connectWithQAMS({ isConnected: false }))
@@ -222,6 +199,21 @@ class AmrCore {
     this.info.session = session;
     this.info.return_code = return_code
     this.info.approveNotSameSession = approveNotSameSession
+  }
+
+  // Fire-and-forget: a slow/failed map fetch must never delay arming the heartbeat
+  // watchdog or be mistaken for a QAMS connection failure (see IS_CONNECTED above).
+  private async fetchMap() {
+    try {
+      const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`, { timeout: 5000 });
+      this.map = data;
+    } catch (err) {
+      errorLogger.error("failed to fetch map from QAMS", {
+        title: "system",
+        type: "map",
+        status: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 
   private resetAmrStatus() {

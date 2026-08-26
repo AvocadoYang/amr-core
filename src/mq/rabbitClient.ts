@@ -2,7 +2,7 @@ import * as amqp from "amqplib";
 import winston from 'winston';
 import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
 import { Subject } from "rxjs";
-import { MAC, RABBIT_MQ_HOST_1, RABBIT_MQ_HOST_2, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT_1, RABBIT_MQ_PORT_2, RABBIT_MQ_UI_PORT_1, RABBIT_MQ_UI_PORT_2, RABBIT_MQ_USER, RABBIT_NODE_NAME_1, RABBIT_NODE_NAME_2 } from "~/configs"
+import { MAC, RABBIT_MQ_HEARTBEAT, RABBIT_MQ_HOST, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT, RABBIT_MQ_USER } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
@@ -19,27 +19,18 @@ export default class RabbitClient {
     private connection: amqp.ChannelModel | null = null
     private channel: amqp.Channel | null = null;
     private reconnecting = false;
+    private reconnectAttempts = 0;
+    private manualClose = false;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
-    private controlCache: { tag: "CONTROL", data: AllControl }[] = [];
-    private responseCache: { tag: "RESPONSE", data: AllRes }[] = [];
-
-    private url_1: string = ""
-    private url_2: string = ""
-    private urls: string[] = []
-    private ui_port: number[] = []
-    private node_name: string[] = []
-    private msRelationship: Map<string, { url: string, status: "mirror" | "leader" }> = new Map()
 
     private lastReceiveReq: Map<string, {
         session: string
     }> = new Map();
 
-    private error_logger_switch: boolean = true;
-    private connectFailedLogger = true;
-    private connectCloseLogger = true;
+
 
     private output$: Subject<Output>
 
@@ -63,66 +54,30 @@ export default class RabbitClient {
         option: { retryTime?: number } = {}
     ) {
         this.output$ = new Subject();
-        this.connectSetting();
         this.machineID = MAC;
-        this.retryTime = option.retryTime ?? 3000
-        // this.url = `amqp://kenmec:kenmec@${RABBIT_MQ_HOST}:5673`
+        this.retryTime = option.retryTime ?? 5000
 
         this.connect();
     }
 
-    private connectSetting() {
-        this.url_1 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_1}:${RABBIT_MQ_PORT_1}`
-        this.urls.push(this.url_1);
-        this.ui_port.push(RABBIT_MQ_UI_PORT_1);
-        this.node_name.push(RABBIT_NODE_NAME_1)
-        if (RABBIT_MQ_HOST_2 && RABBIT_MQ_PORT_2 && RABBIT_MQ_UI_PORT_2 && RABBIT_NODE_NAME_2) {
-            this.url_2 = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST_2}:${RABBIT_MQ_PORT_2}`
-            this.urls.push(this.url_2)
-            this.ui_port.push(RABBIT_MQ_UI_PORT_2)
-            this.node_name.push(RABBIT_NODE_NAME_2)
-        }
-        this.node_name.forEach((name, index) => {
-            this.msRelationship.set(name, { url: this.urls[index], "status": "mirror" })
-        });
-
-        // console.log(this.node_name, this.urls, this.ui_port)
-
-    }
 
     public async connect() {
+        this.manualClose = false;
         try {
             const [connection, url] = await this.connectWithFailover();
             this.connection = connection
 
-            this.connection.on("error", (err) => {
-                if (this.connectCloseLogger) {
-                    errorLogger.error("Connection error", {
-                        title: "RabbitMQ",
-                        type: "network",
-                        status: err.message
-                    });
-                }
-                this.output$.next(isConnected({ isConnected: false }))
-                this.reconnect()
-            });
-
-            this.connection.on("close", async () => {
-                if (this.connectCloseLogger) {
-                    warnLogger.warn("Connection closed. Reconnecting in 3s...", {
-                        title: "RabbitMQ",
-                        type: "network"
-                    });
-                    this.connectCloseLogger = false;
-                }
-                this.output$.next(isConnected({ isConnected: false }));
-                this.reconnect()
-
-            });
+            this.connection.on("error", (err) => this.handleDisconnect("Connection error", err));
+            this.connection.on("close", () => this.handleDisconnect("Connection closed"));
 
             this.channel = await this.connection.createChannel();
-            this.connectCloseLogger = true;
-            this.connectFailedLogger = true;
+
+            this.channel.on("error", (err) => this.handleDisconnect("Channel error", err));
+            this.channel.on("close", () => this.handleDisconnect("Channel closed"));
+            this.channel.prefetch(10)
+
+
+            this.reconnectAttempts = 0;
 
             infoLogger.info(`Connected to ${url}`, {
                 title: "RabbitMQ",
@@ -133,51 +88,71 @@ export default class RabbitClient {
             await this.flushPendingMessages();
 
         } catch (err) {
-            if (this.connectFailedLogger) {
-                errorLogger.error("Connection failed", {
-                    title: "RabbitMQ",
-                    type: "network",
-                    status: (err as Error).message
-                });
-                this.connectFailedLogger = false;
-            }
-            this.reconnect()
+            this.scheduleReconnect();
         }
     }
 
+    // Shared handler for connection/channel "error" and "close" events - both fire on
+    // every real disconnect, so `reconnecting` below dedupes them into a single retry loop.
+    private handleDisconnect(reason: string, err?: Error) {
+        if (this.manualClose) return;
 
-    private async reconnect() {
-        if (this.reconnecting) return;
-        this.reconnecting = true;
+        if (err) {
+            errorLogger.error(reason, {
+                title: "RabbitMQ",
+                type: "network",
+                status: err.message
+            });
+        } else {
+            warnLogger.warn(`${reason}. Reconnecting...`, {
+                title: "RabbitMQ",
+                type: "network"
+            });
+        }
 
+
+        this.consumedQueues.clear();
+        this.output$.next(isConnected({ isConnected: false }));
         this.channel = null;
         this.connection = null;
+        this.scheduleReconnect();
+    }
 
-        warnLogger.warn("Reconnecting RabbitMQ...", {
+    private scheduleReconnect() {
+        if (this.reconnecting || this.manualClose) return;
+        this.reconnecting = true;
+
+        const delay = this.retryTime;
+        this.reconnectAttempts++;
+
+        infoLogger.info(`Reconnecting RabbitMQ in ${delay}ms (attempt ${this.reconnectAttempts})...`, {
             title: "RabbitMQ",
             type: "network connection",
         });
 
         setTimeout(async () => {
-            await this.connect();
+            // Reset before attempting, not after: if connect() fails again it calls
+            // scheduleReconnect() from within this same tick, and that call needs to see
+            // reconnecting === false or the next retry never gets scheduled.
             this.reconnecting = false;
-        }, this.retryTime);
+            await this.connect();
+        }, delay);
     }
 
     private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
-        for (const url of this.urls) {
-            try {
-                // const conn = await amqp.connect(url);
-                const conn = await amqp.connect(url);
-                return [conn, url];
-            } catch (err) {
-                warnLogger.warn(`Failed to connect ${url}`, {
-                    title: "RabbitMQ",
-                    type: "network connection",
-                });
-            }
+        // AMQP heartbeat is specified in seconds (unlike keepAliveDelay below, which is ms) - do not scale it.
+        const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT}`;
+        try {
+            const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000 });
+            return [conn, url];
+        } catch (err) {
+            errorLogger.error(`Connection failed with ${url}`, {
+                title: "RabbitMQ",
+                type: "network",
+                status: (err as Error).message
+            });
+            throw new Error();
         }
-        throw new Error("All RabbitMQ nodes unreachable");
     }
 
 
@@ -270,9 +245,10 @@ export default class RabbitClient {
         exchangeName: string,
         routingKey: string,
         message: RequestMsgType,
-        options?: PublishOptions
+        options?: PublishOptions,
+        customId?: string
     ) {
-        const id = faker.datatype.uuid();
+        const id = customId ?? faker.datatype.uuid();
         const flag = "REQ";
 
         const jMsg = {
@@ -289,7 +265,7 @@ export default class RabbitClient {
         const buffer = Buffer.from(sMsg);
         let result = false
         try {
-            result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg);
+            result = await this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
 
             // 發送成功才記錄 transaction
             if (result) this.transactionMap.set(id, { id, count: 0 });
@@ -335,7 +311,7 @@ export default class RabbitClient {
         const buffer = Buffer.from(sMsg);
 
         try {
-            const result = await this.publishWithRetry(exchangeName, routingKey, buffer, flag, jMsg, options);
+            const result = await this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
         } catch (err: unknown) {
             errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
@@ -381,7 +357,15 @@ export default class RabbitClient {
                                 request: { ...payload, session }
                             });
                         }
-                        this.lastReceiveReq.set(payload.id, { session })
+                        if (payload.id) {
+                            this.lastReceiveReq.set(payload.id, { session })
+                        } else {
+                            warnLogger.warn(`Receive request (${payload.cmd_id}) with empty id, skip correlation tracking`, {
+                                title: "RabbitMQ",
+                                type: "receive",
+                                status: { ...payload, session }
+                            });
+                        }
                     }
 
                     onMessage(data);
@@ -456,8 +440,11 @@ export default class RabbitClient {
 
 
     public async close() {
+        this.manualClose = true;
         await this.channel?.close();
         await this.connection?.close();
+        this.channel = null;
+        this.connection = null;
 
         infoLogger.info(`Connection closed manually.`, {
             title: "Rabbitmq",
@@ -471,7 +458,7 @@ export default class RabbitClient {
         return true;
     }
 
-    private async publishWithRetry(
+    private async publish(
         exchange: string,
         key: string,
         buffer: Buffer,
@@ -481,85 +468,69 @@ export default class RabbitClient {
         mode: string = "normal"
     ): Promise<boolean> {
 
-        const {
-            expiration,
-            retries = 3,
-            retryDelay = 3000,
-        } = options;
+        const { expiration } = options;
 
-        let attempts = 0;
-
-        while (attempts < retries) {
-            try {
-                if (!this.channel) throw new Error("Rabbit channel is not available");
-                const publishOptions = expiration
-                    ? { expiration }
-                    : undefined;
-                const result = await this.channel.publish(exchange, key, buffer, publishOptions);
-                if (!result) {
-                    throw new Error("Failed to send msg")
-                }
-                if (flag == "REQ") {
-                    if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                            title: "RabbitMQ",
-                            type: "publish",
-                            request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session }
-                        });
-                    }
-                } else {
-                    if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
-                        rb_heartbeatLogger.info("Send heartbeat to QAMS", {
-                            title: "system",
-                            type: "ack",
-                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                        })
-                        debugLogger.info("Send heartbeat to QAMS", {
-                            title: "system",
-                            type: "ack",
-                            status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                        })
-                    }
-                    if (!blackList.includes(jMsg.payload.cmd_id)) {
-                        rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                            title: "RabbitMQ",
-                            type: "publish",
-                            response: { ...jMsg.payload, session: jMsg.session }
-                        });
-                    }
-                }
-
-                return true;
-            } catch (err: unknown) {
-                if (this.isVolatile(exchange, key)) {
-                    return false;
-                }
-                attempts++;
-                if (getErrorMessage(err) == "Rabbit channel is not available") {
-                    const data = JSON.parse(buffer.toString());
-                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    warnLogger.warn(
-                        `Rabbit channel is not available, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+        try {
+            if (!this.channel) throw new Error("Rabbit channel is not available");
+            const publishOptions = expiration
+                ? { expiration }
+                : undefined;
+            const buffered = this.channel.publish(exchange, key, buffer, publishOptions);
+            if (flag == "REQ") {
+                if (!blackList.includes(jMsg.payload.cmd_id)) {
+                    rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
                         title: "RabbitMQ",
-                        type: "transaction",
-                        status: { exchange, key, data }
+                        type: "publish",
+                        request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session, options }
                     });
-                    return false;
                 }
-                if (attempts >= retries) {
-                    const data = JSON.parse(buffer.toString());
-                    this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-                    warnLogger.warn(
-                        `Failed to publish after ${attempts} attempts: ${getErrorMessage(err)}, store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+            } else {
+                if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
+                    rb_heartbeatLogger.info("Send heartbeat to QAMS", {
+                        title: "system",
+                        type: "ack",
+                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                    })
+                    debugLogger.info("Send heartbeat to QAMS", {
+                        title: "system",
+                        type: "ack",
+                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                    })
+                }
+                if (!blackList.includes(jMsg.payload.cmd_id)) {
+                    rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
                         title: "RabbitMQ",
-                        type: "transaction",
-                        status: { exchange, key, data }
+                        type: "publish",
+                        response: { ...jMsg.payload, session: jMsg.session }
                     });
-                    return false;
                 }
-
-                await new Promise((r) => setTimeout(r, retryDelay));
             }
+
+            if (!buffered) {
+                // publish() returning false is Node stream backpressure, not a failed
+                // publish - the message is already queued for delivery. Wait for 'drain'
+                // instead of retrying, otherwise a retry would re-send and duplicate it.
+                await new Promise<void>((resolve) => this.channel!.once("drain", resolve));
+            }
+
+            return true;
+        } catch (err: unknown) {
+            if (this.isVolatile(exchange, key)) {
+                return false;
+            }
+            // channel.publish() doesn't throw for transient network/broker failures - those surface
+            // asynchronously via the channel's error/close events (handled in connect()), which already
+            // trigger a reconnect + flushPendingMessages(). The only realistic failure here is the
+            // channel not existing yet, so just queue for that flush instead of retrying blind.
+            const data = JSON.parse(buffer.toString());
+            this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
+            warnLogger.warn(
+                `Failed to publish (${getErrorMessage(err)}), store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
+                title: "RabbitMQ",
+                type: "transaction",
+                status: { exchange, key, data }
+            });
+            return false;
         }
     }
 
@@ -577,7 +548,7 @@ export default class RabbitClient {
 
         for (const msg of messages) {
             try {
-                await this.publishWithRetry(
+                await this.publish(
                     msg.exchange,
                     msg.key,
                     msg.buffer,
@@ -600,15 +571,32 @@ export default class RabbitClient {
 
         const tags = await Promise.all([
             this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
-                if (!this.connectStatus.qams_isConnect) return;
-                if (msg.session !== this.info.session) return;
+                if (!this.connectStatus.qams_isConnect) {
+                    debugLogger.info("Drop heartbeat ping: QAMS not connected yet", {
+                        title: "RabbitMQ",
+                        type: "heartbeat",
+                        status: { session: msg.session }
+                    });
+                    return;
+                }
+                if (msg.session !== this.info.session) {
+                    debugLogger.info("Drop heartbeat ping: session mismatch", {
+                        title: "RabbitMQ",
+                        type: "heartbeat",
+                        status: { expected: this.info.session, received: msg.session }
+                    });
+                    return;
+                }
                 this.heartbeatOutput$.next(msg);
             }, true),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
-                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                //     this.responseCache.push({ tag: "RESPONSE", data: msg });
-                // };
+                // register response establishes a brand new session, so it can never match
+                // this.info.session yet - it must always be forwarded regardless of session.
+                if (msg.payload.cmd_id === CMD_ID.REGISTER) {
+                    this.resTransactionOutput$.next(msg);
+                    return;
+                }
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -619,9 +607,6 @@ export default class RabbitClient {
             }),
 
             this.consume<AllControl>(q2a_controlQName, (msg) => {
-                // if (!this.connectStatus.qams_isConnect && !blackList.includes(msg.payload.cmd_id)) {
-                //     this.controlCache.push({ tag: "CONTROL", data: msg });
-                // };
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -632,79 +617,6 @@ export default class RabbitClient {
             })
         ]);
         return tags;
-    }
-
-    public async stopConsumeQueue(queueNames: string[] = []) {
-        infoLogger.info("run stop-consuming process", {
-            title: "RabbitMQ",
-            type: "stop consume",
-            status: { still_consume: [...this.consumedQueues.keys()], need_stop: queueNames }
-        })
-        if (!this.channel) {
-
-            for (const queueName of queueNames) {
-                this.consumedQueues.delete(queueName);
-            }
-
-            infoLogger.info("end of stop-consuming process", {
-                title: "RabbitMQ",
-                type: "stop consume",
-                status: { still_consume: [...this.consumedQueues.keys()] }
-            })
-            return;
-        };
-        for (const queueName of queueNames) {
-            if (!this.consumedQueues.has(queueName)) continue;
-            try {
-
-                const tag = this.consumedQueues.get(queueName);
-
-                await this.channel.cancel(tag);
-                this.consumedQueues.delete(queueName);
-                warnLogger.warn(` stop consume queue: ${queueName}`, {
-                    title: "RabbitMQ",
-                    type: "stop consume",
-                });
-            } catch (e) {
-                // channel 可能已經 close，忽略
-            }
-        }
-        infoLogger.info("end of stop-consuming process", {
-            title: "RabbitMQ",
-            type: "stop consume",
-            status: { still_consume: [...this.consumedQueues.keys()] }
-        })
-    }
-
-    public clearCache() {
-        const allCache = [...this.controlCache, ...this.responseCache]
-        const logString = allCache.length ? `start cleaning up cache message, num: ${allCache.length}` : "cache is empty"
-        infoLogger.info(logString, {
-            title: "system",
-            type: "flush cache"
-        })
-        if (!allCache.length) return;
-        const sortCache = allCache.sort((a, b) => {
-            const aTimeStamp = a.data.timeStamp;
-            const bTimeStamp = b.data.timeStamp;
-            return Number(aTimeStamp) - Number(bTimeStamp)
-        });
-        sortCache.forEach((cache) => {
-            const { data } = cache;
-            const checkSession = (data.session == this.info.session);
-            if (!checkSession) {
-                const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                if (!canPass) return
-            }
-            if (cache.tag == "CONTROL") {
-                this.controlTransactionOutput$.next(cache.data);
-                return;
-            }
-            if (cache.tag == "RESPONSE") {
-                this.resTransactionOutput$.next(cache.data);
-                return;
-            }
-        });
     }
 
 

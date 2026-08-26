@@ -23,8 +23,6 @@ export const dynamicListener = [
 ]
 export interface PublishOptions {
     expiration?: string;
-    retries?: number;
-    retryDelay?: number;
     persistent?: boolean
 }
 

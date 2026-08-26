@@ -29,7 +29,18 @@ export type CargoVerity = {
 }
 export type CARGO_VERITY = Base<CargoVerity>;
 
+export type RegisterRes = {
+    return_code: ReturnCode;
+    id: string;
+    cmd_id: CMD_ID.REGISTER;
+    applicant: string;
+    amrId: string;
+    qamsSerialNum: string;
+    message: string;
+}
+export type REGISTER_RES = Base<RegisterRes>;
 
 
 
-export type AllRes = READ_STATUS | CARGO_VERITY;
+
+export type AllRes = READ_STATUS | CARGO_VERITY | REGISTER_RES;
