@@ -6,10 +6,10 @@ import { BehaviorSubject, distinctUntilChanged, EMPTY, filter, interval, mapTo, 
 import { CustomerError, ValidationError } from "~/errorHandler/error";
 import { isConnected, Output, ros_bridge_connected } from '~/actions/networkManager/output';
 import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
-import { AMR_STATUS, MISSION_STATUS } from '~/types/status';
+import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS } from '~/types/status';
 import { errorLogger, infoLogger, warnLogger } from '~/logger/logger';
 import { RBClient } from '~/mq';
-import { sendRegisterRequest } from '~/mq/transactionsWrapper';
+import { sendRegisterRequest, sendStateDigest } from '~/mq/transactionsWrapper';
 import { CMD_ID } from '~/mq/type/cmdId';
 import { CONTROL_EX } from '~/mq/type/type';
 import { REGISTER_RES } from '~/mq/type/res';
@@ -27,10 +27,32 @@ class NetWorkManager {
   constructor(
     private rb: RBClient,
     private amrStatus: AMR_STATUS,
-    private missionStatus: MISSION_STATUS
+    private missionStatus: MISSION_STATUS,
+    private connectStatus: CONNECT_STATUS
   ) {
     this.output$ = new Subject();
     this.rosConnect();
+    this.startStateDigest();
+  }
+
+  // Periodic low-frequency state snapshot: catches "connection/heartbeat alive but
+  // application state silently diverged" - something pure liveness heartbeats can't, since
+  // a hung-but-still-emitting event loop can keep heartbeats flowing. 20s is well outside
+  // QAMS's ~7.6s heartbeat watchdog window, so it's a distinct signal, not a replacement.
+  private startStateDigest() {
+    interval(20000).subscribe(() => {
+      if (!this.connectStatus.qams_isConnect) return;
+      this.rb.reqPublish(
+        CONTROL_EX,
+        `qams.${MAC}.handshake.stateDigest`,
+        sendStateDigest({
+          lastSendGoalId: this.missionStatus.lastSendGoalId,
+          missionType: this.missionStatus.missionType,
+          lastTransactionId: this.missionStatus.lastTransactionId,
+          amrHasMission: this.amrStatus.amrHasMission,
+        })
+      );
+    });
   }
 
   /** Entry point for a fresh QAMS (re)connection attempt. No-op if an attempt (including its internal retries) is already running, so callers can invoke it freely without spawning parallel retry loops. */
@@ -69,6 +91,8 @@ class NetWorkManager {
           serialNumber: MAC,
           lastSendGoalId: this.missionStatus.lastSendGoalId,
           amrHasMission: this.amrStatus.amrHasMission,
+          lastTransactionId: this.missionStatus.lastTransactionId,
+          missionType: this.missionStatus.missionType,
         }),
         { expiration: "3000" },
         requestId

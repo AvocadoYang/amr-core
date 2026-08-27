@@ -6,7 +6,11 @@ export type MISSION_STATUS =
         missionType: string,
         lastSendGoalId: string,
         targetLoc: string,
-        lastTransactionId: string
+        lastTransactionId: string,
+        // true from process boot until the first register response is handled - marks
+        // local mission state as not-yet-trustworthy so a restart mid-mission doesn't
+        // self-cancel the AMR's real in-progress goal before QAMS has had a say
+        awaitingReconcile: boolean
     }
 
 export type CONNECT_STATUS =

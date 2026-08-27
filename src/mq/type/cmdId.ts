@@ -28,7 +28,8 @@ export enum CMD_ID {
   SYNC_DATA = "SYNC",
   FORCE_SHUTDOWN = "FS",
   MOVEMENT_CONFIG = 'MC',
-  ETX = "ETX"
+  ETX = "ETX",
+  STATE_DIGEST = "SD"
 }
 
 export const blackList = [

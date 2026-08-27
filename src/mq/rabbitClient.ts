@@ -44,7 +44,10 @@ export default class RabbitClient {
     }[] = [];
 
 
-    public transactionMap: Map<string, { id: string, count: number }> = new Map();
+    private pendingAcks: Map<string, {
+        timer: ReturnType<typeof setTimeout>;
+        onSettled: (res: AllRes) => void;
+    }> = new Map();
 
     private retryTime: number;
     constructor(
@@ -266,9 +269,6 @@ export default class RabbitClient {
         let result = false
         try {
             result = await this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
-
-            // 發送成功才記錄 transaction
-            if (result) this.transactionMap.set(id, { id, count: 0 });
         } catch (err: unknown) {
             errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
@@ -276,6 +276,78 @@ export default class RabbitClient {
             });
         }
         return result
+    }
+
+    /**
+     * Publish a REQ and wait for a matching RES by id, retrying the identical buffer
+     * (same id, so idempotent on a receiver that dedups by id) on timeout. Never touches
+     * mission state on exhaustion - just resolves null so the caller decides what "still
+     * unresolved" means; the next reconcile point (register/digest) is what recovers it.
+     */
+    public reqPublishWithAck(
+        exchangeName: string,
+        routingKey: string,
+        message: RequestMsgType,
+        options?: PublishOptions,
+        customId?: string,
+        ackOptions: { timeoutMs?: number; maxRetries?: number } = {}
+    ): Promise<AllRes | null> {
+        const { timeoutMs = 3000, maxRetries = 3 } = ackOptions;
+        const id = customId ?? faker.datatype.uuid();
+        const flag = "REQ";
+        const jMsg = {
+            id,
+            sender: "AMR_CORE",
+            serialNum: this.machineID,
+            session: this.info.session,
+            flag,
+            timestamp: String(new Date().getTime()),
+            payload: { id, ...message, amrId: this.info.amrId }
+        };
+        const buffer = Buffer.from(JSON.stringify(jMsg));
+
+        return new Promise<AllRes | null>((resolve) => {
+            const send = (attempt: number) => {
+                this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
+                const timer = setTimeout(() => {
+                    if (attempt < maxRetries) {
+                        warnLogger.warn(`ack timeout, retrying (${attempt}/${maxRetries})`, {
+                            title: "RabbitMQ",
+                            type: "ack retry",
+                            status: { id, exchange: exchangeName, routingKey }
+                        });
+                        send(attempt + 1);
+                    } else {
+                        errorLogger.error(`ack exhausted after ${maxRetries} attempts, giving up - left unresolved for next reconcile point`, {
+                            title: "RabbitMQ",
+                            type: "ack exhausted",
+                            status: { id, exchange: exchangeName, routingKey }
+                        });
+                        this.pendingAcks.delete(id);
+                        resolve(null);
+                    }
+                }, timeoutMs);
+
+                this.pendingAcks.set(id, {
+                    timer,
+                    onSettled: (res) => {
+                        clearTimeout(timer);
+                        this.pendingAcks.delete(id);
+                        resolve(res);
+                    }
+                });
+            };
+            send(1);
+        });
+    }
+
+    /**
+     * Settle an outstanding reqPublishWithAck() when its matching RES arrives - no-op if
+     * nothing is pending for this id (a plain reqPublish, or an already-settled/exhausted ack).
+     */
+    public settlePendingAck(res: AllRes) {
+        const entry = this.pendingAcks.get(res.payload.id);
+        if (entry) entry.onSettled(res);
     }
 
     public async resPublish(
@@ -336,52 +408,74 @@ export default class RabbitClient {
             });
         }
         const consumer = await this.channel.consume(queueName, (msg) => {
-            if (msg) {
+            if (!msg) return;
+
+            let data: any;
+            try {
+                data = JSON.parse(msg.content.toString());
+            } catch (err) {
+                errorLogger.error("Failed to parse message", {
+                    title: "RabbitMQ",
+                    type: "parse error",
+                    status: err
+                });
                 try {
-                    const content = msg.content.toString();
-                    const data = JSON.parse(content);
-                    const { payload, session } = data;
-                    if (data.flag == 'RES') {
-                        if (!blackList.includes(payload.cmd_id)) {
-                            rb_transactionLogger.info(`Receive [response] message (${payload.cmd_id}) -`, {
-                                title: "RabbitMQ",
-                                type: "receive",
-                                response: { ...payload, session }
-                            });
-                        }
+                    // unparseable content can never succeed on redelivery - ack to drop it,
+                    // 用舊 channel ack，而非 this.channel!!!
+                    if (!noAck) localChannel.ack(msg);
+                } catch (e) {
+                    console.error("ack failed:", e);
+                }
+                return;
+            }
+
+            try {
+                const { payload, session } = data;
+                if (data.flag == 'RES') {
+                    if (!blackList.includes(payload.cmd_id)) {
+                        rb_transactionLogger.info(`Receive [response] message (${payload.cmd_id}) -`, {
+                            title: "RabbitMQ",
+                            type: "receive",
+                            response: { ...payload, session }
+                        });
+                    }
+                } else {
+                    if (!blackList.includes(payload.cmd_id)) {
+                        rb_transactionLogger.info(`Receive [request] message (${payload.cmd_id}) -`, {
+                            title: "RabbitMQ",
+                            type: "receive",
+                            request: { ...payload, session }
+                        });
+                    }
+                    if (payload.id) {
+                        this.lastReceiveReq.set(payload.id, { session })
                     } else {
-                        if (!blackList.includes(payload.cmd_id)) {
-                            rb_transactionLogger.info(`Receive [request] message (${payload.cmd_id}) -`, {
-                                title: "RabbitMQ",
-                                type: "receive",
-                                request: { ...payload, session }
-                            });
-                        }
-                        if (payload.id) {
-                            this.lastReceiveReq.set(payload.id, { session })
-                        } else {
-                            warnLogger.warn(`Receive request (${payload.cmd_id}) with empty id, skip correlation tracking`, {
-                                title: "RabbitMQ",
-                                type: "receive",
-                                status: { ...payload, session }
-                            });
-                        }
+                        warnLogger.warn(`Receive request (${payload.cmd_id}) with empty id, skip correlation tracking`, {
+                            title: "RabbitMQ",
+                            type: "receive",
+                            status: { ...payload, session }
+                        });
                     }
+                }
 
-                    onMessage(data);
+                onMessage(data);
 
-                } catch (err) {
-                    errorLogger.error("Failed to parse message", {
-                        title: "RabbitMQ",
-                        type: "parse error",
-                        status: err
-                    })
-                } finally {
-                    try {
-                        if (!noAck) localChannel.ack(msg);  // 用舊 channel ack，而非 this.channel!!!
-                    } catch (e) {
-                        console.error("ack failed:", e);
-                    }
+                // 用舊 channel ack，而非 this.channel!!!
+                if (!noAck) localChannel.ack(msg);
+            } catch (err) {
+                // handler threw - the message was never actually processed. Ack-in-finally
+                // used to silently drop it here; nack + requeue-once instead so a transient
+                // handler failure gets a second chance instead of vanishing.
+                errorLogger.error(
+                    `onMessage handler threw (${msg.fields.redelivered ? "already retried once, dropping" : "requeuing once"})`, {
+                    title: "RabbitMQ",
+                    type: "handler error",
+                    status: err instanceof Error ? err.message : String(err)
+                });
+                try {
+                    if (!noAck) localChannel.nack(msg, false, !msg.fields.redelivered);
+                } catch (e) {
+                    console.error("nack failed:", e);
                 }
             }
         }, { noAck });
@@ -591,6 +685,10 @@ export default class RabbitClient {
             }, true),
 
             this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
+                // settle any outstanding reqPublishWithAck() regardless of session/forwarding
+                // decision below - it's still a legitimate response to our own request.
+                this.settlePendingAck(msg);
+
                 // register response establishes a brand new session, so it can never match
                 // this.info.session yet - it must always be forwarded regardless of session.
                 if (msg.payload.cmd_id === CMD_ID.REGISTER) {

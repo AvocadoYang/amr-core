@@ -1,4 +1,4 @@
-import { interval, Subject, firstValueFrom } from "rxjs";
+import { interval, Subject } from "rxjs";
 import * as ROS from '../ros'
 import { MAC } from "../configs";
 import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
@@ -13,7 +13,12 @@ import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/
 
 export default class Mission {
   private output$: Subject<Output>
-  private missionCompleteSignal$: Subject<boolean> = new Subject<boolean>()
+  // transaction id of the handshake.readStatus REQ we're currently waiting on QAMS to ack;
+  // reused from the mission's own lastTransactionId so the RES can be matched back to it
+  private pendingReadStatusId: string = ""
+  // last WRITE_CANCEL request id actually acted on - lets a retried duplicate still get
+  // ack'd without re-issuing a redundant cancel to the AMR
+  private lastCanceledId: string = ""
 
   constructor(
     private rb: RBClient,
@@ -28,10 +33,29 @@ export default class Mission {
 
     this.rb.onResTransaction((action) => {
       const { payload } = action;
-      if (payload.cmd_id == CMD_ID.READ_STATUS) {
-        this.resetMissionStatus("READ_STATUS");
-        this.amrStatus.amrHasMission = false;
+      if (payload.cmd_id !== CMD_ID.READ_STATUS) return;
+
+      if (!this.pendingReadStatusId || payload.id !== this.pendingReadStatusId) {
+        warnLogger.warn(`ignore READ_STATUS response with unmatched transaction id`, {
+          title: "mission",
+          type: "mission status",
+          status: { received: payload.id, expected: this.pendingReadStatusId }
+        });
+        return;
       }
+
+      if (payload.return_code !== ReturnCode.SUCCESS) {
+        errorLogger.error(`QAMS rejected mission completion report`, {
+          title: "mission",
+          type: "mission status",
+          status: { id: payload.id, return_code: payload.return_code }
+        });
+        return;
+      }
+
+      this.pendingReadStatusId = "";
+      this.resetMissionStatus("READ_STATUS");
+      this.amrStatus.amrHasMission = false;
     })
 
 
@@ -55,6 +79,17 @@ export default class Mission {
       const actionId = status.goal_id.id;
 
       if (this.missionStatus.lastSendGoalId !== actionId) {
+        if (!this.missionStatus.lastSendGoalId && this.missionStatus.awaitingReconcile) {
+          // ambiguous: no local record of any goal, AND we haven't heard from QAMS yet
+          // this process lifetime - could be a genuinely idle AMR, or amr-core just
+          // restarted mid-mission and lost its own memory. Do not cancel; the register
+          // handshake (seconds away) is what gets to make that call.
+          warnLogger.warn(
+            `feedback for goal ${actionId} with no local record yet and QAMS not reconciled - holding off`,
+            { title: "mission", type: "ros handshake", status: { actionId } }
+          );
+          return;
+        }
         errorLogger.error(
           `execute action ID: ${this.missionStatus.lastSendGoalId ? this.missionStatus.lastSendGoalId : "None"} not equal to feedback action ID: ${actionId}`,
           {
@@ -69,7 +104,7 @@ export default class Mission {
       this.rb.reqPublish(IO_EX, `amr.io.${MAC}.feedback`, sendFeedBack(feedback.feedback_json), { expiration: "3000" })
     });
 
-    ROS.getReadStatus$.subscribe(async (readStatus) => {
+    ROS.getReadStatus$.subscribe((readStatus) => {
       if (!this.missionStatus.lastSendGoalId) {
         warnLogger.warn(`No mission is currently in progress.`, {
           title: "mission",
@@ -104,16 +139,17 @@ export default class Mission {
       });
 
 
-      this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.readStatus`, sendReadStatus(newState));
-      const result = await firstValueFrom(
-        this.missionCompleteSignal$
-      )
-
-      if (result) {
-        this.resetMissionStatus("READ_STATUS");
-        this.amrStatus.amrHasMission = false;
-      }
-
+      this.pendingReadStatusId = this.missionStatus.lastTransactionId;
+      // retried (same id) on ack timeout by the client itself; the onResTransaction
+      // handler above is the actual settlement point via pendingReadStatusId matching,
+      // so the returned promise here is intentionally not awaited/used.
+      this.rb.reqPublishWithAck(
+        CONTROL_EX,
+        `qams.${MAC}.handshake.readStatus`,
+        sendReadStatus(newState),
+        undefined,
+        this.pendingReadStatusId
+      );
     });
 
   }
@@ -126,6 +162,24 @@ export default class Mission {
         const { status } = payload;
         const { operation } = status.Body;
         const misType = operation.type;
+
+        // retried duplicate of a mission we already accepted (same transaction id) - ack
+        // again so QAMS's retry settles, but don't re-run updateStatue/ROS.writeStatus
+        if (id && this.missionStatus.lastTransactionId === id) {
+          this.rb.resPublish(
+            RES_EX,
+            `qams.${MAC}.res.writeStatus`,
+            sendWriteStatusResponse({
+              return_code: ReturnCode.SUCCESS,
+              amrId,
+              id,
+              lastSendGoalId: status.Id,
+              missionType: misType
+            })
+          );
+          break;
+        }
+
         infoLogger.info(`receive mission (${misType})`, {
           title: "mission",
           type: "new mission",
@@ -172,6 +226,9 @@ export default class Mission {
             id
           })
         );
+        // retried duplicate cancel - already ack'd above, skip re-issuing the ROS cancel
+        if (id && this.lastCanceledId === id) break;
+        this.lastCanceledId = id;
         this.resetMissionStatus("WRITE_CANCEL");
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         break;

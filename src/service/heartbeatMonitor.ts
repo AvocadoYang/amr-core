@@ -114,7 +114,7 @@ export default class HeartbeatMonitor {
             this.socket = socket;
 
             ROS.has_mission.pipe(take(1)).subscribe((hasMission) => {
-                if (hasMission && !this.missionStatus) {
+                if (hasMission && !this.missionStatus.lastSendGoalId) {
                     ROS.cancelCarStatusAnyway("#")
                 };
             })

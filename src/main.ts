@@ -12,7 +12,7 @@ import * as ROS from './ros'
 import { connectWithQAMS as heartbeat_connectWithQAMS } from './actions/heartbeatMonitor/input'
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
-import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, from, switchMap, tap } from "rxjs";
+import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, from, switchMap, take, tap } from "rxjs";
 import { errorLogger, infoLogger } from "./logger/logger";
 
 dotenv.config();
@@ -30,7 +30,10 @@ cleanEnv(process.env, {
 class AmrCore {
   private consumedQueues: Map<string, string> = new Map();
   private missionStatus: MISSION_STATUS =
-    { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "" }
+    { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "", awaitingReconcile: true }
+  // resolves once (cached) after the first ROS bridge signal or a bounded 2s timeout, so the
+  // very first REGISTER after boot doesn't race a slow ROS reconnect with a stale amrHasMission
+  private firstRegisterGate: Promise<void> | null = null;
   private amrStatus: AMR_STATUS =
     { amrHasMission: false, poseAccurate: false, currentId: "5305" };
   private info: TRANSACTION_INFO =
@@ -55,7 +58,7 @@ class AmrCore {
   constructor() {
     this.rb = new RBClient(this.info, this.consumedQueues, this.connectStatus);
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus)
-    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus);
+    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
@@ -95,7 +98,7 @@ class AmrCore {
 
         if (!qamsConnect) {
           // fleetConnect() no-ops if an attempt (incl. its own retry loop) is already in flight
-          return from(Promise.resolve(this.netWorkManager.fleetConnect()));
+          return from(this.waitForFirstRosSignal().then(() => this.netWorkManager.fleetConnect()));
         }
 
         return EMPTY;
@@ -125,7 +128,9 @@ class AmrCore {
           try {
             const { isConnected } = action;
             if (!isConnected) {
-              this.amrStatus = { amrHasMission: undefined, poseAccurate: undefined, currentId: undefined };
+              this.amrStatus.amrHasMission = undefined;
+              this.amrStatus.currentId = undefined;
+              this.amrStatus.poseAccurate = undefined;
             }
             this.ros_bridge_connect$.next(isConnected);
           } catch {
@@ -166,8 +171,34 @@ class AmrCore {
   }
 
 
+  // Resolves once (and only once - result is cached) after ROS.connected$/rosbridge signals
+  // up, or a bounded 2s timeout, whichever comes first. Gates only the very first REGISTER
+  // attempt after boot, since that's the one whose amrHasMission would otherwise reflect the
+  // in-memory default instead of live ROS state if RabbitMQ reconnects faster than rosbridge.
+  private waitForFirstRosSignal(): Promise<void> {
+    if (!this.firstRegisterGate) {
+      this.firstRegisterGate = this.ros_bridge_connect$.value
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+          const timeoutId = setTimeout(() => {
+            sub.unsubscribe();
+            resolve();
+          }, 2000);
+          const sub = this.ros_bridge_connect$.pipe(filter(Boolean), take(1)).subscribe(() => {
+            clearTimeout(timeoutId);
+            resolve();
+          });
+        });
+    }
+    return this.firstRegisterGate;
+  }
+
   private registerProcess(action: ReturnType<typeof isConnected>): boolean {
     const { return_code } = action;
+    // every branch below means "we've now heard QAMS's authoritative view this process
+    // lifetime" - ends the ambiguity window that Mission's ROS-feedback handler holds off
+    // canceling for while lastSendGoalId is still empty from a fresh restart.
+    this.missionStatus.awaitingReconcile = false;
     switch (return_code) {
       case ReturnCode.SUCCESS:
         return false;
@@ -187,6 +218,13 @@ class AmrCore {
         return false;
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
         return true
+      case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
+        // both sides think they know the active goal and disagree - conservative: cancel
+        // and wait, do not assume which one is right (mirrors QAMS's own conservative
+        // handling of this code, which also does not auto-resend)
+        ROS.cancelCarStatusAnyway("");
+        this.ms.resetMissionStatus("LOGIN_SUCCESS_UNEXPECTED");
+        return false;
       default:
         return false
     }
