@@ -163,9 +163,12 @@ export default class Mission {
         const { operation } = status.Body;
         const misType = operation.type;
 
-        // retried duplicate of a mission we already accepted (same transaction id) - ack
-        // again so QAMS's retry settles, but don't re-run updateStatue/ROS.writeStatus
-        if (id && this.missionStatus.lastTransactionId === id) {
+        // retried duplicate of a mission we already accepted - either the exact same
+        // envelope (QAMS's own ack-timeout retry, same transaction id) or the same
+        // underlying mission re-sent under a fresh envelope id (e.g. QAMS's login-reconcile
+        // resend racing a copy that was still queued, undelivered, at register time) - ack
+        // again so the sender settles, but don't re-run updateStatue/ROS.writeStatus
+        if ((id && this.missionStatus.lastTransactionId === id) || (status.Id && this.missionStatus.lastSendGoalId === status.Id)) {
           this.rb.resPublish(
             RES_EX,
             `qams.${MAC}.res.writeStatus`,

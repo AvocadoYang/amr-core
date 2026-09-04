@@ -117,8 +117,8 @@ class AmrCore {
             } else {
               this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
             }
-            this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
             this.qams_connect$.next(isConnected);
+            this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
           } catch (err) {
             this.hb.send(heartbeat_connectWithQAMS({ isConnected: false }))
             this.qams_connect$.next(false);

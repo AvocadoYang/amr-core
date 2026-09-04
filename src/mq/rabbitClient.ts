@@ -448,7 +448,9 @@ export default class RabbitClient {
                         });
                     }
                     if (payload.id) {
-                        this.lastReceiveReq.set(payload.id, { session })
+                        if (!blackList.includes(payload.cmd_id)) {
+                            this.lastReceiveReq.set(payload.id, { session })
+                        }
                     } else {
                         warnLogger.warn(`Receive request (${payload.cmd_id}) with empty id, skip correlation tracking`, {
                             title: "RabbitMQ",
