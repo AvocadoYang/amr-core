@@ -448,7 +448,7 @@ export default class RabbitClient {
                         });
                     }
                     if (payload.id) {
-                        if (!blackList.includes(payload.cmd_id)) {
+                        if (!blackList.includes(payload.cmd_id) || payload.cmd_id == CMD_ID.HEARTBEAT) {
                             this.lastReceiveReq.set(payload.id, { session })
                         }
                     } else {
