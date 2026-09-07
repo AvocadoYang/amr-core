@@ -71,6 +71,16 @@ class AmrCore {
       switchMap((rabbitConnect: boolean) => (rabbitConnect ? from(this.rb.consumeTopic()) : EMPTY))
     ).subscribe();
 
+    // pause the control-queue consumer the moment QAMS is known unreachable (heartbeat
+    // timeout or a failed register), resume once a register handshake succeeds again -
+    // see RabbitClient.pauseDynamicConsumers() for why only that one queue is paused.
+    this.qams_connect$.pipe(
+      distinctUntilChanged(),
+      switchMap((qamsConnect: boolean) =>
+        qamsConnect ? from(this.rb.consumeTopic()) : from(this.rb.pauseDynamicConsumers())
+      )
+    ).subscribe();
+
     combineLatest([
       this.qams_connect$,
       this.rabbit_connect$,

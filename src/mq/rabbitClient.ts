@@ -6,8 +6,8 @@ import { MAC, RABBIT_MQ_HEARTBEAT, RABBIT_MQ_HOST, RABBIT_MQ_PASSWORD, RABBIT_MQ
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
-import { AllRes } from "./type/res";
-import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE } from "./type/type";
+import { AllRes, REGISTER_RES } from "./type/res";
+import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { ReturnCode } from "./type/returnCode";
@@ -23,6 +23,7 @@ export default class RabbitClient {
     private manualClose = false;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject();
     private resTransactionOutput$: Subject<AllRes> = new Subject();
+    private registerResTransactionOutput$: Subject<REGISTER_RES> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
 
 
@@ -396,13 +397,13 @@ export default class RabbitClient {
         if (!this.channel) throw new Error("Channel is not available");
         const localChannel = this.channel;
         if (this.consumedQueues.has(queueName)) {
-            debugLogger.info(`Queue ${queueName} already being consumed.`, {
+            infoLogger.info(`Queue ${queueName} already being consumed.`, {
                 title: "RabbitMQ",
                 type: "consume queue"
             });
             return this.consumedQueues.get(queueName);
         } else {
-            debugLogger.info(`start consume queue: ${queueName}`, {
+            infoLogger.info(`start consume queue: ${queueName}`, {
                 title: "RabbitMQ",
                 type: "consume queue",
             });
@@ -485,6 +486,55 @@ export default class RabbitClient {
         return consumer.consumerTag;
     }
 
+    public async stopConsumeQueue(queueNames: string[]) {
+        debugLogger.info('run stop-consuming process', {
+            title: "RabbitMQ",
+            type: 'stop consume',
+            status: {
+                still_consume: [...this.consumedQueues.keys()],
+                need_stop: queueNames,
+            },
+        });
+        if (!this.channel) {
+            this.consumedQueues.clear();
+            debugLogger.info('end of stop-consuming process (channel is null)', {
+                title: "RabbitMQ",
+                type: 'stop consume',
+                status: { still_consume: [...this.consumedQueues.keys()] },
+            });
+            return;
+        }
+        for (const queueName of queueNames) {
+            if (!this.consumedQueues.has(queueName)) continue;
+            try {
+                await this.channel.cancel(this.consumedQueues.get(queueName));
+                this.consumedQueues.delete(queueName);
+                warnLogger.warn(`stop consume queue: ${queueName}`, {
+                    title: "RabbitMQ",
+                    type: "stop consume"
+                });
+            } catch (e) {
+                // channel 可能已經 close，忽略
+            }
+        }
+        debugLogger.info('end of stop-consuming process', {
+            title: "RabbitMQ",
+            type: 'stop consume',
+            status: { still_consume: [...this.consumedQueues.keys()] },
+        });
+    }
+
+    // stop draining the control queue while QAMS is unreachable, so residual mission
+    // commands queue up in RabbitMQ instead of being processed against a session that
+    // hasn't been decided by the next register handshake yet. Only q2a_handshakeQName -
+    // q2a_ResponseQName can't be paused this way since the REGISTER response rides on it
+    // too (see the inline guard in consumeTopic() instead), and heartbeatPingQName already
+    // has its own qams_isConnect guard. consumeTopic() re-attaches this once reconnected
+    // (it's idempotent, so safe to call repeatedly).
+    public async pauseDynamicConsumers() {
+        await this.stopConsumeQueue(dynamicListener);
+    }
+
     public async init() {
 
 
@@ -493,7 +543,10 @@ export default class RabbitClient {
         await this.createExchange(IO_EX, "topic", { durable: true });
         await this.createExchange(HANDSHAKE_EX, "topic", { durable: true });
 
-        await this.createQueue(q2a_handshakeQName, { durable: true });
+
+        await this.createQueue(q2a_handshakeQName, {
+            durable: true,
+        });
         await this.bindQueue(q2a_handshakeQName, HANDSHAKE_EX, `amr.${MAC}.control.*`);
 
         await this.createQueue(q2a_ResponseQName, { durable: true });
@@ -512,7 +565,17 @@ export default class RabbitClient {
         await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${MAC}`);
         await this.channel.purgeQueue(heartbeatPingQName);
 
+        await this.createQueue(q2a_registerResponseQName, { durable: true });
+        await this.bindQueue(q2a_registerResponseQName, RES_EX, `amr.register.res.${MAC}`)
+        await this.channel.purgeQueue(q2a_registerResponseQName);
+        ;
 
+        await this.consume<REGISTER_RES>(q2a_registerResponseQName, (msg) => {
+            if (msg.payload.cmd_id === CMD_ID.REGISTER) {
+                this.registerResTransactionOutput$.next(msg);
+                return;
+            }
+        });
     }
 
     public onHeartbeat(cb: (action: HEARTBEAT) => void) {
@@ -524,6 +587,14 @@ export default class RabbitClient {
         return this.resTransactionOutput$.subscribe(cb);
     }
 
+
+    public onRegisterResTransaction(cb: (action: REGISTER_RES) => void) {
+        return this.registerResTransactionOutput$.subscribe((action) => {
+            if (action.payload.cmd_id === CMD_ID.REGISTER) {
+                cb(action);
+            }
+        });
+    }
 
     public onControlTransaction(cb: (action: AllControl) => void) {
         return this.controlTransactionOutput$.subscribe(cb);
@@ -691,10 +762,18 @@ export default class RabbitClient {
                 // decision below - it's still a legitimate response to our own request.
                 this.settlePendingAck(msg);
 
-                // register response establishes a brand new session, so it can never match
-                // this.info.session yet - it must always be forwarded regardless of session.
-                if (msg.payload.cmd_id === CMD_ID.REGISTER) {
-                    this.resTransactionOutput$.next(msg);
+
+                // this queue also carries the REGISTER response (handled above), so it can
+                // never be paused the way q2a_handshakeQName is - drop non-REGISTER traffic
+                // inline instead, same guard heartbeatPingQName already uses, so a response
+                // sent by QAMS just before it noticed the disconnect (still same session)
+                // isn't acted on during a window we already know is down.
+                if (!this.connectStatus.qams_isConnect) {
+                    debugLogger.info("Drop response: QAMS not connected yet", {
+                        title: "RabbitMQ",
+                        type: "response",
+                        status: { session: msg.session }
+                    });
                     return;
                 }
                 const checkSession = (msg.session == this.info.session);

@@ -9,7 +9,7 @@ import { registerReturnCode, ReturnCode } from '~/mq/type/returnCode';
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS } from '~/types/status';
 import { errorLogger, infoLogger, warnLogger } from '~/logger/logger';
 import { RBClient } from '~/mq';
-import { sendRegisterRequest, sendStateDigest } from '~/mq/transactionsWrapper';
+import { sendRegisterRequest } from '~/mq/transactionsWrapper';
 import { CMD_ID } from '~/mq/type/cmdId';
 import { HANDSHAKE_EX } from '~/mq/type/type';
 import { REGISTER_RES } from '~/mq/type/res';
@@ -32,28 +32,9 @@ class NetWorkManager {
   ) {
     this.output$ = new Subject();
     this.rosConnect();
-    this.startStateDigest();
   }
 
-  // Periodic low-frequency state snapshot: catches "connection/heartbeat alive but
-  // application state silently diverged" - something pure liveness heartbeats can't, since
-  // a hung-but-still-emitting event loop can keep heartbeats flowing. 20s is well outside
-  // QAMS's ~7.6s heartbeat watchdog window, so it's a distinct signal, not a replacement.
-  private startStateDigest() {
-    interval(20000).subscribe(() => {
-      if (!this.connectStatus.qams_isConnect) return;
-      this.rb.reqPublish(
-        HANDSHAKE_EX,
-        `qams.${MAC}.handshake.stateDigest`,
-        sendStateDigest({
-          lastSendGoalId: this.missionStatus.lastSendGoalId,
-          missionType: this.missionStatus.missionType,
-          lastTransactionId: this.missionStatus.lastTransactionId,
-          amrHasMission: this.amrStatus.amrHasMission,
-        })
-      );
-    });
-  }
+
 
   /** Entry point for a fresh QAMS (re)connection attempt. No-op if an attempt (including its internal retries) is already running, so callers can invoke it freely without spawning parallel retry loops. */
   public async fleetConnect() {
@@ -69,7 +50,7 @@ class NetWorkManager {
         sub.unsubscribe();
         reject(new CustomerError("5557", "register response timeout"));
       }, timeoutMs);
-      const sub = this.rb.onResTransaction((action) => {
+      const sub = this.rb.onRegisterResTransaction((action) => {
         if (action.payload.cmd_id === CMD_ID.REGISTER && action.payload.id === requestId) {
           clearTimeout(timer);
           sub.unsubscribe();

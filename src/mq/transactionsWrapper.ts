@@ -136,20 +136,6 @@ export const sendRegisterRequest = (data: {
     }
 }
 
-// Low-frequency mid-connection snapshot so QAMS can catch application-state drift on an
-// AMR whose connection/heartbeat look perfectly healthy - a login-only reconcile can miss
-// a hung-but-still-connected process for the entire time it stays connected.
-export const sendStateDigest = (data: {
-    lastSendGoalId: string,
-    missionType: string,
-    lastTransactionId: string,
-    amrHasMission: boolean,
-}) => {
-    return {
-        cmd_id: CMD_ID.STATE_DIGEST,
-        ...data
-    }
-}
 
 
 
@@ -169,8 +155,7 @@ type AllReqType =
     typeof sendSystemState |
     typeof sendForceRebindLocation |
     typeof sendForceShutdown |
-    typeof sendRegisterRequest |
-    typeof sendStateDigest
+    typeof sendRegisterRequest
 
 export type RequestMsgType = ReturnType<AllReqType>
 

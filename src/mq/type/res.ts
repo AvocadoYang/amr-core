@@ -43,4 +43,4 @@ export type REGISTER_RES = Base<RegisterRes>;
 
 
 
-export type AllRes = READ_STATUS | CARGO_VERITY | REGISTER_RES;
+export type AllRes = READ_STATUS | CARGO_VERITY;
