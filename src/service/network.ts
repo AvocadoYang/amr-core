@@ -11,7 +11,7 @@ import { errorLogger, infoLogger, warnLogger } from '~/logger/logger';
 import { RBClient } from '~/mq';
 import { sendRegisterRequest, sendStateDigest } from '~/mq/transactionsWrapper';
 import { CMD_ID } from '~/mq/type/cmdId';
-import { CONTROL_EX } from '~/mq/type/type';
+import { HANDSHAKE_EX } from '~/mq/type/type';
 import { REGISTER_RES } from '~/mq/type/res';
 
 
@@ -43,7 +43,7 @@ class NetWorkManager {
     interval(20000).subscribe(() => {
       if (!this.connectStatus.qams_isConnect) return;
       this.rb.reqPublish(
-        CONTROL_EX,
+        HANDSHAKE_EX,
         `qams.${MAC}.handshake.stateDigest`,
         sendStateDigest({
           lastSendGoalId: this.missionStatus.lastSendGoalId,
@@ -85,7 +85,7 @@ class NetWorkManager {
       const requestId = randomUUID();
       const responsePromise = this.waitForRegisterResponse(requestId);
       const published = await this.rb.reqPublish(
-        CONTROL_EX,
+        HANDSHAKE_EX,
         `qams.register.req.${MAC}`,
         sendRegisterRequest({
           serialNumber: MAC,

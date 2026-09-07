@@ -7,7 +7,7 @@ import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
 import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { CONTROL_EX, IO_EX, RES_EX } from "~/mq/type/type";
+import { HANDSHAKE_EX, IO_EX, RES_EX } from "~/mq/type/type";
 import { AllControl } from "~/mq/type/control";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 
@@ -144,7 +144,7 @@ export default class Mission {
       // handler above is the actual settlement point via pendingReadStatusId matching,
       // so the returned promise here is intentionally not awaited/used.
       this.rb.reqPublishWithAck(
-        CONTROL_EX,
+        HANDSHAKE_EX,
         `qams.${MAC}.handshake.readStatus`,
         sendReadStatus(newState),
         undefined,

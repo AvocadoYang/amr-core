@@ -3,7 +3,7 @@ import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
 import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendErrorInfoCRD, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
-import { CONTROL_EX, IO_EX, RES_EX } from '~/mq/type/type';
+import { HANDSHAKE_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
 import { ReturnCode } from '~/mq/type/returnCode';
@@ -158,7 +158,7 @@ class Status {
 
         ROS.getVerityCargo$.subscribe((msg) => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
+            this.rb.reqPublish(HANDSHAKE_EX, `qams.${MAC}.handshake.cargoVerity`, sendCargoVerity(msg))
         });
 
         ROS.getStackInfo$.subscribe((msg) => {
@@ -168,12 +168,12 @@ class Status {
 
         ROS.systemState.subscribe((msg) => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
+            this.rb.reqPublish(HANDSHAKE_EX, `qams.${MAC}.handshake.systemState`, sendSystemState(msg))
         })
 
         ROS.forceRebindLocation.subscribe((msg) => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(CONTROL_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
+            this.rb.reqPublish(HANDSHAKE_EX, `qams.${MAC}.handshake.forceRebindLocation`, sendForceRebindLocation(String(msg)))
         })
     }
 

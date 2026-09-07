@@ -7,7 +7,7 @@ import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
 import { AllRes } from "./type/res";
-import { RES_EX, IO_EX, CONTROL_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_controlQName, q2a_amrResponseQName, a2q_handshakeQName, a2q_qamsResponseQName, HEARTBEAT_PONG_QUEUE } from "./type/type";
+import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
 import { ReturnCode } from "./type/returnCode";
@@ -491,19 +491,19 @@ export default class RabbitClient {
         await this.createExchange(HEARTBEAT_EX, "topic", { durable: true });
         await this.createExchange(RES_EX, "topic", { durable: true });
         await this.createExchange(IO_EX, "topic", { durable: true });
-        await this.createExchange(CONTROL_EX, "topic", { durable: true });
+        await this.createExchange(HANDSHAKE_EX, "topic", { durable: true });
 
-        await this.createQueue(q2a_controlQName, { durable: true });
-        await this.bindQueue(q2a_controlQName, CONTROL_EX, `amr.${MAC}.control.*`);
+        await this.createQueue(q2a_handshakeQName, { durable: true });
+        await this.bindQueue(q2a_handshakeQName, HANDSHAKE_EX, `amr.${MAC}.control.*`);
 
-        await this.createQueue(q2a_amrResponseQName, { durable: true });
-        await this.bindQueue(q2a_amrResponseQName, RES_EX, `amr.${MAC}.*.res`);
+        await this.createQueue(q2a_ResponseQName, { durable: true });
+        await this.bindQueue(q2a_ResponseQName, RES_EX, `amr.${MAC}.*.res`);
 
         await this.createQueue(a2q_handshakeQName, { durable: true });
-        await this.bindQueue(a2q_handshakeQName, CONTROL_EX, `qams.${MAC}.handshake.*`);
+        await this.bindQueue(a2q_handshakeQName, HANDSHAKE_EX, `qams.${MAC}.handshake.*`);
 
-        await this.createQueue(a2q_qamsResponseQName, { durable: true });
-        await this.bindQueue(a2q_qamsResponseQName, RES_EX, `qams.${MAC}.res.*`);
+        await this.createQueue(a2q_ResponseQName, { durable: true });
+        await this.bindQueue(a2q_ResponseQName, RES_EX, `qams.${MAC}.res.*`);
 
         await this.createQueue(HEARTBEAT_PONG_QUEUE, { durable: true });
         await this.bindQueue(HEARTBEAT_PONG_QUEUE, HEARTBEAT_EX, `qams.heartbeat.pong.*`);
@@ -686,7 +686,7 @@ export default class RabbitClient {
                 this.heartbeatOutput$.next(msg);
             }, true),
 
-            this.consume<AllRes>(q2a_amrResponseQName, (msg) => {
+            this.consume<AllRes>(q2a_ResponseQName, (msg) => {
                 // settle any outstanding reqPublishWithAck() regardless of session/forwarding
                 // decision below - it's still a legitimate response to our own request.
                 this.settlePendingAck(msg);
@@ -706,7 +706,7 @@ export default class RabbitClient {
                 };
             }),
 
-            this.consume<AllControl>(q2a_controlQName, (msg) => {
+            this.consume<AllControl>(q2a_handshakeQName, (msg) => {
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
