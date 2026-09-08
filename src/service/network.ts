@@ -74,6 +74,8 @@ class NetWorkManager {
           amrHasMission: this.amrStatus.amrHasMission,
           lastTransactionId: this.missionStatus.lastTransactionId,
           missionType: this.missionStatus.missionType,
+          rosbridgeConnect: this.connectStatus.rosbridge_isConnect,
+          amrServiceConnect: this.connectStatus.amr_service_isConnect
         }),
         { expiration: "3000" },
         requestId

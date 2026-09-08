@@ -17,8 +17,11 @@ export const q2a_ResponseQName = `${MAC}.q2a.handshake.res.queue`;
 export const q2a_handshakeQName = `${MAC}.q2a.handshake.queue`;
 export const q2a_registerResponseQName = `${MAC}.q2a.register.res.queue`;
 
+// heartbeatPingQName is deliberately excluded: it must keep being consumed through every
+// pause (QAMS session loss, ROS bridge drop, or AMR service drop) so the heartbeat
+// round-trip - network delay calc and the rosbridge/amrService flags it carries to QAMS -
+// never stops. See main.ts's combined connect gate and RabbitClient.pauseDynamicConsumers().
 export const dynamicListener = [
-    heartbeatPingQName,
     q2a_handshakeQName,
     q2a_ResponseQName
 ]

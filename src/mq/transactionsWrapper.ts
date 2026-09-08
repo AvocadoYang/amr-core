@@ -123,12 +123,24 @@ export const sendForceShutdown = () => {
     }
 }
 
+export const sendConnectionHealth = (data: {
+    rosbridgeConnect: boolean,
+    amrServiceConnect: boolean,
+}) => {
+    return {
+        cmd_id: CMD_ID.CONNECTION_HEALTH,
+        ...data
+    }
+}
+
 export const sendRegisterRequest = (data: {
     serialNumber: string,
     lastSendGoalId: string,
     amrHasMission: boolean,
     lastTransactionId: string,
     missionType: string,
+    rosbridgeConnect: boolean,
+    amrServiceConnect: boolean,
 }) => {
     return {
         cmd_id: CMD_ID.REGISTER,
@@ -155,7 +167,8 @@ type AllReqType =
     typeof sendSystemState |
     typeof sendForceRebindLocation |
     typeof sendForceShutdown |
-    typeof sendRegisterRequest
+    typeof sendRegisterRequest |
+    typeof sendConnectionHealth
 
 export type RequestMsgType = ReturnType<AllReqType>
 

@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
+import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
 import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
 import { RBClient } from "./mq";
@@ -12,8 +12,10 @@ import * as ROS from './ros'
 import { connectWithQAMS as heartbeat_connectWithQAMS } from './actions/heartbeatMonitor/input'
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
-import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, from, switchMap, take, tap } from "rxjs";
+import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, from, map, switchMap, take, tap } from "rxjs";
 import { errorLogger, infoLogger } from "./logger/logger";
+import { IO_EX } from "./mq/type/type";
+import { sendConnectionHealth } from "./mq/transactionsWrapper";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -63,22 +65,19 @@ class AmrCore {
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
-    // Start consuming as soon as the AMQP channel is up (fresh connect or reconnect) - independent
-    // of QAMS/rosbridge/amrService state, so consumers are already attached (no lost-message window)
-    // by the time a register request goes out, and never get torn down again while the process runs.
-    this.rabbit_connect$.pipe(
-      distinctUntilChanged(),
-      switchMap((rabbitConnect: boolean) => (rabbitConnect ? from(this.rb.consumeTopic()) : EMPTY))
-    ).subscribe();
 
-    // pause the control-queue consumer the moment QAMS is known unreachable (heartbeat
-    // timeout or a failed register), resume once a register handshake succeeds again -
-    // see RabbitClient.pauseDynamicConsumers() for why only that one queue is paused.
-    this.qams_connect$.pipe(
+
+    combineLatest([
+      this.qams_connect$,
+      this.rabbit_connect$,
+      this.ros_bridge_connect$,
+      this.amr_service_connect$
+    ]).pipe(
+      map(([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
+        return qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect
+      }),
       distinctUntilChanged(),
-      switchMap((qamsConnect: boolean) =>
-        qamsConnect ? from(this.rb.consumeTopic()) : from(this.rb.pauseDynamicConsumers())
-      )
+      switchMap((ready: boolean) => (ready ? from(this.rb.consumeTopic()) : from(this.rb.pauseDynamicConsumers())))
     ).subscribe();
 
     combineLatest([
@@ -88,7 +87,7 @@ class AmrCore {
       this.amr_service_connect$
     ]).pipe(
       distinctUntilChanged((prev, curr) => prev.every((value, index) => value === curr[index])),
-      tap(([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
+      tap(async ([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
         infoLogger.info("service connect status", {
           title: "system",
           type: "connect status",
@@ -99,9 +98,21 @@ class AmrCore {
             amrServiceConnect: amrServiceConnect ? "✅" : "❌"
           }
         });
-        // always reflect live state, even mid-outage, so Status' publish guards (qams_isConnect)
-        // actually stop status/telemetry traffic instead of staying stuck at the last "true"
+
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
+
+        if (rabbitConnect) {
+          await this.rb.init()
+        }
+
+        if (qamsConnect && rabbitConnect) {
+          this.rb.reqPublish(
+            IO_EX,
+            `amr.io.${MAC}.connectionHealth`,
+            sendConnectionHealth({ rosbridgeConnect, amrServiceConnect }),
+            { expiration: "3000" }
+          );
+        }
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
         if (!rabbitConnect) return EMPTY;
@@ -180,11 +191,6 @@ class AmrCore {
 
   }
 
-
-  // Resolves once (and only once - result is cached) after ROS.connected$/rosbridge signals
-  // up, or a bounded 2s timeout, whichever comes first. Gates only the very first REGISTER
-  // attempt after boot, since that's the one whose amrHasMission would otherwise reflect the
-  // in-memory default instead of live ROS state if RabbitMQ reconnects faster than rosbridge.
   private waitForFirstRosSignal(): Promise<void> {
     if (!this.firstRegisterGate) {
       this.firstRegisterGate = this.ros_bridge_connect$.value

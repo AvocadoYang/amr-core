@@ -25,6 +25,7 @@ export default class RabbitClient {
     private resTransactionOutput$: Subject<AllRes> = new Subject();
     private registerResTransactionOutput$: Subject<REGISTER_RES> = new Subject();
     private controlTransactionOutput$: Subject<AllControl> = new Subject();
+    private hasInit = false;
 
 
     private lastReceiveReq: Map<string, {
@@ -87,7 +88,6 @@ export default class RabbitClient {
                 title: "RabbitMQ",
                 type: "network"
             })
-            await this.init();
             this.output$.next(isConnected({ isConnected: true }))
             await this.flushPendingMessages();
 
@@ -114,7 +114,7 @@ export default class RabbitClient {
             });
         }
 
-
+        this.hasInit = false;
         this.consumedQueues.clear();
         this.output$.next(isConnected({ isConnected: false }));
         this.channel = null;
@@ -466,9 +466,7 @@ export default class RabbitClient {
                 // 用舊 channel ack，而非 this.channel!!!
                 if (!noAck) localChannel.ack(msg);
             } catch (err) {
-                // handler threw - the message was never actually processed. Ack-in-finally
-                // used to silently drop it here; nack + requeue-once instead so a transient
-                // handler failure gets a second chance instead of vanishing.
+
                 errorLogger.error(
                     `onMessage handler threw (${msg.fields.redelivered ? "already retried once, dropping" : "requeuing once"})`, {
                     title: "RabbitMQ",
@@ -524,20 +522,21 @@ export default class RabbitClient {
         });
     }
 
-    // stop draining the control queue while QAMS is unreachable, so residual mission
-    // commands queue up in RabbitMQ instead of being processed against a session that
-    // hasn't been decided by the next register handshake yet. Only q2a_handshakeQName -
-    // q2a_ResponseQName can't be paused this way since the REGISTER response rides on it
-    // too (see the inline guard in consumeTopic() instead), and heartbeatPingQName already
-    // has its own qams_isConnect guard. consumeTopic() re-attaches this once reconnected
-    // (it's idempotent, so safe to call repeatedly).
+    // stop draining the control/response queues while QAMS, ROS bridge, or the AMR service
+    // link is down (see main.ts's combined connect gate), so residual mission commands queue
+    // up in RabbitMQ instead of being processed against state that's no longer trustworthy.
+    // q2a_registerResponseQName can't be paused this way since the REGISTER response rides on
+    // it (see the inline guard in consumeTopic() instead), and heartbeatPingQName is
+    // intentionally not in dynamicListener at all - it must keep flowing through every pause
+    // so network-delay calc and the rosbridge/amrService flags on each pong never stop.
+    // consumeTopic() re-attaches this once reconnected (it's idempotent, so safe to call repeatedly).
     public async pauseDynamicConsumers() {
         await this.stopConsumeQueue(dynamicListener);
     }
 
     public async init() {
-
-
+        if (this.hasInit) return;
+        this.hasInit = true;
         await this.createExchange(HEARTBEAT_EX, "topic", { durable: true });
         await this.createExchange(RES_EX, "topic", { durable: true });
         await this.createExchange(IO_EX, "topic", { durable: true });
@@ -568,7 +567,6 @@ export default class RabbitClient {
         await this.createQueue(q2a_registerResponseQName, { durable: true });
         await this.bindQueue(q2a_registerResponseQName, RES_EX, `amr.register.res.${MAC}`)
         await this.channel.purgeQueue(q2a_registerResponseQName);
-        ;
 
         await this.consume<REGISTER_RES>(q2a_registerResponseQName, (msg) => {
             if (msg.payload.cmd_id === CMD_ID.REGISTER) {
@@ -576,6 +574,26 @@ export default class RabbitClient {
                 return;
             }
         });
+        await this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
+            if (!this.connectStatus.qams_isConnect) {
+                debugLogger.info("Drop heartbeat ping: QAMS not connected yet", {
+                    title: "RabbitMQ",
+                    type: "heartbeat",
+                    status: { session: msg.session }
+                });
+                return;
+            }
+            if (msg.session !== this.info.session) {
+                debugLogger.info("Drop heartbeat ping: session mismatch", {
+                    title: "RabbitMQ",
+                    type: "heartbeat",
+                    status: { expected: this.info.session, received: msg.session }
+                });
+                return;
+            }
+            this.heartbeatOutput$.next(msg);
+        }, true)
+
     }
 
     public onHeartbeat(cb: (action: HEARTBEAT) => void) {
@@ -737,26 +755,6 @@ export default class RabbitClient {
         await this.flushPendingMessages();
 
         const tags = await Promise.all([
-            this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
-                if (!this.connectStatus.qams_isConnect) {
-                    debugLogger.info("Drop heartbeat ping: QAMS not connected yet", {
-                        title: "RabbitMQ",
-                        type: "heartbeat",
-                        status: { session: msg.session }
-                    });
-                    return;
-                }
-                if (msg.session !== this.info.session) {
-                    debugLogger.info("Drop heartbeat ping: session mismatch", {
-                        title: "RabbitMQ",
-                        type: "heartbeat",
-                        status: { expected: this.info.session, received: msg.session }
-                    });
-                    return;
-                }
-                this.heartbeatOutput$.next(msg);
-            }, true),
-
             this.consume<AllRes>(q2a_ResponseQName, (msg) => {
                 // settle any outstanding reqPublishWithAck() regardless of session/forwarding
                 // decision below - it's still a legitimate response to our own request.
