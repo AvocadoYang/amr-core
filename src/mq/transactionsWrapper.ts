@@ -126,6 +126,8 @@ export const sendForceShutdown = () => {
 export const sendConnectionHealth = (data: {
     rosbridgeConnect: boolean,
     amrServiceConnect: boolean,
+    lastSendGoalId: string,
+    amrHasMission: boolean,
 }) => {
     return {
         cmd_id: CMD_ID.CONNECTION_HEALTH,

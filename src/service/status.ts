@@ -97,7 +97,7 @@ class Status {
                 x: -Math.sin((pose.yaw * Math.PI) / 180) * 0,
                 y: -Math.cos((pose.yaw * Math.PI) / 180) * 0,
             };
-            const Pose = { x: pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw }
+            const Pose = { x: pose.x + machineOffset.x, y: pose.y + machineOffset.y, yaw: pose.yaw };
             this.rb.reqPublish(IO_EX, `amr.io.${MAC}.pose`, sendPose(Pose), {
                 expiration: "3000"
             })

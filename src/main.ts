@@ -16,6 +16,7 @@ import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, fr
 import { errorLogger, infoLogger } from "./logger/logger";
 import { IO_EX } from "./mq/type/type";
 import { sendConnectionHealth } from "./mq/transactionsWrapper";
+import { CMD_ID } from "./mq/type/cmdId";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -101,47 +102,52 @@ class AmrCore {
 
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
 
-        if (rabbitConnect) {
-          await this.rb.init()
-        }
 
         if (qamsConnect && rabbitConnect) {
           this.rb.reqPublish(
             IO_EX,
             `amr.io.${MAC}.connectionHealth`,
-            sendConnectionHealth({ rosbridgeConnect, amrServiceConnect }),
+            sendConnectionHealth({
+              rosbridgeConnect,
+              amrServiceConnect,
+              lastSendGoalId: this.missionStatus.lastSendGoalId,
+              amrHasMission: this.amrStatus.amrHasMission
+            }),
             { expiration: "3000" }
           );
         }
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
         if (!rabbitConnect) return EMPTY;
+        return from(this.rb.init()).pipe(
+          switchMap(() => {
+            if (qamsConnect) return EMPTY;
 
-        if (!qamsConnect) {
-          // fleetConnect() no-ops if an attempt (incl. its own retry loop) is already in flight
-          return from(this.waitForFirstRosSignal().then(() => this.netWorkManager.fleetConnect()));
-        }
-
-        return EMPTY;
+            return from(this.waitForFirstRosSignal()).pipe(
+              tap(() => this.netWorkManager.fleetConnect())
+            );
+          })
+        );
       })
     ).subscribe();
+
+    this.rb.onRegisterResTransaction((action) => {
+      const { payload } = action;
+      if (payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
+        console.log(action, '@@@@@@@@@@@')
+      }
+    })
 
     this.netWorkManager.subscribe(async (action) => {
       switch (action.type) {
         case IS_CONNECTED:
           try {
-            const { isConnected, amrId, session, return_code, qamsSerialNum } = action;
-            if (isConnected) {
-              this.info.qamsSerialNum = qamsSerialNum;
-              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: this.registerProcess(action) })
-              this.fetchMap();
-            } else {
-              this.setSystemStatus({ amrId, session, return_code, qamsSerialNum, approveNotSameSession: false })
-            }
+            const { isConnected, amrId, session, qamsSerialNum } = action;
+            this.setSystemStatus({ amrId, session, qamsSerialNum });
             this.qams_connect$.next(isConnected);
-            this.hb.send(heartbeat_connectWithQAMS({ isConnected }))
+            this.hb.send(heartbeat_connectWithQAMS({ isConnected }));
           } catch (err) {
-            this.hb.send(heartbeat_connectWithQAMS({ isConnected: false }))
+            this.hb.send(heartbeat_connectWithQAMS({ isConnected: false }));
             this.qams_connect$.next(false);
           }
           break;
@@ -248,11 +254,12 @@ class AmrCore {
   }
 
   private setSystemStatus(data: TRANSACTION_INFO) {
-    const { amrId, session, return_code, approveNotSameSession } = data;
-    this.info.amrId = amrId;
-    this.info.session = session;
-    this.info.return_code = return_code
-    this.info.approveNotSameSession = approveNotSameSession
+    const { amrId, session, return_code, approveNotSameSession, qamsSerialNum } = data;
+    this.info.qamsSerialNum = qamsSerialNum ?? this.info.qamsSerialNum
+    this.info.amrId = amrId ?? this.info.amrId;
+    this.info.session = session ?? this.info.session;
+    this.info.return_code = return_code ?? this.info.return_code
+    this.info.approveNotSameSession = approveNotSameSession ?? this.info.approveNotSameSession
   }
 
   // Fire-and-forget: a slow/failed map fetch must never delay arming the heartbeat

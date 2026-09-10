@@ -6,7 +6,7 @@ import { MAC, RABBIT_MQ_HEARTBEAT, RABBIT_MQ_HOST, RABBIT_MQ_PASSWORD, RABBIT_MQ
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
-import { AllRes, REGISTER_RES } from "./type/res";
+import { AllRes, CONNECTION_HEATH_RES, REGISTER_RES } from "./type/res";
 import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { formatDate } from "~/helpers/system";
@@ -522,14 +522,7 @@ export default class RabbitClient {
         });
     }
 
-    // stop draining the control/response queues while QAMS, ROS bridge, or the AMR service
-    // link is down (see main.ts's combined connect gate), so residual mission commands queue
-    // up in RabbitMQ instead of being processed against state that's no longer trustworthy.
-    // q2a_registerResponseQName can't be paused this way since the REGISTER response rides on
-    // it (see the inline guard in consumeTopic() instead), and heartbeatPingQName is
-    // intentionally not in dynamicListener at all - it must keep flowing through every pause
-    // so network-delay calc and the rosbridge/amrService flags on each pong never stop.
-    // consumeTopic() re-attaches this once reconnected (it's idempotent, so safe to call repeatedly).
+
     public async pauseDynamicConsumers() {
         await this.stopConsumeQueue(dynamicListener);
     }
@@ -569,7 +562,7 @@ export default class RabbitClient {
         await this.channel.purgeQueue(q2a_registerResponseQName);
 
         await this.consume<REGISTER_RES>(q2a_registerResponseQName, (msg) => {
-            if (msg.payload.cmd_id === CMD_ID.REGISTER) {
+            if (msg.payload.cmd_id === CMD_ID.REGISTER || msg.payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
                 this.registerResTransactionOutput$.next(msg);
                 return;
             }
@@ -606,11 +599,9 @@ export default class RabbitClient {
     }
 
 
-    public onRegisterResTransaction(cb: (action: REGISTER_RES) => void) {
+    public onRegisterResTransaction(cb: (action: REGISTER_RES | CONNECTION_HEATH_RES) => void) {
         return this.registerResTransactionOutput$.subscribe((action) => {
-            if (action.payload.cmd_id === CMD_ID.REGISTER) {
-                cb(action);
-            }
+            cb(action);
         });
     }
 
@@ -774,6 +765,7 @@ export default class RabbitClient {
                     });
                     return;
                 }
+                console.log("msg session: ", msg.session, this.info.session, '!!!!!!!!!')
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;

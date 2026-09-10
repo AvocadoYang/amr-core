@@ -104,47 +104,50 @@ export default class HeartbeatMonitor {
 
     private createAmrServiceFn() {
         this.tcp_server = net.createServer((socket) => {
+            try {
 
-            /**
-              * {
-              *  timestamp: string,
-              *  heartbeat_count: 0-9999
-              * }
-              */
-            this.socket = socket;
+                /**
+                  * {
+                  *  timestamp: string,
+                  *  heartbeat_count: 0-9999
+                  * }
+                  */
+                this.socket = socket;
 
-            ROS.has_mission.pipe(take(1)).subscribe((hasMission) => {
-                if (hasMission && !this.missionStatus.lastSendGoalId) {
-                    ROS.cancelCarStatusAnyway("#")
-                };
-            })
+                ROS.has_mission.pipe(take(1)).subscribe((hasMission) => {
+                    if (hasMission && !this.missionStatus.lastSendGoalId) {
+                        ROS.cancelCarStatusAnyway("#")
+                    };
+                })
 
 
-            socket.on("data", async (chunk) => {
-                const schema = object({
-                    timestamp: number().required(),
-                    heartbeat_count: number().required()
-                });
-                try {
-                    const msg = JSON.parse(chunk.toString());
-                    const { heartbeat_count } = await schema.validate(msg).catch((err) => {
-                        throw new ValidationError(err, (err as ValidationError).message)
+                socket.on("data", async (chunk) => {
+                    const schema = object({
+                        timestamp: number().required(),
+                        heartbeat_count: number().required()
                     });
-                    const resCount = Number(heartbeat_count) + 1 > 9999 ? 0 : Number(heartbeat_count) + 1;
-                    this.amrServiceHeartbeatCount = resCount;
-                    this.amrServiceLastReceiveHeartbeatTime = Date.now()
+                    try {
+                        const msg = JSON.parse(chunk.toString());
+                        const { heartbeat_count } = await schema.validate(msg).catch((err) => {
+                            throw new ValidationError(err, (err as ValidationError).message)
+                        });
+                        const resCount = Number(heartbeat_count) + 1 > 9999 ? 0 : Number(heartbeat_count) + 1;
+                        this.amrServiceHeartbeatCount = resCount;
+                        this.amrServiceLastReceiveHeartbeatTime = Date.now()
 
-                } catch (err) {
-                    console.log(err);
-                }
-            });
+                    } catch (err) {
+                        console.log(err);
+                    }
+                });
 
-            this.amr_service_connect$.next(true);
-            this.output$.next(amrServiceIsConnected({ isConnected: true }));
-            setTimeout(() => {
-                ROS.updatePosition({ data: true });
-            }, 3000)
-
+                this.amr_service_connect$.next(true);
+                this.output$.next(amrServiceIsConnected({ isConnected: true }));
+                setTimeout(() => {
+                    ROS.updatePosition({ data: true });
+                }, 3000)
+            } catch (err) {
+                console.log(err, '@@@@@@@@@')
+            }
         });
 
         this.tcp_server.listen(8532, () => {

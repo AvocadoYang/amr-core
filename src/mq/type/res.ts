@@ -38,9 +38,21 @@ export type RegisterRes = {
     qamsSerialNum: string;
     message: string;
 }
+
+
+
 export type REGISTER_RES = Base<RegisterRes>;
 
+export type ConnectionHealthRes = {
+    cmd_id: CMD_ID.CONNECTION_HEALTH
+    return_code: string;
+    message: string;
+    id: string;
+}
+
+export type CONNECTION_HEATH_RES = Base<ConnectionHealthRes>
 
 
 
-export type AllRes = READ_STATUS | CARGO_VERITY;
+
+export type AllRes = READ_STATUS | CARGO_VERITY | CONNECTION_HEATH_RES;
