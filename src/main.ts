@@ -17,6 +17,7 @@ import { errorLogger, infoLogger } from "./logger/logger";
 import { IO_EX } from "./mq/type/type";
 import { sendConnectionHealth } from "./mq/transactionsWrapper";
 import { CMD_ID } from "./mq/type/cmdId";
+import { ConnectionHealthRes, CONNECTION_HEATH_RES } from "./mq/type/res";
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -78,7 +79,24 @@ class AmrCore {
         return qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect
       }),
       distinctUntilChanged(),
-      switchMap((ready: boolean) => (ready ? from(this.rb.consumeTopic()) : from(this.rb.pauseDynamicConsumers())))
+      switchMap((ready: boolean) => (ready
+        ? (
+          this.rb.registerResTransactionOutput$.pipe(
+            filter((action) => {
+              return action.payload.cmd_id == CMD_ID.CONNECTION_HEALTH
+            }),
+            take(1),
+            tap(async (action) => {
+              const payload: ConnectionHealthRes = action.payload as ConnectionHealthRes;
+              this.info.approveNotSameSession = this.registerProcess(payload.return_code);
+              console.log(this.info.approveNotSameSession, '@@@@@@@@@@')
+              await this.rb.consumeTopic();
+              console.log(action, '@@@@@@@@@@@@@@@@@@')
+            })
+          )
+        )
+        : from(this.rb.pauseDynamicConsumers()))
+      )
     ).subscribe();
 
     combineLatest([
@@ -131,12 +149,12 @@ class AmrCore {
       })
     ).subscribe();
 
-    this.rb.onRegisterResTransaction((action) => {
-      const { payload } = action;
-      if (payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
-        console.log(action, '@@@@@@@@@@@')
-      }
-    })
+    // this.rb.onRegisterResTransaction((action) => {
+    //   const { payload } = action;
+    //   if (payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
+    //     console.log(action, '@@@@@@@@@@@')
+    //   }
+    // }, true)
 
     this.netWorkManager.subscribe(async (action) => {
       switch (action.type) {
@@ -215,8 +233,7 @@ class AmrCore {
     return this.firstRegisterGate;
   }
 
-  private registerProcess(action: ReturnType<typeof isConnected>): boolean {
-    const { return_code } = action;
+  private registerProcess(return_code: string): boolean {
     // every branch below means "we've now heard QAMS's authoritative view this process
     // lifetime" - ends the ambiguity window that Mission's ROS-feedback handler holds off
     // canceling for while lastSendGoalId is still empty from a fresh restart.

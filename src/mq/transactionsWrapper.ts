@@ -137,12 +137,6 @@ export const sendConnectionHealth = (data: {
 
 export const sendRegisterRequest = (data: {
     serialNumber: string,
-    lastSendGoalId: string,
-    amrHasMission: boolean,
-    lastTransactionId: string,
-    missionType: string,
-    rosbridgeConnect: boolean,
-    amrServiceConnect: boolean,
 }) => {
     return {
         cmd_id: CMD_ID.REGISTER,
