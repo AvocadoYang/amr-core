@@ -97,11 +97,6 @@ export const sendStackInfo = (msg: string) => {
 }
 
 
-export const sendETX = () => {
-    return {
-        cmd_id: CMD_ID.ETX
-    }
-}
 
 export const sendSystemState = (msg: string) => {
     return {
@@ -144,6 +139,12 @@ export const sendRegisterRequest = (data: {
     }
 }
 
+export const sendResendMissionRequest = () => {
+    return {
+        cmd_id: CMD_ID.RESEND_MISSION_REQUEST
+    }
+}
+
 
 
 
@@ -159,12 +160,12 @@ type AllReqType =
     typeof sendCargoVerity |
     typeof sendIsRegistered |
     typeof sendStackInfo |
-    typeof sendETX |
     typeof sendSystemState |
     typeof sendForceRebindLocation |
     typeof sendForceShutdown |
     typeof sendRegisterRequest |
-    typeof sendConnectionHealth
+    typeof sendConnectionHealth |
+    typeof sendResendMissionRequest
 
 export type RequestMsgType = ReturnType<AllReqType>
 

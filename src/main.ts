@@ -14,8 +14,8 @@ import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatM
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
 import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, from, map, switchMap, take, tap } from "rxjs";
 import { errorLogger, infoLogger } from "./logger/logger";
-import { IO_EX } from "./mq/type/type";
-import { sendConnectionHealth } from "./mq/transactionsWrapper";
+import { HANDSHAKE_EX, IO_EX } from "./mq/type/type";
+import { sendConnectionHealth, sendResendMissionRequest } from "./mq/transactionsWrapper";
 import { CMD_ID } from "./mq/type/cmdId";
 import { ConnectionHealthRes, CONNECTION_HEATH_RES } from "./mq/type/res";
 
@@ -88,10 +88,27 @@ class AmrCore {
             take(1),
             tap(async (action) => {
               const payload: ConnectionHealthRes = action.payload as ConnectionHealthRes;
-              this.info.approveNotSameSession = this.registerProcess(payload.return_code);
-              console.log(this.info.approveNotSameSession, '@@@@@@@@@@')
+              const { approveNotSameSession, resendMission } = this.registerProcess(payload.return_code);
+              this.info.approveNotSameSession = approveNotSameSession;
               await this.rb.consumeTopic();
-              console.log(action, '@@@@@@@@@@@@@@@@@@')
+              if (this.info.approveNotSameSession) {
+                infoLogger.info("start consume qams handshake queue, accept not equal session", {
+                  amrId: "Rabbitmq",
+                  type: "create consumer"
+                })
+              } else {
+                infoLogger.info("start consume qams handshake queue, just accept equal session", {
+                  amrId: "Rabbitmq",
+                  type: "create consumer"
+                })
+              }
+              if (resendMission) {
+                this.rb.reqPublishWithAck(
+                  HANDSHAKE_EX,
+                  `qams.${MAC}.handshake.resend_mission_request`,
+                  sendResendMissionRequest()
+                )
+              }
             })
           )
         )
@@ -149,12 +166,7 @@ class AmrCore {
       })
     ).subscribe();
 
-    // this.rb.onRegisterResTransaction((action) => {
-    //   const { payload } = action;
-    //   if (payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
-    //     console.log(action, '@@@@@@@@@@@')
-    //   }
-    // }, true)
+
 
     this.netWorkManager.subscribe(async (action) => {
       switch (action.type) {
@@ -233,39 +245,40 @@ class AmrCore {
     return this.firstRegisterGate;
   }
 
-  private registerProcess(return_code: string): boolean {
+  private registerProcess(return_code: string): { approveNotSameSession: boolean, resendMission: boolean } {
     // every branch below means "we've now heard QAMS's authoritative view this process
     // lifetime" - ends the ambiguity window that Mission's ROS-feedback handler holds off
     // canceling for while lastSendGoalId is still empty from a fresh restart.
     this.missionStatus.awaitingReconcile = false;
     switch (return_code) {
       case ReturnCode.SUCCESS:
-        return false;
+        return { approveNotSameSession: false, resendMission: false };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
         ROS.cancelCarStatusAnyway("");
-        return false;
-      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
-        ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
-        return false;
+        return { approveNotSameSession: false, resendMission: false };
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
+        this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
+        ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
+        return { approveNotSameSession: false, resendMission: false };
       case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
         this.ms.resetMissionStatus("MISSION_TIMEOUT_LOGIN_SUCCESS");
-        return false;
+        return { approveNotSameSession: false, resendMission: true };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION:
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION");
-        return false;
+        return { approveNotSameSession: false, resendMission: true };
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
-        return true
+        return { approveNotSameSession: true, resendMission: false }
       case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
         // both sides think they know the active goal and disagree - conservative: cancel
         // and wait, do not assume which one is right (mirrors QAMS's own conservative
         // handling of this code, which also does not auto-resend)
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("LOGIN_SUCCESS_UNEXPECTED");
-        return false;
+        return { approveNotSameSession: false, resendMission: false };
       default:
-        return false
+        return { approveNotSameSession: false, resendMission: false }
     }
 
   }

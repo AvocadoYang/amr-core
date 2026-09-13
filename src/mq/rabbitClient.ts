@@ -538,7 +538,7 @@ export default class RabbitClient {
         await this.createQueue(q2a_handshakeQName, {
             durable: true,
         });
-        await this.bindQueue(q2a_handshakeQName, HANDSHAKE_EX, `amr.${MAC}.control.*`);
+        await this.bindQueue(q2a_handshakeQName, HANDSHAKE_EX, `amr.${MAC}.handshake.*`);
 
         await this.createQueue(q2a_ResponseQName, { durable: true });
         await this.bindQueue(q2a_ResponseQName, RES_EX, `amr.${MAC}.*.res`);
@@ -767,7 +767,6 @@ export default class RabbitClient {
                     });
                     return;
                 }
-                console.log("msg session: ", msg.session, this.info.session, '!!!!!!!!!')
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;

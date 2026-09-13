@@ -28,8 +28,8 @@ export enum CMD_ID {
   SYNC_DATA = "SYNC",
   FORCE_SHUTDOWN = "FS",
   MOVEMENT_CONFIG = 'MC',
-  ETX = "ETX",
-  CONNECTION_HEALTH = "CH"
+  CONNECTION_HEALTH = "CH",
+  RESEND_MISSION_REQUEST = "RM"
 }
 
 export const blackList = [

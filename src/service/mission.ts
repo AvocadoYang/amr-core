@@ -114,6 +114,15 @@ export default class Mission {
         return;
       }
 
+      if (this.missionStatus.lastSendGoalId !== readStatus.status.goal_id.id) {
+        errorLogger.error(`amr mission id not equal to amr core record id`, {
+          title: "mission",
+          type: "abnormal read status",
+          status: { readStatus, amrCoreRecordId: this.missionStatus.lastSendGoalId }
+        });
+        return;
+      }
+
       const newState = {
         read: {
           feedback_id: readStatus.status.goal_id.id, // 我們的uid
