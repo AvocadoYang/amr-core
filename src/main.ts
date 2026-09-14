@@ -173,6 +173,11 @@ class AmrCore {
         case IS_CONNECTED:
           try {
             const { isConnected, amrId, session, qamsSerialNum } = action;
+            infoLogger.info("receive qams register respone", {
+              amrId: "network",
+              type: "connect status",
+              status: { isConnected, lastSession: this.info.session, newSession: session }
+            })
             this.setSystemStatus({ amrId, session, qamsSerialNum });
             this.qams_connect$.next(isConnected);
             this.hb.send(heartbeat_connectWithQAMS({ isConnected }));

@@ -8,7 +8,7 @@ import { CMD_ID } from "~/mq/type/cmdId";
 import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { HANDSHAKE_EX, IO_EX, RES_EX } from "~/mq/type/type";
-import { AllControl } from "~/mq/type/control";
+import { Handshake } from "~/mq/type/control";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 
 export default class Mission {
@@ -163,7 +163,7 @@ export default class Mission {
 
   }
 
-  private reqProcess(action: AllControl) {
+  private reqProcess(action: Handshake) {
     const { payload } = action;
     const { id, cmd_id, amrId } = payload;
     switch (payload.cmd_id) {

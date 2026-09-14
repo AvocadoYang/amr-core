@@ -130,7 +130,7 @@ export type PVTP_SWITCH = Base<Pvtp_Switch>;
 
 
 
-export type AllControl =
+export type Handshake =
     SHORTEST_PATH |
     IS_ALLOW_PATH |
     REROUTE_PATH |

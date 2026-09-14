@@ -1,14 +1,14 @@
 import * as amqp from "amqplib";
 import winston from 'winston';
 import { infoLogger, warnLogger, errorLogger, rb_transactionLogger, debugLogger, rb_heartbeatLogger } from "~/logger/logger";
-import { Subject, take } from "rxjs";
+import { Subject, take, timeout } from "rxjs";
 import { MAC, RABBIT_MQ_HEARTBEAT, RABBIT_MQ_HOST, RABBIT_MQ_PASSWORD, RABBIT_MQ_PORT, RABBIT_MQ_USER } from "~/configs"
 import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
 import { AllRes, CONNECTION_HEATH_RES, REGISTER_RES } from "./type/res";
 import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
-import { AllControl, HEARTBEAT } from "./type/control";
+import { Handshake, HEARTBEAT } from "./type/control";
 import { ReturnCode } from "./type/returnCode";
 import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
@@ -24,7 +24,7 @@ export default class RabbitClient {
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject<HEARTBEAT>();
     private resTransactionOutput$: Subject<AllRes> = new Subject<AllRes>();
     public registerResTransactionOutput$: Subject<REGISTER_RES | CONNECTION_HEATH_RES> = new Subject<REGISTER_RES | CONNECTION_HEATH_RES>();
-    private controlTransactionOutput$: Subject<AllControl> = new Subject<AllControl>();
+    private controlTransactionOutput$: Subject<Handshake> = new Subject<Handshake>();
     private hasInit = false;
 
 
@@ -144,9 +144,10 @@ export default class RabbitClient {
 
     private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
         // AMQP heartbeat is specified in seconds (unlike keepAliveDelay below, which is ms) - do not scale it.
+
         const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT}`;
         try {
-            const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000 });
+            const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT, timeout: 3000 });
             return [conn, url];
         } catch (err) {
             errorLogger.error(`Connection failed with ${url}`, {
@@ -607,7 +608,7 @@ export default class RabbitClient {
         });
     }
 
-    public onControlTransaction(cb: (action: AllControl) => void) {
+    public onControlTransaction(cb: (action: Handshake) => void) {
         return this.controlTransactionOutput$.subscribe(cb);
     }
 
@@ -770,17 +771,33 @@ export default class RabbitClient {
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                    if (canPass) this.resTransactionOutput$.next(msg);
+                    if (canPass) {
+                        this.resTransactionOutput$.next(msg);
+                    } else {
+                        warnLogger.warn('discard not equal session [Response]', {
+                            amrId: "Rabbitmq",
+                            type: "consume filter",
+                            msg
+                        })
+                    }
                 } else {
                     this.resTransactionOutput$.next(msg);
                 };
             }),
 
-            this.consume<AllControl>(q2a_handshakeQName, (msg) => {
+            this.consume<Handshake>(q2a_handshakeQName, (msg) => {
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                    if (canPass) this.controlTransactionOutput$.next(msg);
+                    if (canPass) {
+                        this.controlTransactionOutput$.next(msg);
+                    } else {
+                        warnLogger.warn('discard not equal session [Hanshake]', {
+                            amrId: "Rabbitmq",
+                            type: "consume filter",
+                            msg
+                        })
+                    }
                 } else {
                     this.controlTransactionOutput$.next(msg);
                 }

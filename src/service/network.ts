@@ -62,7 +62,14 @@ class NetWorkManager {
 
   private async attemptConnect() {
     try {
-
+      if (!this.connectStatus.rabbitMQ_isConnect) {
+        warnLogger.warn("rabbitmq disconnrct, connect interrupt", {
+          amrId: "network",
+          type: "attempt connect"
+        });
+        this.connectingInProgress = false;
+        return;
+      }
       const requestId = randomUUID();
       const responsePromise = this.waitForRegisterResponse(requestId);
       const published = await this.rb.reqPublish(
