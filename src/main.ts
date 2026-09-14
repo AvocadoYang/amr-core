@@ -88,6 +88,7 @@ class AmrCore {
             take(1),
             tap(async (action) => {
               const payload: ConnectionHealthRes = action.payload as ConnectionHealthRes;
+              this.info.session = payload.newSession;
               const { approveNotSameSession, resendMission } = this.registerProcess(payload.return_code);
               this.info.approveNotSameSession = approveNotSameSession;
               await this.rb.consumeTopic();

@@ -576,14 +576,7 @@ export default class RabbitClient {
                 });
                 return;
             }
-            if (msg.session !== this.info.session) {
-                debugLogger.info("Drop heartbeat ping: session mismatch", {
-                    title: "RabbitMQ",
-                    type: "heartbeat",
-                    status: { expected: this.info.session, received: msg.session }
-                });
-                return;
-            }
+
             this.heartbeatOutput$.next(msg);
         }, true)
 

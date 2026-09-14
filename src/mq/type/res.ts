@@ -47,6 +47,7 @@ export type ConnectionHealthRes = {
     cmd_id: CMD_ID.CONNECTION_HEALTH
     return_code: string;
     message: string;
+    newSession: string;
     id: string;
 }
 
