@@ -67,6 +67,15 @@ class AmrCore {
     this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
+    // update session when send [CH] transaction each time
+    this.rb.registerResTransactionOutput$.pipe(
+      filter((action) => {
+        return action.payload.cmd_id == CMD_ID.CONNECTION_HEALTH
+      }),
+    ).subscribe((action: CONNECTION_HEATH_RES) => {
+      const { newSession } = action.payload;
+      this.setSystemStatus({ session: newSession })
+    })
 
 
     combineLatest([

@@ -568,7 +568,7 @@ export default class RabbitClient {
         });
         await this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
             if (!this.connectStatus.qams_isConnect) {
-                debugLogger.info("Drop heartbeat ping: QAMS not connected yet", {
+                warnLogger.warn("Drop heartbeat ping: QAMS not connected yet", {
                     title: "RabbitMQ",
                     type: "heartbeat",
                     status: { session: msg.session }
@@ -576,7 +576,7 @@ export default class RabbitClient {
                 return;
             }
             if (msg.session !== this.info.session) {
-                debugLogger.info("Drop heartbeat ping: session mismatch", {
+                warnLogger.warn("Drop heartbeat ping: session mismatch", {
                     title: "RabbitMQ",
                     type: "heartbeat",
                     status: { expected: this.info.session, received: msg.session }

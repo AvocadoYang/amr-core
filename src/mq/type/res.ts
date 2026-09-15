@@ -48,6 +48,7 @@ export type ConnectionHealthRes = {
     return_code: string;
     message: string;
     id: string;
+    newSession: string;
 }
 
 export type CONNECTION_HEATH_RES = Base<ConnectionHealthRes>
