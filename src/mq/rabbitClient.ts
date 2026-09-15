@@ -753,12 +753,6 @@ export default class RabbitClient {
                 // decision below - it's still a legitimate response to our own request.
                 this.settlePendingAck(msg);
 
-
-                // this queue also carries the REGISTER response (handled above), so it can
-                // never be paused the way q2a_handshakeQName is - drop non-REGISTER traffic
-                // inline instead, same guard heartbeatPingQName already uses, so a response
-                // sent by QAMS just before it noticed the disconnect (still same session)
-                // isn't acted on during a window we already know is down.
                 if (!this.connectStatus.qams_isConnect) {
                     debugLogger.info("Drop response: QAMS not connected yet", {
                         title: "RabbitMQ",
