@@ -41,10 +41,10 @@ class Status {
                     break;
                 case CMD_ID.EMERGENCY_STOP:
                     ROS.pause(payload.payload);
-                    this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
-                        sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
-                        { expiration: "2000" }
-                    )
+                    // this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
+                    //     sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                    //     { expiration: "2000" }
+                    // )
                     break;
                 case CMD_ID.MOVEMENT_CONFIG:
                     ROS.moveConfig(payload.payload);
