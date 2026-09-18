@@ -80,13 +80,7 @@ export type UpdatePose = {
 }
 export type UPDATE_POSE = Base<UpdatePose>;
 
-export type EmergencyStop = {
-    cmd_id: CMD_ID.EMERGENCY_STOP,
-    id: string,
-    amrId: string,
-    payload: string
-}
-export type EMERGENCY_STOP = Base<EmergencyStop>;
+
 
 export type UpdateMovementConfig = {
     cmd_id: CMD_ID.MOVEMENT_CONFIG,
@@ -111,13 +105,6 @@ export type ForceShutdown = {
 }
 export type FORCE_SHUTDOWN = Base<ForceShutdown>
 
-export type HasCargo = {
-    cmd_id: CMD_ID.HAS_CARGO,
-    amrId: string,
-    id: string,
-    hasCargo: string
-}
-export type HAS_CARGO = Base<HasCargo>;
 
 export type Pvtp_Switch = {
     cmd_id: CMD_ID.PTVP_SWITCH,
@@ -130,16 +117,14 @@ export type PVTP_SWITCH = Base<Pvtp_Switch>;
 
 
 
-export type AllControl =
+export type AllHandshake =
     SHORTEST_PATH |
     IS_ALLOW_PATH |
     REROUTE_PATH |
     WRITE_CANCEL |
     WRITE_STATUS |
     UPDATE_POSE |
-    EMERGENCY_STOP |
     FORCE_RESET |
-    HAS_CARGO |
     PVTP_SWITCH |
     FORCE_SHUTDOWN |
     UPDATE_MOVEMENT_CONFIG

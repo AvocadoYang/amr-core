@@ -6,7 +6,7 @@ import * as ROS from "../ros";
 import { RES_EX } from "~/mq/type/type";
 import { sendBaseResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
-import { AllControl } from "~/mq/type/control";
+import { AllHandshake } from "~/mq/type/handshake";
 import { AllRes } from "~/mq/type/res";
 import { TRANSACTION_INFO } from "~/types/status";
 
@@ -34,7 +34,7 @@ class MoveControl {
     this.mock();
   }
 
-  private controlProcess(action: AllControl) {
+  private controlProcess(action: AllHandshake) {
     try {
       const { payload } = action;
       const { id, cmd_id, amrId } = payload;

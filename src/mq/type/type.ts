@@ -19,7 +19,7 @@ export const a2q_ResponseQName = `${MAC}.a2q.handshake.res.queue`;
 export const q2a_ResponseQName = `${MAC}.q2a.handshake.res.queue`;
 export const q2a_handshakeQName = `${MAC}.q2a.handshake.queue`;
 export const q2a_registerResponseQName = `${MAC}.q2a.register.res.queue`;
-
+export const q2a_ioQName = `${MAC}.q2a.io.queue`
 
 
 // heartbeatPingQName is deliberately excluded: it must keep being consumed through every

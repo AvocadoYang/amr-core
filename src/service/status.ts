@@ -39,13 +39,13 @@ class Status {
                     const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
                     this.map = data;
                     break;
-                case CMD_ID.EMERGENCY_STOP:
-                    ROS.pause(payload.payload);
-                    // this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
-                    //     sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
-                    //     { expiration: "2000" }
-                    // )
-                    break;
+                // case CMD_ID.EMERGENCY_STOP:
+                //     ROS.pause(payload.payload);
+                //     // this.rb.resPublish(RES_EX, `qams.${MAC}.res.emergencyStop`,
+                //     //     sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
+                //     //     { expiration: "2000" }
+                //     // )
+                //     break;
                 case CMD_ID.MOVEMENT_CONFIG:
                     ROS.moveConfig(payload.payload);
                     this.rb.resPublish(RES_EX, `qams.${MAC}.res.movement_configs`,
@@ -59,9 +59,6 @@ class Status {
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     )
-                    break;
-                case CMD_ID.HAS_CARGO:
-                    ROS.sendHasCargo(payload.hasCargo);
                     break;
                 case CMD_ID.FORCE_SHUTDOWN:
                     ROS.sendForceShutdown(true);
@@ -78,13 +75,21 @@ class Status {
             }
         });
 
-        // this.rb.onResTransaction(async (action) => {
-        //     const { payload, serialNum} = action;
-        //     const { id, cmd_id } = payload;
-        //     switch(payload.cmd_id){
-        //         case
-        //     }
-        // })
+        this.rb.onIoTransaction((action) => {
+            const { payload } = action;
+            const { id, cmd_id } = payload;
+            switch (payload.cmd_id) {
+                case CMD_ID.EMERGENCY_STOP:
+                    ROS.pause(payload.payload);
+                    break;
+                case CMD_ID.HAS_CARGO:
+                    ROS.sendHasCargo(payload.hasCargo);
+                    break;
+                default:
+                    break
+            }
+        });
+
 
         /** ROS subscribe */
 
@@ -163,7 +168,7 @@ class Status {
 
         ROS.getStackInfo$.subscribe((msg) => {
             if (!this.connectStatus.qams_isConnect) return;
-            this.rb.reqPublish(IO_EX, `amr.io.${MAC}.stackInfo`, sendStackInfo(msg))
+            this.rb.reqPublish(HANDSHAKE_EX, `qams.${MAC}.handshake.stackInfo`, sendStackInfo(msg))
         })
 
         ROS.systemState.subscribe((msg) => {

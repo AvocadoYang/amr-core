@@ -7,8 +7,9 @@ import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
 import { AllRes, CONNECTION_HEATH_RES, REGISTER_RES } from "./type/res";
-import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, REGISTER_REQ_QUEUE, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
-import { AllControl, HEARTBEAT } from "./type/control";
+import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, REGISTER_REQ_QUEUE, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName, q2a_ioQName } from "./type/type";
+import { AllHandshake, HEARTBEAT } from "./type/handshake";
+import { AllIO } from './type/io'
 import { ReturnCode } from "./type/returnCode";
 import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
@@ -24,7 +25,8 @@ export default class RabbitClient {
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject<HEARTBEAT>();
     private resTransactionOutput$: Subject<AllRes> = new Subject<AllRes>();
     public registerResTransactionOutput$: Subject<REGISTER_RES | CONNECTION_HEATH_RES> = new Subject<REGISTER_RES | CONNECTION_HEATH_RES>();
-    private controlTransactionOutput$: Subject<AllControl> = new Subject<AllControl>();
+    private controlTransactionOutput$: Subject<AllHandshake> = new Subject<AllHandshake>();
+    private q2aIoTransactionOutput$: Subject<AllIO> = new Subject<AllIO>();
     private hasInit = false;
 
 
@@ -563,6 +565,10 @@ export default class RabbitClient {
         await this.bindQueue(q2a_registerResponseQName, RES_EX, `amr.register.res.${MAC}`)
         await this.channel.purgeQueue(q2a_registerResponseQName);
 
+        await this.createQueue(q2a_ioQName, { durable: true });
+        await this.bindQueue(q2a_ioQName, IO_EX, `q2a.io.*.${MAC}`);
+        await this.channel.purgeQueue(q2a_registerResponseQName);
+
         await this.consume<REGISTER_RES | CONNECTION_HEATH_RES>(q2a_registerResponseQName, (msg) => {
             if (msg.payload.cmd_id === CMD_ID.REGISTER || msg.payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
                 this.registerResTransactionOutput$.next(msg);
@@ -610,8 +616,12 @@ export default class RabbitClient {
         });
     }
 
-    public onControlTransaction(cb: (action: AllControl) => void) {
+    public onControlTransaction(cb: (action: AllHandshake) => void) {
         return this.controlTransactionOutput$.subscribe(cb);
+    }
+
+    public onIoTransaction(cb: (action: AllIO) => void) {
+        return this.q2aIoTransactionOutput$.subscribe(cb)
     }
 
 
@@ -773,7 +783,7 @@ export default class RabbitClient {
                 };
             }),
 
-            this.consume<AllControl>(q2a_handshakeQName, (msg) => {
+            this.consume<AllHandshake>(q2a_handshakeQName, (msg) => {
                 const checkSession = (msg.session == this.info.session);
                 if (!checkSession) {
                     const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
@@ -781,6 +791,11 @@ export default class RabbitClient {
                 } else {
                     this.controlTransactionOutput$.next(msg);
                 }
+            }),
+
+            this.consume<AllIO>(q2a_ioQName, (msg) => {
+                if (msg.session !== this.info.session) return;
+                this.q2aIoTransactionOutput$.next(msg);
             })
         ]);
         return tags;
