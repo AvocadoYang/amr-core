@@ -84,11 +84,35 @@ class AmrCore {
       this.ros_bridge_connect$,
       this.amr_service_connect$
     ]).pipe(
-      map(([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
-        return qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect
+      map((connectStatus) => {
+        const [qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect] = connectStatus;
+        const disconnectedServices: string[] = []
+        if (!connectStatus.every((v) => v)) {
+          connectStatus.forEach((isConnect, i) => {
+            if (!isConnect) {
+              switch (i) {
+                case 0:
+                  disconnectedServices.push("QAMS")
+                  return;
+                case 1:
+                  disconnectedServices.push("RabbitMQ")
+                  return;
+                case 2:
+                  disconnectedServices.push("ROS Bridge")
+                  return;
+                case 3:
+                  disconnectedServices.push("AMR Service")
+                  return;
+              }
+            }
+          })
+        }
+        const disconnectService = disconnectedServices.join(', ');
+        const reason = disconnectService.length ? `disconnect service: ${disconnectService}` : ""
+        return { ready: qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect, reason }
       }),
       distinctUntilChanged(),
-      switchMap((ready: boolean) => (ready
+      switchMap(({ ready, reason }) => (ready
         ? (
           this.rb.registerResTransactionOutput$.pipe(
             filter((action) => {
@@ -121,7 +145,7 @@ class AmrCore {
             })
           )
         )
-        : from(this.rb.pauseDynamicConsumers()))
+        : from(this.rb.pauseDynamicConsumers(reason)))
       )
     ).subscribe();
 

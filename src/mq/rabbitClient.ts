@@ -485,8 +485,8 @@ export default class RabbitClient {
         return consumer.consumerTag;
     }
 
-    public async stopConsumeQueue(queueNames: string[]) {
-        debugLogger.info('run stop-consuming process', {
+    public async stopConsumeQueue(queueNames: string[], reason: string) {
+        debugLogger.info(`run stop-consuming process. ${reason}`, {
             title: "RabbitMQ",
             type: 'stop consume',
             status: {
@@ -524,8 +524,9 @@ export default class RabbitClient {
     }
 
 
-    public async pauseDynamicConsumers() {
-        await this.stopConsumeQueue(dynamicListener);
+    public async pauseDynamicConsumers(reason: string) {
+
+        await this.stopConsumeQueue(dynamicListener, reason);
     }
 
     public async init() {
@@ -678,11 +679,6 @@ export default class RabbitClient {
             } else {
                 if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
                     rb_heartbeatLogger.info("Send heartbeat to QAMS", {
-                        title: "system",
-                        type: "ack",
-                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                    })
-                    debugLogger.info("Send heartbeat to QAMS", {
                         title: "system",
                         type: "ack",
                         status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
