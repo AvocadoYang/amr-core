@@ -7,7 +7,7 @@ import * as faker from 'faker';
 import { isConnected, Output } from "~/actions/rabbitmq/output";
 import { RequestMsgType, ResponseMsgType, sendCargoVerity, sendHeartBeatResponse } from "./transactionsWrapper";
 import { AllRes, CONNECTION_HEATH_RES, REGISTER_RES } from "./type/res";
-import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
+import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, REGISTER_REQ_QUEUE, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName } from "./type/type";
 import { AllControl, HEARTBEAT } from "./type/control";
 import { ReturnCode } from "./type/returnCode";
 import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
@@ -551,6 +551,9 @@ export default class RabbitClient {
 
         await this.createQueue(HEARTBEAT_PONG_QUEUE, { durable: true });
         await this.bindQueue(HEARTBEAT_PONG_QUEUE, HEARTBEAT_EX, `qams.heartbeat.pong.*`);
+
+        await this.createQueue(REGISTER_REQ_QUEUE, { durable: true })
+        await this.bindQueue(REGISTER_REQ_QUEUE, HANDSHAKE_EX, `qams.register.req.*`);
 
         await this.createQueue(heartbeatPingQName, { autoDelete: false });
         await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${MAC}`);
