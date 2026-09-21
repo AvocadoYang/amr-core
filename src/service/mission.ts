@@ -20,6 +20,11 @@ export default class Mission {
   // ack'd without re-issuing a redundant cancel to the AMR
   private lastCanceledId: string = ""
 
+  // goal ids we canceled ourselves via WRITE_CANCEL. ROS still publishes a result for a
+  // canceled goal after we've already cleared the mission record, so that result must be
+  // recognized (by goal id) and dropped instead of being treated as abnormal.
+  private canceledGoalIds: Set<string> = new Set();
+
   constructor(
     private rb: RBClient,
     private missionStatus: MISSION_STATUS,
@@ -105,6 +110,15 @@ export default class Mission {
     });
 
     ROS.getReadStatus$.subscribe((readStatus) => {
+      const resultGoalId = readStatus.status.goal_id.id;
+      if (this.canceledGoalIds.delete(resultGoalId)) {
+        infoLogger.info(`ignore result of manually canceled mission`, {
+          title: "mission",
+          type: "mission cancel result",
+          status: { mid: resultGoalId, action_status: readStatus.status.status }
+        });
+        return;
+      }
       if (!this.missionStatus.lastSendGoalId) {
         warnLogger.warn(`No mission is currently in progress.`, {
           title: "mission",
@@ -171,6 +185,8 @@ export default class Mission {
         const { status } = payload;
         const { operation } = status.Body;
         const misType = operation.type;
+        // the same goal id may be legitimately re-sent after a cancel; its result must count
+        this.canceledGoalIds.delete(status.Id);
 
 
         if ((id && this.missionStatus.lastTransactionId === id) || (status.Id && this.missionStatus.lastSendGoalId === status.Id)) {
@@ -237,6 +253,11 @@ export default class Mission {
         // retried duplicate cancel - already ack'd above, skip re-issuing the ROS cancel
         if (id && this.lastCanceledId === id) break;
         this.lastCanceledId = id;
+        // remember which goal(s) we're canceling before the record is wiped, so the
+        // result ROS sends back for it can be told apart from a genuinely stray one
+        [this.missionStatus.lastSendGoalId, payload.feedback_id]
+          .filter(Boolean)
+          .forEach((goalId) => this.canceledGoalIds.add(goalId));
         this.resetMissionStatus("WRITE_CANCEL");
         ROS.cancelCarStatusAnyway(payload.feedback_id);
         break;
