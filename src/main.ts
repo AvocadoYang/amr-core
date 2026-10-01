@@ -74,6 +74,14 @@ class AmrCore {
       }),
     ).subscribe((action: CONNECTION_HEATH_RES) => {
       const { newSession } = action.payload;
+      infoLogger.info("update session", {
+        title: "system",
+        type: "update session",
+        status: {
+          oldSession: this.info.session,
+          newSession
+        }
+      });
       this.setSystemStatus({ session: newSession })
     })
 

@@ -53,6 +53,10 @@ export default class RabbitClient {
         onSettled: (res: AllRes) => void;
     }> = new Map();
 
+    // RG / CH 送出的 req id，只有收到對應 id 的 res 才處理；逾時未收到就移除避免累積
+    private pendingRegisterReqIds: Map<string, ReturnType<typeof setTimeout>> = new Map();
+    private readonly registerReqTtlMs = 30000;
+
     private retryTime: number;
     constructor(
         private info: TRANSACTION_INFO,
@@ -246,6 +250,14 @@ export default class RabbitClient {
         });
     }
 
+    private trackRegisterReq(id: string) {
+        const prev = this.pendingRegisterReqIds.get(id);
+        if (prev) clearTimeout(prev);
+        this.pendingRegisterReqIds.set(id, setTimeout(() => {
+            this.pendingRegisterReqIds.delete(id);
+        }, this.registerReqTtlMs));
+    }
+
     public async reqPublish(
         exchangeName: string,
         routingKey: string,
@@ -255,6 +267,10 @@ export default class RabbitClient {
     ) {
         const id = customId ?? faker.datatype.uuid();
         const flag = "REQ";
+
+        if (message.cmd_id === CMD_ID.REGISTER || message.cmd_id === CMD_ID.CONNECTION_HEALTH) {
+            this.trackRegisterReq(id);
+        }
 
         const jMsg = {
             id,
@@ -564,14 +580,25 @@ export default class RabbitClient {
 
         await this.createQueue(q2a_registerResponseQName, { durable: true });
         await this.bindQueue(q2a_registerResponseQName, RES_EX, `amr.register.res.${MAC}`)
-        await this.channel.purgeQueue(q2a_registerResponseQName);
 
         await this.createQueue(q2a_ioQName, { durable: true });
         await this.bindQueue(q2a_ioQName, IO_EX, `q2a.io.*.${MAC}`);
-        await this.channel.purgeQueue(q2a_registerResponseQName);
+        await this.channel.purgeQueue(q2a_ioQName);
 
         await this.consume<REGISTER_RES | CONNECTION_HEATH_RES>(q2a_registerResponseQName, (msg) => {
             if (msg.payload.cmd_id === CMD_ID.REGISTER || msg.payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
+                // 只處理有對應送出 req 的 res，丟棄重連前殘留在 queue 中的舊回應
+                const timer = this.pendingRegisterReqIds.get(msg.payload.id);
+                if (!timer) {
+                    warnLogger.warn(`Drop [response] message (${msg.payload.cmd_id}): no matching request id`, {
+                        title: "RabbitMQ",
+                        type: "register response",
+                        status: { msg: msg.payload, session: msg.session }
+                    });
+                    return;
+                }
+                clearTimeout(timer);
+                this.pendingRegisterReqIds.delete(msg.payload.id);
                 this.registerResTransactionOutput$.next(msg);
                 return;
             }
