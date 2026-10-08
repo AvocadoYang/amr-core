@@ -51,7 +51,6 @@ class AmrCore {
   private ms: MissionManager;
   private mc: MoveControl;
   private st: Status;
-  private map: MapType = { locations: [], roads: [], zones: [], regions: [] };
 
   // single source of truth for the 4 upstream connections; every other service reacts to what main decides here instead of tracking its own copy
   private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -64,7 +63,7 @@ class AmrCore {
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus)
     this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus);
-    this.st = new Status(this.rb, this.info, this.connectStatus, this.map, this.amrStatus);
+    this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
     // update session when send [CH] transaction each time
@@ -325,20 +324,7 @@ class AmrCore {
     this.info.approveNotSameSession = approveNotSameSession ?? this.info.approveNotSameSession
   }
 
-  // Fire-and-forget: a slow/failed map fetch must never delay arming the heartbeat
-  // watchdog or be mistaken for a QAMS connection failure (see IS_CONNECTED above).
-  private async fetchMap() {
-    try {
-      const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`, { timeout: 5000 });
-      this.map = data;
-    } catch (err) {
-      errorLogger.error("failed to fetch map from QAMS", {
-        title: "system",
-        type: "map",
-        status: err instanceof Error ? err.message : String(err)
-      });
-    }
-  }
+
 
   private resetAmrStatus() {
     this.amrStatus.amrHasMission = undefined;

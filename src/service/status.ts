@@ -19,7 +19,6 @@ class Status {
         private rb: RBClient,
         private info: TRANSACTION_INFO,
         private connectStatus: CONNECT_STATUS,
-        private map: MapType,
         private amrStatus: AMR_STATUS
     ) {
 
@@ -36,8 +35,6 @@ class Status {
                         sendBaseResponse({ cmd_id, id, amrId: this.info.amrId, return_code: ReturnCode.SUCCESS }),
                         { expiration: "2000" }
                     );
-                    const { data } = await axios.get(`http://${MISSION_CONTROL_HOST}:${MISSION_CONTROL_PORT}/api/test/map`);
-                    this.map = data;
                     break;
                 // case CMD_ID.EMERGENCY_STOP:
                 //     ROS.pause(payload.payload);
