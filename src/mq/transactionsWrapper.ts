@@ -1,5 +1,6 @@
 import { CMD_ID } from './type/cmdId';
 import { ReturnCode } from './type/returnCode';
+import { PENDING_READ_STATUS, READ_RESULT } from '~/types/status';
 
 
 export const sendHeartbeat = (heartbeat: number) => {
@@ -24,12 +25,7 @@ export const sendFeedBack = (feedback: string) => {
 }
 
 export const sendReadStatus = (data: {
-    read: {
-        feedback_id: string, // 我們的uid
-        action_status: number,
-        result_status: number,
-        result_message: string,
-    }
+    read: READ_RESULT // feedback_id 為我們的uid
 }) => {
     return {
         cmd_id: CMD_ID.READ_STATUS,
@@ -123,6 +119,7 @@ export const sendConnectionHealth = (data: {
     amrServiceConnect: boolean,
     lastSendGoalId: string,
     amrHasMission: boolean,
+    pendingReadStatus: PENDING_READ_STATUS | null,
 }) => {
     return {
         cmd_id: CMD_ID.CONNECTION_HEALTH,

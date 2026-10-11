@@ -8,6 +8,8 @@ export enum ReturnCode {
     MISSION_TIMEOUT_LOGIN_SUCCESS = "3002",
     MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION = "3004",
     LOGIN_SUCCESS_UNEXPECTED = "3006",
+    // the mission finished while disconnected; QAMS settled it from CH.pendingReadStatus
+    MISSION_COMPLETED_DURING_DISCONNECT = "3005",
 
     FORMAT_ERROR_LOGIN_ERROR = "3441",
     NOT_IN_SYSTEM_LOGIN_ERROR = "3442",

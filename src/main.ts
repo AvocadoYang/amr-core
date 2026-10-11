@@ -34,7 +34,7 @@ cleanEnv(process.env, {
 class AmrCore {
   private consumedQueues: Map<string, string> = new Map();
   private missionStatus: MISSION_STATUS =
-    { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "", awaitingReconcile: true }
+    { missionType: "", lastSendGoalId: "", targetLoc: "", lastTransactionId: "", awaitingReconcile: true, pendingReadStatus: null }
   // resolves once (cached) after the first ROS bridge signal or a bounded 2s timeout, so the
   // very first REGISTER after boot doesn't race a slow ROS reconnect with a stale amrHasMission
   private firstRegisterGate: Promise<void> | null = null;
@@ -122,7 +122,6 @@ class AmrCore {
               const payload: ConnectionHealthRes = action.payload as ConnectionHealthRes;
               const { approveNotSameSession, resendMission } = this.registerProcess(payload.return_code);
               this.info.approveNotSameSession = approveNotSameSession;
-              await this.rb.consumeTopic();
               if (this.info.approveNotSameSession) {
                 infoLogger.info("start consume qams handshake queue, accept not equal session", {
                   amrId: "Rabbitmq",
@@ -134,6 +133,19 @@ class AmrCore {
                   type: "create consumer"
                 })
               }
+              try {
+                await this.rb.consumeDynamicTopic();
+              } catch (err) {
+                // rabbit dropped again mid-reconcile - its reconnect re-runs this whole gate
+                errorLogger.error(`consume topic failed: ${err instanceof Error ? err.message : String(err)}`, {
+                  title: "system",
+                  type: "connect status"
+                });
+                return;
+              }
+              // session is settled (newSession already applied) - release everything held while
+              // disconnected, stamped with the session QAMS now accepts
+              this.rb.openOutbox();
               if (resendMission) {
                 this.rb.reqPublishWithAck(
                   HANDSHAKE_EX,
@@ -144,7 +156,11 @@ class AmrCore {
             })
           )
         )
-        : from(this.rb.pauseDynamicConsumers(reason)))
+        : from((async () => {
+          // a new session is coming - hold reliable messages until it is settled
+          this.rb.closeOutbox();
+          await this.rb.pauseDynamicConsumers(reason);
+        })()))
       )
     ).subscribe();
 
@@ -178,22 +194,18 @@ class AmrCore {
               rosbridgeConnect,
               amrServiceConnect,
               lastSendGoalId: this.missionStatus.lastSendGoalId,
-              amrHasMission: this.amrStatus.amrHasMission
+              amrHasMission: this.amrStatus.amrHasMission,
+              pendingReadStatus: this.missionStatus.pendingReadStatus
             }),
             { expiration: "3000" }
           );
         }
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
-        if (!rabbitConnect) return EMPTY;
-        return from(this.rb.init()).pipe(
-          switchMap(() => {
-            if (qamsConnect) return EMPTY;
-
-            return from(this.waitForFirstRosSignal()).pipe(
-              tap(() => this.netWorkManager.fleetConnect())
-            );
-          })
+        // topology is declared by the rabbit client's recovery setup before it reports connected
+        if (!rabbitConnect || qamsConnect) return EMPTY;
+        return from(this.waitForFirstRosSignal()).pipe(
+          tap(() => this.netWorkManager.fleetConnect())
         );
       })
     ).subscribe();
@@ -302,6 +314,12 @@ class AmrCore {
         return { approveNotSameSession: false, resendMission: true };
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
         return { approveNotSameSession: true, resendMission: false }
+      case ReturnCode.MISSION_COMPLETED_DURING_DISCONNECT:
+        // the goal finished while disconnected and QAMS already applied the result we carried
+        // in CH.pendingReadStatus - nothing to cancel or resend, just drop the local record
+        this.ms.resetMissionStatus("MISSION_COMPLETED_DURING_DISCONNECT");
+        this.amrStatus.amrHasMission = false;
+        return { approveNotSameSession: false, resendMission: false };
       case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
         // both sides think they know the active goal and disagree - conservative: cancel
         // and wait, do not assume which one is right (mirrors QAMS's own conservative

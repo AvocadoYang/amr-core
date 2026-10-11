@@ -15,19 +15,44 @@ import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
 
 
+type OutboxEntry = {
+    exchange: string;
+    key: string;
+    flag: "REQ" | "RES";
+    jMsg: any;
+    options: PublishOptions;
+    // channel generation this entry was last handed to; anything not equal to the current
+    // generation has no live confirm callback and must be (re)sent on the next flush
+    sentGen: number;
+};
+
+const OUTBOX_LIMIT = 500;
+
 export default class RabbitClient {
     private machineID: string;
-    private connection: amqp.ChannelModel | null = null
+    // amqplib's recovering wrapper: reconnects with backoff and re-runs setup() each time
+    private connection: amqp.RecoveringChannelModel | null = null
+    // the live underlying connection handed to setup(), used to force a full recovery
+    // when one of our channels dies on its own (recovery only watches the connection)
+    private rawConnection: amqp.ChannelModel | null = null;
+    // consumers + volatile (IO / heartbeat / expiring) publishes - fire and forget
     private channel: amqp.Channel | null = null;
-    private reconnecting = false;
-    private reconnectAttempts = 0;
+    // everything that must not be lost - held in the outbox until the broker confirms it
+    private confirmChannel: amqp.ConfirmChannel | null = null;
+    private generation = 0;
     private manualClose = false;
+
+    // keyed by message id, so an ack-retry of the same id overwrites instead of duplicating
+    private outbox: Map<string, OutboxEntry> = new Map();
+    // opened by main once the QAMS session is settled (CH reconciled) - until then reliable
+    // messages are only queued, so they get stamped with the session QAMS will accept
+    private outboxOpen = false;
+    private flushTimer: ReturnType<typeof setTimeout> | null = null;
     private heartbeatOutput$: Subject<HEARTBEAT> = new Subject<HEARTBEAT>();
     private resTransactionOutput$: Subject<AllRes> = new Subject<AllRes>();
     public registerResTransactionOutput$: Subject<REGISTER_RES | CONNECTION_HEATH_RES> = new Subject<REGISTER_RES | CONNECTION_HEATH_RES>();
     private controlTransactionOutput$: Subject<AllHandshake> = new Subject<AllHandshake>();
     private q2aIoTransactionOutput$: Subject<AllIO> = new Subject<AllIO>();
-    private hasInit = false;
 
 
     private lastReceiveReq: Map<string, {
@@ -37,16 +62,6 @@ export default class RabbitClient {
 
 
     private output$: Subject<Output>
-
-    private pendingMessages: {
-        exchange: string;
-        key: string;
-        buffer: Buffer;
-        jMsg: any;
-        options: PublishOptions;
-        flag: "REQ" | "RES"
-    }[] = [];
-
 
     private pendingAcks: Map<string, {
         timer: ReturnType<typeof setTimeout>;
@@ -69,95 +84,128 @@ export default class RabbitClient {
 
     public async connect() {
         this.manualClose = false;
-        try {
-            const [connection, url] = await this.connectWithFailover();
-            this.connection = connection
+        // AMQP heartbeat is specified in seconds (unlike keepAliveDelay below, which is ms) - do not scale it.
+        const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT}`;
 
-            this.connection.on("error", (err) => this.handleDisconnect("Connection error", err));
-            this.connection.on("close", () => this.handleDisconnect("Connection closed"));
+        this.connection = await amqp.connect(url, {
+            keepAlive: true,
+            keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000,
+            recovery: {
+                initialDelay: 500,
+                maxDelay: this.retryTime,
+                factor: 2,
+                jitter: 0.2,
+                maxRetries: Infinity,
+                // hand back the handle immediately so the listeners below see the first attempt too
+                waitForConnect: false,
+                // runs after every successful (re)connect, before 'connect' is emitted - a throw
+                // here closes that connection and schedules another attempt
+                setup: (model) => this.setup(model),
+            },
+        });
+        console.log('??????????@@@@@@@@@@@@@@@@@@2')
 
-            this.channel = await this.connection.createChannel();
-
-            this.channel.on("error", (err) => this.handleDisconnect("Channel error", err));
-            this.channel.on("close", () => this.handleDisconnect("Channel closed"));
-            this.channel.prefetch(10)
-
-
-            this.reconnectAttempts = 0;
-
-            infoLogger.info(`Connected to ${url}`, {
+        this.connection.on("connect", () => {
+            infoLogger.info(`Connected to ${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}`, {
                 title: "RabbitMQ",
                 type: "network"
-            })
-            this.output$.next(isConnected({ isConnected: true }))
-            await this.flushPendingMessages();
+            });
+            this.output$.next(isConnected({ isConnected: true }));
+        });
 
-        } catch (err) {
-            this.scheduleReconnect();
-        }
-    }
+        this.connection.on("disconnect", (err: Error) => this.handleDisconnect("Connection lost", err));
 
-    // Shared handler for connection/channel "error" and "close" events - both fire on
-    // every real disconnect, so `reconnecting` below dedupes them into a single retry loop.
-    private handleDisconnect(reason: string, err?: Error) {
-        if (this.manualClose) return;
-
-        if (err) {
-            errorLogger.error(reason, {
+        this.connection.on("connect-failed", (err: Error) => {
+            this.resetChannels();
+            errorLogger.error(`Connection failed with ${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}`, {
                 title: "RabbitMQ",
                 type: "network",
                 status: err.message
             });
-        } else {
-            warnLogger.warn(`${reason}. Reconnecting...`, {
-                title: "RabbitMQ",
-                type: "network"
-            });
-        }
-
-        this.hasInit = false;
-        this.consumedQueues.clear();
-        this.output$.next(isConnected({ isConnected: false }));
-        this.channel = null;
-        this.connection = null;
-        this.scheduleReconnect();
-    }
-
-    private scheduleReconnect() {
-        if (this.reconnecting || this.manualClose) return;
-        this.reconnecting = true;
-
-        const delay = this.retryTime;
-        this.reconnectAttempts++;
-
-        infoLogger.info(`Reconnecting RabbitMQ in ${delay}ms (attempt ${this.reconnectAttempts})...`, {
-            title: "RabbitMQ",
-            type: "network connection",
         });
 
-        setTimeout(async () => {
-            // Reset before attempting, not after: if connect() fails again it calls
-            // scheduleReconnect() from within this same tick, and that call needs to see
-            // reconnecting === false or the next retry never gets scheduled.
-            this.reconnecting = false;
-            await this.connect();
-        }, delay);
-    }
+        this.connection.on("reconnect-scheduled", ({ attempt, delay }: { attempt: number, delay: number }) => {
+            infoLogger.info(`Reconnecting RabbitMQ in ${delay}ms (attempt ${attempt})...`, {
+                title: "RabbitMQ",
+                type: "network connection",
+            });
+        });
 
-    private async connectWithFailover(): Promise<[amqp.ChannelModel, string]> {
-        // AMQP heartbeat is specified in seconds (unlike keepAliveDelay below, which is ms) - do not scale it.
-        const url = `amqp://${RABBIT_MQ_USER}:${RABBIT_MQ_PASSWORD}@${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}?heartbeat=${RABBIT_MQ_HEARTBEAT}`;
-        try {
-            const conn = await amqp.connect(url, { keepAlive: true, keepAliveDelay: RABBIT_MQ_HEARTBEAT * 1000 });
-            return [conn, url];
-        } catch (err) {
-            errorLogger.error(`Connection failed with ${url}`, {
+        // forwarded connection-level errors - always followed by 'disconnect', but an
+        // EventEmitter 'error' with no listener would crash the process
+        this.connection.on("error", (err: Error) => {
+            errorLogger.error("Connection error", {
                 title: "RabbitMQ",
                 type: "network",
-                status: (err as Error).message
+                status: err.message
             });
-            throw new Error();
+        });
+    }
+
+    /**
+     * Called by amqplib recovery on every (re)connect. Channels belong to the underlying
+     * connection, so they (and every consumer on them) are rebuilt here each time.
+     */
+    private async setup(model: amqp.ChannelModel) {
+        console.log('!!!!!!!!!122222222222222222222222')
+        const channel = await model.createChannel();
+        const confirmChannel = await model.createConfirmChannel();
+
+        for (const [name, ch] of [["channel", channel], ["confirm channel", confirmChannel]] as const) {
+            ch.on("error", (err: Error) => {
+                errorLogger.error(`${name} error`, {
+                    title: "RabbitMQ",
+                    type: "network",
+                    status: err.message
+                });
+            });
+            ch.on("close", () => {
+                // deferred: on a real connection loss the channels close first, and the
+                // 'disconnect' handler clears rawConnection right after - only a channel that
+                // died on its own (e.g. a 404/406 channel error) still finds its connection here.
+                // Recovery only watches the connection, so close it to force a full re-setup.
+                setImmediate(() => {
+                    if (this.manualClose || this.rawConnection !== model) return;
+                    warnLogger.warn(`${name} closed while connection is still up, forcing reconnect`, {
+                        title: "RabbitMQ",
+                        type: "network"
+                    });
+                    model.close().catch(() => { });
+                });
+            });
         }
+
+        await channel.prefetch(10);
+
+        this.rawConnection = model;
+        this.channel = channel;
+        this.confirmChannel = confirmChannel;
+        this.generation++;
+
+        // anything that was confirm-pending on the dead channel is still in the outbox; it is
+        // resent once main reopens the outbox after the CONNECTION_HEALTH reconcile
+        await this.declareTopology();
+    }
+
+    private resetChannels() {
+        this.consumedQueues.clear();
+        this.channel = null;
+        this.confirmChannel = null;
+        this.rawConnection = null;
+    }
+
+    private handleDisconnect(reason: string, err?: Error) {
+        if (this.manualClose) return;
+
+        errorLogger.error(`${reason}. Reconnecting...`, {
+            title: "RabbitMQ",
+            type: "network",
+            status: err?.message
+        });
+
+        this.resetChannels();
+        this.outboxOpen = false;
+        this.output$.next(isConnected({ isConnected: false }));
     }
 
 
@@ -266,11 +314,9 @@ export default class RabbitClient {
             payload: { id, ...message, amrId: this.info.amrId }
         };
 
-        const sMsg = JSON.stringify(jMsg);
-        const buffer = Buffer.from(sMsg);
         let result = false
         try {
-            result = await this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
+            result = await this.publish(exchangeName, routingKey, flag, jMsg, options);
         } catch (err: unknown) {
             errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
@@ -306,11 +352,11 @@ export default class RabbitClient {
             timestamp: String(new Date().getTime()),
             payload: { id, ...message, amrId: this.info.amrId }
         };
-        const buffer = Buffer.from(JSON.stringify(jMsg));
 
         return new Promise<AllRes | null>((resolve) => {
             const send = (attempt: number) => {
-                this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
+                // same id every attempt - while disconnected this just refreshes the one outbox entry
+                this.publish(exchangeName, routingKey, flag, jMsg, options);
                 const timer = setTimeout(() => {
                     if (attempt < maxRetries) {
                         warnLogger.warn(`ack timeout, retrying (${attempt}/${maxRetries})`, {
@@ -379,13 +425,8 @@ export default class RabbitClient {
         };
         this.lastReceiveReq.delete(message.id);
 
-        const sMsg = JSON.stringify(jMsg);
-
-
-        const buffer = Buffer.from(sMsg);
-
         try {
-            const result = await this.publish(exchangeName, routingKey, buffer, flag, jMsg, options);
+            await this.publish(exchangeName, routingKey, flag, jMsg, options);
         } catch (err: unknown) {
             errorLogger.error(getErrorMessage(err), {
                 title: "RabbitMQ",
@@ -529,9 +570,8 @@ export default class RabbitClient {
         await this.stopConsumeQueue(dynamicListener, reason);
     }
 
-    public async init() {
-        if (this.hasInit) return;
-        this.hasInit = true;
+    // exchanges/queues/bindings plus the always-on consumers - run from setup() on every (re)connect
+    private async declareTopology() {
         await this.createExchange(HEARTBEAT_EX, "topic", { durable: true });
         await this.createExchange(RES_EX, "topic", { durable: true });
         await this.createExchange(IO_EX, "topic", { durable: true });
@@ -568,33 +608,9 @@ export default class RabbitClient {
 
         await this.createQueue(q2a_ioQName, { durable: true });
         await this.bindQueue(q2a_ioQName, IO_EX, `q2a.io.*.${MAC}`);
-        await this.channel.purgeQueue(q2a_registerResponseQName);
 
-        await this.consume<REGISTER_RES | CONNECTION_HEATH_RES>(q2a_registerResponseQName, (msg) => {
-            if (msg.payload.cmd_id === CMD_ID.REGISTER || msg.payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
-                this.registerResTransactionOutput$.next(msg);
-                return;
-            }
-        });
-        await this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
-            if (!this.connectStatus.qams_isConnect) {
-                warnLogger.warn("Drop heartbeat ping: QAMS not connected yet", {
-                    title: "RabbitMQ",
-                    type: "heartbeat",
-                    status: { session: msg.session }
-                });
-                return;
-            }
-            if (msg.session !== this.info.session) {
-                warnLogger.warn("Drop heartbeat ping: session mismatch", {
-                    title: "RabbitMQ",
-                    type: "heartbeat",
-                    status: { expected: this.info.session, received: msg.session }
-                });
-                return;
-            }
-            this.heartbeatOutput$.next(msg);
-        }, true)
+        await this.consumeFixTopic();
+
 
     }
 
@@ -633,9 +649,10 @@ export default class RabbitClient {
 
     public async close() {
         this.manualClose = true;
-        await this.channel?.close();
+        if (this.flushTimer) clearTimeout(this.flushTimer);
+        // closing the recovering handle stops recovery and closes the live connection with it
         await this.connection?.close();
-        this.channel = null;
+        this.resetChannels();
         this.connection = null;
 
         infoLogger.info(`Connection closed manually.`, {
@@ -644,117 +661,207 @@ export default class RabbitClient {
         })
     }
 
-    private isVolatile(exchange: string, routingKey: string): boolean {
-        if (exchange !== IO_EX && !exchange.includes("heartbeat")) return false;
-
-        return true;
+    // IO / heartbeat traffic is a continuous stream - a late copy is worse than none
+    private isVolatile(exchange: string): boolean {
+        return exchange === IO_EX || exchange.includes("heartbeat");
     }
 
+    /**
+     * Volatile or expiring messages go straight out on the plain channel and are dropped while
+     * disconnected. Everything else goes through the outbox and only leaves it once the broker
+     * confirms it, so it survives any disconnect and is resent afterwards. A confirm lost in
+     * flight means resending something the broker already has, so receivers must dedup by id.
+     */
     private async publish(
         exchange: string,
         key: string,
-        buffer: Buffer,
         flag: "REQ" | "RES",
         jMsg: any,
         options: PublishOptions = {},
-        mode: string = "normal"
     ): Promise<boolean> {
+        if (this.isVolatile(exchange) || options.expiration) {
+            return this.publishDirect(exchange, key, flag, jMsg, options);
+        }
+        this.enqueue(exchange, key, flag, jMsg, options);
+        return true;
+    }
 
-        const { expiration } = options;
-
+    private async publishDirect(
+        exchange: string,
+        key: string,
+        flag: "REQ" | "RES",
+        jMsg: any,
+        options: PublishOptions,
+    ): Promise<boolean> {
+        const channel = this.channel;
+        if (!channel) return false;
         try {
-            if (!this.channel) throw new Error("Rabbit channel is not available");
-            const publishOptions = expiration
-                ? { expiration }
-                : undefined;
-            const buffered = this.channel.publish(exchange, key, buffer, publishOptions);
-            if (flag == "REQ") {
-                if (!blackList.includes(jMsg.payload.cmd_id)) {
-                    rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                        title: "RabbitMQ",
-                        type: "publish",
-                        request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session, options }
-                    });
-                }
-            } else {
-                if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
-                    rb_heartbeatLogger.info("Send heartbeat to QAMS", {
-                        title: "system",
-                        type: "ack",
-                        status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
-                    })
-                }
-                if (!blackList.includes(jMsg.payload.cmd_id)) {
-                    rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
-                        title: "RabbitMQ",
-                        type: "publish",
-                        response: { ...jMsg.payload, session: jMsg.session }
-                    });
-                }
-            }
-
+            const publishOptions = options.expiration ? { expiration: options.expiration } : undefined;
+            const buffered = channel.publish(exchange, key, Buffer.from(JSON.stringify(jMsg)), publishOptions);
+            this.logPublish(exchange, key, flag, jMsg, options, "direct");
             if (!buffered) {
-                // publish() returning false is Node stream backpressure, not a failed
-                // publish - the message is already queued for delivery. Wait for 'drain'
-                // instead of retrying, otherwise a retry would re-send and duplicate it.
-                await new Promise<void>((resolve) => this.channel!.once("drain", resolve));
+                // publish() returning false is Node stream backpressure, not a failed publish -
+                // the frame is already queued. Wait for 'drain' (or the channel dying, so this
+                // can't hang across a reconnect) instead of re-sending a duplicate.
+                await new Promise<void>((resolve) => {
+                    const done = () => {
+                        channel.off("drain", done);
+                        channel.off("close", done);
+                        resolve();
+                    };
+                    channel.once("drain", done);
+                    channel.once("close", done);
+                });
             }
-
             return true;
         } catch (err: unknown) {
-            if (this.isVolatile(exchange, key)) {
-                return false;
-            }
-            // channel.publish() doesn't throw for transient network/broker failures - those surface
-            // asynchronously via the channel's error/close events (handled in connect()), which already
-            // trigger a reconnect + flushPendingMessages(). The only realistic failure here is the
-            // channel not existing yet, so just queue for that flush instead of retrying blind.
-            const data = JSON.parse(buffer.toString());
-            this.pendingMessages.push({ exchange, key, buffer, flag, jMsg, options });
-            warnLogger.warn(
-                `Failed to publish (${getErrorMessage(err)}), store message to pending queue, now pending message array length: ${this.pendingMessages.length} -`, {
-                title: "RabbitMQ",
-                type: "transaction",
-                status: { exchange, key, data }
-            });
+            // channel closed under us (IllegalOperationError) - volatile, so just drop it
             return false;
         }
     }
 
+    private enqueue(exchange: string, key: string, flag: "REQ" | "RES", jMsg: any, options: PublishOptions) {
+        // an ack-retry of a message that is still unconfirmed (queued, or in flight on the live
+        // channel) - the outbox already owns delivering it
+        if (this.outbox.has(jMsg.id)) return;
 
-    private async flushPendingMessages() {
-        if (!this.channel || this.pendingMessages.length === 0) return;
+        if (this.outbox.size >= OUTBOX_LIMIT) {
+            const [oldestId, oldest] = this.outbox.entries().next().value as [string, OutboxEntry];
+            this.outbox.delete(oldestId);
+            errorLogger.error(`outbox full (${OUTBOX_LIMIT}), dropping oldest message`, {
+                title: "RabbitMQ",
+                type: "outbox",
+                status: { id: oldestId, cmd_id: oldest.jMsg.payload.cmd_id, key: oldest.key }
+            });
+        }
 
-        infoLogger.info(`Flushing ${this.pendingMessages.length} pending messages...`, {
+        const entry: OutboxEntry = { exchange, key, flag, jMsg, options, sentGen: -1 };
+        this.outbox.set(jMsg.id, entry);
+
+        if (this.outboxOpen) {
+            this.sendEntry(jMsg.id, entry);
+        } else if (!blackList.includes(jMsg.payload.cmd_id)) {
+            warnLogger.warn(`outbox closed, queued message (${jMsg.payload.cmd_id}), outbox size: ${this.outbox.size}`, {
+                title: "RabbitMQ",
+                type: "outbox",
+                status: { id: jMsg.id, exchange, key }
+            });
+        }
+    }
+
+    private sendEntry(id: string, entry: OutboxEntry) {
+        const channel = this.confirmChannel;
+        if (!channel) return;
+        const gen = this.generation;
+        // a REQ belongs to the session it is actually delivered in - a REQ queued through a
+        // session change would otherwise carry a session QAMS has already retired and be dropped.
+        // A RES keeps the session of the request it answers.
+        if (entry.flag === "REQ") entry.jMsg.session = this.info.session;
+        try {
+            entry.sentGen = gen;
+            channel.publish(
+                entry.exchange,
+                entry.key,
+                Buffer.from(JSON.stringify(entry.jMsg)),
+                { persistent: true, messageId: id },
+                (err) => {
+                    // discarded or replaced while in flight
+                    if (this.outbox.get(id) !== entry) return;
+                    if (!err) {
+                        this.outbox.delete(id);
+                        return;
+                    }
+                    // broker nack, or the channel closed before confirming - send again later
+                    entry.sentGen = -1;
+                    if (gen === this.generation) this.scheduleFlush();
+                }
+            );
+            this.logPublish(entry.exchange, entry.key, entry.flag, entry.jMsg, entry.options, "confirm");
+        } catch (err: unknown) {
+            entry.sentGen = -1;
+            warnLogger.warn(`confirm publish failed (${getErrorMessage(err)}), kept in outbox`, {
+                title: "RabbitMQ",
+                type: "outbox",
+                status: { id, key: entry.key }
+            });
+        }
+    }
+
+    private flushOutbox() {
+        if (!this.outboxOpen || !this.confirmChannel || this.outbox.size === 0) return;
+        let count = 0;
+        for (const [id, entry] of this.outbox) {
+            // already in flight on the live channel - its confirm callback will settle it
+            if (entry.sentGen === this.generation) continue;
+            this.sendEntry(id, entry);
+            count++;
+        }
+        if (count) {
+            infoLogger.info(`Flushed ${count} outbox messages`, {
+                title: "RabbitMQ",
+                type: "flush cache"
+            });
+        }
+    }
+
+    private scheduleFlush() {
+        if (this.flushTimer) return;
+        this.flushTimer = setTimeout(() => {
+            this.flushTimer = null;
+            this.flushOutbox();
+        }, 1000);
+    }
+
+    /** Start delivering reliable messages - call once the QAMS session is settled. */
+    public openOutbox() {
+        this.outboxOpen = true;
+        this.flushOutbox();
+    }
+
+    /** Hold reliable messages in the outbox until openOutbox() (session about to change). */
+    public closeOutbox() {
+        this.outboxOpen = false;
+    }
+
+    /** Drop a still-undelivered message whose content has become stale (e.g. reconciled via CH). */
+    public discardOutbox(id: string) {
+        if (!id || !this.outbox.delete(id)) return;
+        infoLogger.info(`discard outbox message ${id}`, {
             title: "RabbitMQ",
-            type: "flush cache"
+            type: "outbox"
         });
+    }
 
-        const messages = [...this.pendingMessages];
-        this.pendingMessages = []; // 先清空避免重複送
-
-        for (const msg of messages) {
-            try {
-                await this.publish(
-                    msg.exchange,
-                    msg.key,
-                    msg.buffer,
-                    msg.flag,
-                    msg.jMsg,
-                    msg.options,
-                    "cache"
-                );
-            } catch (err) {
-                // 如果 flush 時仍然失敗，先放回 pending
-                this.pendingMessages.push(msg);
+    private logPublish(exchange: string, key: string, flag: "REQ" | "RES", jMsg: any, options: PublishOptions, mode: string) {
+        if (flag == "REQ") {
+            if (!blackList.includes(jMsg.payload.cmd_id)) {
+                rb_transactionLogger.info(`Published [request] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                    title: "RabbitMQ",
+                    type: "publish",
+                    request: { ...jMsg.payload, id: jMsg.id, session: jMsg.session, options }
+                });
+            }
+        } else {
+            if (jMsg.payload.cmd_id == CMD_ID.HEARTBEAT) {
+                rb_heartbeatLogger.info("Send heartbeat to QAMS", {
+                    title: "system",
+                    type: "ack",
+                    status: { id: jMsg.payload.id, heartbeat: jMsg.payload.heartbeat, session: jMsg.session }
+                })
+            }
+            if (!blackList.includes(jMsg.payload.cmd_id)) {
+                rb_transactionLogger.info(`Published [response] message (${jMsg.payload.cmd_id}) to exchange- "${exchange}", routingKey in mode: ${mode}- "${key}"`, {
+                    title: "RabbitMQ",
+                    type: "publish",
+                    response: { ...jMsg.payload, session: jMsg.session }
+                });
             }
         }
     }
 
 
-    public async consumeTopic() {
+    public async consumeDynamicTopic() {
         if (!this.channel) return [];
-        await this.flushPendingMessages();
 
         const tags = await Promise.all([
             this.consume<AllRes>(q2a_ResponseQName, (msg) => {
@@ -797,10 +904,34 @@ export default class RabbitClient {
         return tags;
     }
 
+    public async consumeFixTopic() {
+        await this.consume<REGISTER_RES | CONNECTION_HEATH_RES>(q2a_registerResponseQName, (msg) => {
+            if (msg.payload.cmd_id === CMD_ID.REGISTER || msg.payload.cmd_id == CMD_ID.CONNECTION_HEALTH) {
+                this.registerResTransactionOutput$.next(msg);
+                return;
+            }
+        });
+        await this.consume<HEARTBEAT>(heartbeatPingQName, (msg) => {
+            if (!this.connectStatus.qams_isConnect) {
+                warnLogger.warn("Drop heartbeat ping: QAMS not connected yet", {
+                    title: "RabbitMQ",
+                    type: "heartbeat",
+                    status: { session: msg.session }
+                });
+                return;
+            }
+            if (msg.session !== this.info.session) {
+                warnLogger.warn("Drop heartbeat ping: session mismatch", {
+                    title: "RabbitMQ",
+                    type: "heartbeat",
+                    status: { expected: this.info.session, received: msg.session }
+                });
+                return;
+            }
+            this.heartbeatOutput$.next(msg);
+        }, true)
+    }
 
-}
-function uuid(): string {
-    throw new Error("Function not implemented.");
 }
 
 function getErrorMessage(err: unknown): string {

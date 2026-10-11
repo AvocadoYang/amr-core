@@ -163,9 +163,12 @@ export default class Mission {
 
 
       this.pendingReadStatusId = this.missionStatus.lastTransactionId;
-      // retried (same id) on ack timeout by the client itself; the onResTransaction
-      // handler above is the actual settlement point via pendingReadStatusId matching,
-      // so the returned promise here is intentionally not awaited/used.
+      // kept until QAMS acks it (or a reconcile decides it) - CONNECTION_HEALTH carries it,
+      // so a result produced while disconnected can still be settled after reconnecting
+      this.missionStatus.pendingReadStatus = { id: this.pendingReadStatusId, read: newState.read };
+      // retried (same id) on ack timeout by the client itself, and held in the client's outbox
+      // across disconnects; the onResTransaction handler above is the actual settlement point
+      // via pendingReadStatusId matching, so the returned promise is intentionally not used.
       this.rb.reqPublishWithAck(
         HANDSHAKE_EX,
         `qams.${MAC}.handshake.readStatus`,
@@ -284,6 +287,13 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = "";
     this.missionStatus.targetLoc = "";
     this.missionStatus.lastTransactionId = "";
+    // whatever decided the reset (ack, cancel, reconcile) also decided the unacked result -
+    // don't let a queued copy of it reach QAMS afterwards
+    if (this.missionStatus.pendingReadStatus) {
+      this.rb.discardOutbox(this.missionStatus.pendingReadStatus.id);
+    }
+    this.missionStatus.pendingReadStatus = null;
+    this.pendingReadStatusId = "";
     infoLogger.info(`reset mission status from [${from}]`, {
       title: "mission",
       type: "mission status",
