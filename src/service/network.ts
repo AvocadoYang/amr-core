@@ -67,7 +67,7 @@ class NetWorkManager {
       const responsePromise = this.waitForRegisterResponse(requestId);
       const published = await this.rb.reqPublish(
         HANDSHAKE_EX,
-        `qams.register.req.${MAC}`,
+        `qams.register.req.register.${MAC}`,
         sendRegisterRequest({
           serialNumber: MAC,
         }),

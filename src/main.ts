@@ -188,8 +188,8 @@ class AmrCore {
 
         if (qamsConnect && rabbitConnect) {
           this.rb.reqPublish(
-            IO_EX,
-            `amr.io.${MAC}.connectionHealth`,
+            HANDSHAKE_EX,
+            `qams.register.req.checkHealth.${MAC}`,
             sendConnectionHealth({
               rosbridgeConnect,
               amrServiceConnect,

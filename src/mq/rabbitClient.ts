@@ -103,7 +103,6 @@ export default class RabbitClient {
                 setup: (model) => this.setup(model),
             },
         });
-        console.log('??????????@@@@@@@@@@@@@@@@@@2')
 
         this.connection.on("connect", () => {
             infoLogger.info(`Connected to ${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}`, {
@@ -147,7 +146,6 @@ export default class RabbitClient {
      * connection, so they (and every consumer on them) are rebuilt here each time.
      */
     private async setup(model: amqp.ChannelModel) {
-        console.log('!!!!!!!!!122222222222222222222222')
         const channel = await model.createChannel();
         const confirmChannel = await model.createConfirmChannel();
 
@@ -596,7 +594,7 @@ export default class RabbitClient {
         await this.bindQueue(HEARTBEAT_PONG_QUEUE, HEARTBEAT_EX, `qams.heartbeat.pong.*`);
 
         await this.createQueue(REGISTER_REQ_QUEUE, { durable: true })
-        await this.bindQueue(REGISTER_REQ_QUEUE, HANDSHAKE_EX, `qams.register.req.*`);
+        await this.bindQueue(REGISTER_REQ_QUEUE, HANDSHAKE_EX, `qams.register.req.*.*`);
 
         await this.createQueue(heartbeatPingQName, { autoDelete: false });
         await this.bindQueue(heartbeatPingQName, HEARTBEAT_EX, `amr.heartbeat.ping.${MAC}`);
@@ -646,7 +644,7 @@ export default class RabbitClient {
         return this.output$.subscribe(cb);
     }
 
-
+    // no using
     public async close() {
         this.manualClose = true;
         if (this.flushTimer) clearTimeout(this.flushTimer);
