@@ -210,6 +210,8 @@ export const sendHeartBeatResponse = (data: {
     heartbeat: number,
     rosbridgeConnect: boolean,
     amrServiceConnect: boolean,
+    // what the diagnostics page shows, so the traffic computer can show the same reasons
+    diag?: Record<string, unknown>,
 }) => {
     return {
         cmd_id: CMD_ID.HEARTBEAT,

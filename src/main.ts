@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { randomUUID } from "crypto";
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
-import { CarState, HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
+import { CarState, Diagnostics, HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
 import { loadMissionState } from "./service/missionStateStore";
 import { RBClient } from "./mq";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
@@ -69,6 +69,7 @@ class AmrCore {
   private mc: MoveControl;
   private st: Status;
   private carState: CarState;
+  private diag: Diagnostics;
 
   // single source of truth for the 4 upstream connections; every other service reacts to what main decides here instead of tracking its own copy
   private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -82,9 +83,15 @@ class AmrCore {
     if (stored) Object.assign(this.missionStatus, stored);
 
     this.rb = new RBClient(this.info, this.consumedQueues, this.connectStatus);
-    this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus)
-    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
     this.carState = new CarState();
+    this.diag = new Diagnostics(this.info, this.missionStatus, this.amrStatus, this.carState);
+    this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus, this.diag)
+    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
+    this.diag.attachSources({
+      qamsError: () => this.netWorkManager.lastError,
+      rabbitError: () => this.rb.lastNetworkError,
+      heartbeat: () => this.hb.getHeartbeatTimes(),
+    });
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus, this.carState);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
@@ -105,6 +112,7 @@ class AmrCore {
         });
 
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
+        this.diag.setLinks({ qams: qamsConnect, rabbit: rabbitConnect, ros: rosbridgeConnect, amrService: amrServiceConnect });
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
         // topology is declared by the rabbit client's recovery setup before it reports connected
@@ -224,6 +232,7 @@ class AmrCore {
     ].filter(Boolean).join(", ");
     // a new session is coming - hold reliable messages until it is settled
     this.rb.closeOutbox();
+    this.diag.reconcileEnd();
     try {
       await this.rb.pauseDynamicConsumers(`disconnect service: ${disconnected}`);
     } catch (err) {
@@ -266,6 +275,7 @@ class AmrCore {
   }
 
   private reconcileWithQams$(): Observable<unknown> {
+    this.diag.reconcileBegin();
     return from(this.waitForCarState()).pipe(
       switchMap(() => this.askQamsToReconcile$()),
       concatMap((answer) => from(this.applyReconcile(answer))),
@@ -293,6 +303,7 @@ class AmrCore {
     );
     const ask$ = timer(0, CH_RETRY_MS).pipe(
       tap((attempt) => {
+        this.diag.reconcileAttempt();
         if (attempt > 0) {
           warnLogger.warn(`no answer to CONNECTION_HEALTH yet, resend (${attempt})`, {
             title: "system",
@@ -354,6 +365,8 @@ class AmrCore {
 
   private registerProcess(answer: ConnectionHealthRes): { approveNotSameSession: boolean, resendMission: boolean } {
     const { return_code, settledReadStatusId, adoptGoalId } = answer;
+    this.diag.setReconcile(return_code, answer.message);
+    this.diag.reconcileEnd();
     // every branch below means "we've now heard QAMS's authoritative view this process
     // lifetime" - ends the ambiguity window that Mission's ROS-feedback handler holds off
     // canceling for while lastSendGoalId is still empty from a fresh restart.

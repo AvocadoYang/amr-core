@@ -17,6 +17,8 @@ const schema = object({
   MISSION_CONTROL_PORT: number().integer().min(0).max(65535).required(),
   ROS_BRIDGE_URL: string().required(),
   IFACE_NAME: string().required(),
+  // read-only diagnostics web page (0 = off)
+  DIAG_PORT: number().integer().min(0).max(65535).default(6060),
   DEBUG_LOGGER: boolean().required(),
   HEARTBEAT_LOGGER: boolean().required(),
   MAC: string().required(),
@@ -42,6 +44,7 @@ export const {
   MISSION_CONTROL_PORT,
   ROS_BRIDGE_URL,
   IFACE_NAME,
+  DIAG_PORT,
   DEBUG_LOGGER,
   HEARTBEAT_LOGGER,
   MAC,

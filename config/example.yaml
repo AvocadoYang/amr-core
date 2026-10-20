@@ -3,6 +3,8 @@ MISSION_CONTROL_PORT: 4000
 ROS_BRIDGE_URL: ws://localhost:9090
 MISSION_CONTROL_HOST: 127.0.0.1
 IFACE_NAME: enP1p1s0 #wlP7p1s0
+# 診斷網頁 (唯讀, 不用登入): http://<車的 IP>:6060 ; 0 = 不開
+DIAG_PORT: 6060
 MAC: "3C:6D:66:63:CE:7F" #"58:02:05:0c:a9:9c"
 AMR: fork
 

@@ -12,6 +12,7 @@ import { sendHeartBeatResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { number, object, ValidationError } from "yup";
+import type Diagnostics from "./diagnostics";
 
 export default class HeartbeatMonitor {
     private qamsLastHeartbeatTime: number = 0;
@@ -32,7 +33,8 @@ export default class HeartbeatMonitor {
         private info: TRANSACTION_INFO,
         private rb: RBClient,
         private missionStatus: MISSION_STATUS,
-        private connectStatus: CONNECT_STATUS
+        private connectStatus: CONNECT_STATUS,
+        private diag: Diagnostics
     ) {
         this.rb.onHeartbeat((action) => {
             const { payload } = action;
@@ -51,7 +53,8 @@ export default class HeartbeatMonitor {
                     return_code: ReturnCode.SUCCESS,
                     amrId: this.info.amrId,
                     rosbridgeConnect: this.connectStatus.rosbridge_isConnect,
-                    amrServiceConnect: this.connectStatus.amr_service_isConnect
+                    amrServiceConnect: this.connectStatus.amr_service_isConnect,
+                    diag: this.diag.summary()
                 }), { expiration: "2000" }
             )
             this.toleranceTime = 0;
@@ -207,6 +210,11 @@ export default class HeartbeatMonitor {
         ).subscribe();
 
 
+    }
+
+    /** last time QAMS / the AMR service were heard from (0 = never) - for the diagnostics page */
+    public getHeartbeatTimes() {
+        return { qamsAt: this.qamsLastHeartbeatTime, amrServiceAt: this.amrServiceLastReceiveHeartbeatTime };
     }
 
     public send(action: Input) {

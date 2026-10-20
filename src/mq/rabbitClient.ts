@@ -116,6 +116,7 @@ export default class RabbitClient {
         this.connection.on("disconnect", (err: Error) => this.handleDisconnect("Connection lost", err));
 
         this.connection.on("connect-failed", (err: Error) => {
+            this.lastNetworkError = { message: `連線失敗: ${err.message}`, at: Date.now() };
             this.resetChannels();
             errorLogger.error(`Connection failed with ${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}`, {
                 title: "RabbitMQ",
@@ -193,8 +194,12 @@ export default class RabbitClient {
         this.rawConnection = null;
     }
 
+    /** last thing that went wrong talking to RabbitMQ - shown on the diagnostics page */
+    public lastNetworkError: { message: string; at: number } = { message: "", at: 0 };
+
     private handleDisconnect(reason: string, err?: Error) {
         if (this.manualClose) return;
+        this.lastNetworkError = { message: err?.message ? `${reason}: ${err.message}` : reason, at: Date.now() };
 
         errorLogger.error(`${reason}. Reconnecting...`, {
             title: "RabbitMQ",

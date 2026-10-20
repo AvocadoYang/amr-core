@@ -23,6 +23,8 @@ class NetWorkManager {
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
   private connectingInProgress = false;
+  /** last failed attempt to log in to QAMS - shown on the diagnostics page */
+  public lastError: { message: string; at: number } = { message: "", at: 0 };
 
   constructor(
     private rb: RBClient,
@@ -99,6 +101,15 @@ class NetWorkManager {
         throw new CustomerError(return_code, message);
       }
     } catch (error) {
+      this.lastError = {
+        message:
+          error instanceof CustomerError
+            ? `${error.statusCode} ${error.message}`
+            : error instanceof Error
+              ? error.message
+              : String(error),
+        at: Date.now(),
+      };
       if (error instanceof ValidationError) {
         errorLogger.error("can't connect with QAMS, retry after 5s..", {
           title: "system",
