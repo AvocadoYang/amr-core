@@ -115,6 +115,9 @@ export default class HeartbeatMonitor {
                 this.socket = socket;
 
                 ROS.has_mission.pipe(take(1)).subscribe((hasMission) => {
+                    // before the first reconcile an empty record may just mean amr-core restarted
+                    // mid-mission - the CONNECTION_HEALTH reconcile decides that, not this
+                    if (this.missionStatus.awaitingReconcile) return;
                     if (hasMission && !this.missionStatus.lastSendGoalId) {
                         ROS.cancelCarStatusAnyway("#")
                     };

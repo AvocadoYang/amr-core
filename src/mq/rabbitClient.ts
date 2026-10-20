@@ -27,6 +27,7 @@ type OutboxEntry = {
 };
 
 const OUTBOX_LIMIT = 500;
+const KEEP_IN_OUTBOX: string[] = [CMD_ID.READ_STATUS, CMD_ID.MISSION_LOST];
 
 export default class RabbitClient {
     private machineID: string;
@@ -724,7 +725,10 @@ export default class RabbitClient {
         if (this.outbox.has(jMsg.id)) return;
 
         if (this.outbox.size >= OUTBOX_LIMIT) {
-            const [oldestId, oldest] = this.outbox.entries().next().value as [string, OutboxEntry];
+            // a mission result / goal-lost report must never be the one pushed out
+            const evict = [...this.outbox.entries()].find(([, e]) => !KEEP_IN_OUTBOX.includes(e.jMsg.payload.cmd_id))
+                ?? (this.outbox.entries().next().value as [string, OutboxEntry]);
+            const [oldestId, oldest] = evict;
             this.outbox.delete(oldestId);
             errorLogger.error(`outbox full (${OUTBOX_LIMIT}), dropping oldest message`, {
                 title: "RabbitMQ",
@@ -808,6 +812,10 @@ export default class RabbitClient {
             this.flushTimer = null;
             this.flushOutbox();
         }, 1000);
+    }
+
+    public isOutboxOpen() {
+        return this.outboxOpen;
     }
 
     /** Start delivering reliable messages - call once the QAMS session is settled. */

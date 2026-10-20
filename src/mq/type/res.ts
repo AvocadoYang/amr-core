@@ -49,11 +49,21 @@ export type ConnectionHealthRes = {
     message: string;
     id: string;
     newSession: string;
+    // QAMS has settled this pendingReadStatus (applied it, or it was for a goal QAMS no
+    // longer runs) - drop it whatever the return code says about the mission record
+    settledReadStatusId?: string;
+    // the AMR is running this goal but our record was lost - take it back as our record
+    adoptGoalId?: string;
 }
 
 export type CONNECTION_HEATH_RES = Base<ConnectionHealthRes>
 
+export type MissionLostRes = {
+    return_code: ReturnCode;
+    id: string;
+    cmd_id: CMD_ID.MISSION_LOST
+}
+export type MISSION_LOST_RES = Base<MissionLostRes>;
 
 
-
-export type AllRes = READ_STATUS | CARGO_VERITY | CONNECTION_HEATH_RES;
+export type AllRes = READ_STATUS | CARGO_VERITY | CONNECTION_HEATH_RES | MISSION_LOST_RES;

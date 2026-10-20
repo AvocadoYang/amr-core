@@ -1,7 +1,9 @@
 import dotenv from "dotenv";
+import { randomUUID } from "crypto";
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
-import { HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
+import { CarState, HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
+import { loadMissionState } from "./service/missionStateStore";
 import { RBClient } from "./mq";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
@@ -12,12 +14,21 @@ import * as ROS from './ros'
 import { connectWithQAMS as heartbeat_connectWithQAMS } from './actions/heartbeatMonitor/input'
 import { AMR_SERVICE_ISCONNECTED, QAMS_DISCONNECTED } from "./actions/heartbeatMonitor/output";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./types/status";
-import { BehaviorSubject, combineLatest, distinctUntilChanged, EMPTY, filter, from, map, switchMap, take, tap } from "rxjs";
-import { errorLogger, infoLogger } from "./logger/logger";
+import { BehaviorSubject, catchError, combineLatest, concatMap, distinctUntilChanged, EMPTY, filter, from, ignoreElements, map, merge, Observable, share, switchMap, take, takeUntil, tap, timer } from "rxjs";
+import { errorLogger, infoLogger, warnLogger } from "./logger/logger";
 import { HANDSHAKE_EX, IO_EX } from "./mq/type/type";
 import { sendConnectionHealth, sendResendMissionRequest } from "./mq/transactionsWrapper";
 import { CMD_ID } from "./mq/type/cmdId";
-import { ConnectionHealthRes, CONNECTION_HEATH_RES } from "./mq/type/res";
+import { ConnectionHealthRes } from "./mq/type/res";
+
+// CONNECTION_HEALTH is resent with the same id until QAMS answers it - a lost request or
+// answer would otherwise leave the gate closed for good while the heartbeat looks fine
+const CH_RETRY_MS = 3000;
+// how long the ready gate waits for the AMR to publish has_mission before asking QAMS anyway
+const CAR_STATE_WAIT_MS = 3000;
+// tells QAMS this amr-core reports carHasMission / runningGoalId / pendingReadStatus and
+// understands settledReadStatusId / adoptGoalId / 3007 in the answer
+const RECONCILE_VERSION = 2;
 
 dotenv.config();
 cleanEnv(process.env, {
@@ -30,6 +41,8 @@ cleanEnv(process.env, {
     default: "product",
   }),
 });
+
+type Connections = [qamsConnect: boolean, rabbitConnect: boolean, rosbridgeConnect: boolean, amrServiceConnect: boolean];
 
 class AmrCore {
   private consumedQueues: Map<string, string> = new Map();
@@ -51,6 +64,7 @@ class AmrCore {
   private ms: MissionManager;
   private mc: MoveControl;
   private st: Status;
+  private carState: CarState;
 
   // single source of truth for the 4 upstream connections; every other service reacts to what main decides here instead of tracking its own copy
   private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -59,118 +73,21 @@ class AmrCore {
   private rabbit_connect$ = new BehaviorSubject<boolean>(false);
 
   constructor() {
+    // the goal / unacked result from before a restart - restored before any service reads it
+    const stored = loadMissionState();
+    if (stored) Object.assign(this.missionStatus, stored);
+
     this.rb = new RBClient(this.info, this.consumedQueues, this.connectStatus);
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus)
     this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
-    this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus);
+    this.carState = new CarState();
+    this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus, this.carState);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
 
-    // update session when send [CH] transaction each time
-    this.rb.registerResTransactionOutput$.pipe(
-      filter((action) => {
-        return action.payload.cmd_id == CMD_ID.CONNECTION_HEALTH
-      }),
-    ).subscribe((action: CONNECTION_HEATH_RES) => {
-      const { newSession } = action.payload;
-      this.setSystemStatus({ session: newSession })
-    })
-
-
-    combineLatest([
-      this.qams_connect$,
-      this.rabbit_connect$,
-      this.ros_bridge_connect$,
-      this.amr_service_connect$
-    ]).pipe(
-      map((connectStatus) => {
-        const [qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect] = connectStatus;
-        const disconnectedServices: string[] = []
-        if (!connectStatus.every((v) => v)) {
-          connectStatus.forEach((isConnect, i) => {
-            if (!isConnect) {
-              switch (i) {
-                case 0:
-                  disconnectedServices.push("QAMS")
-                  return;
-                case 1:
-                  disconnectedServices.push("RabbitMQ")
-                  return;
-                case 2:
-                  disconnectedServices.push("ROS Bridge")
-                  return;
-                case 3:
-                  disconnectedServices.push("AMR Service")
-                  return;
-              }
-            }
-          })
-        }
-        const disconnectService = disconnectedServices.join(', ');
-        const reason = disconnectService.length ? `disconnect service: ${disconnectService}` : ""
-        return { ready: qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect, reason }
-      }),
-      distinctUntilChanged(),
-      switchMap(({ ready, reason }) => (ready
-        ? (
-          this.rb.registerResTransactionOutput$.pipe(
-            filter((action) => {
-              return action.payload.cmd_id == CMD_ID.CONNECTION_HEALTH
-            }),
-            take(1),
-            tap(async (action) => {
-              const payload: ConnectionHealthRes = action.payload as ConnectionHealthRes;
-              const { approveNotSameSession, resendMission } = this.registerProcess(payload.return_code);
-              this.info.approveNotSameSession = approveNotSameSession;
-              if (this.info.approveNotSameSession) {
-                infoLogger.info("start consume qams handshake queue, accept not equal session", {
-                  amrId: "Rabbitmq",
-                  type: "create consumer"
-                })
-              } else {
-                infoLogger.info("start consume qams handshake queue, just accept equal session", {
-                  amrId: "Rabbitmq",
-                  type: "create consumer"
-                })
-              }
-              try {
-                await this.rb.consumeDynamicTopic();
-              } catch (err) {
-                // rabbit dropped again mid-reconcile - its reconnect re-runs this whole gate
-                errorLogger.error(`consume topic failed: ${err instanceof Error ? err.message : String(err)}`, {
-                  title: "system",
-                  type: "connect status"
-                });
-                return;
-              }
-              // session is settled (newSession already applied) - release everything held while
-              // disconnected, stamped with the session QAMS now accepts
-              this.rb.openOutbox();
-              if (resendMission) {
-                this.rb.reqPublishWithAck(
-                  HANDSHAKE_EX,
-                  `qams.${MAC}.handshake.resend_mission_request`,
-                  sendResendMissionRequest()
-                )
-              }
-            })
-          )
-        )
-        : from((async () => {
-          // a new session is coming - hold reliable messages until it is settled
-          this.rb.closeOutbox();
-          await this.rb.pauseDynamicConsumers(reason);
-        })()))
-      )
-    ).subscribe();
-
-    combineLatest([
-      this.qams_connect$,
-      this.rabbit_connect$,
-      this.ros_bridge_connect$,
-      this.amr_service_connect$
-    ]).pipe(
-      distinctUntilChanged((prev, curr) => prev.every((value, index) => value === curr[index])),
+    // log + mirror the connections into connectStatus, and (re)register with QAMS whenever
+    // RabbitMQ is up but QAMS is not
+    this.connections$().pipe(
       tap(async ([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]) => {
         infoLogger.info("service connect status", {
           title: "system",
@@ -184,22 +101,6 @@ class AmrCore {
         });
 
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
-
-
-        if (qamsConnect && rabbitConnect) {
-          this.rb.reqPublish(
-            HANDSHAKE_EX,
-            `qams.register.req.checkHealth.${MAC}`,
-            sendConnectionHealth({
-              rosbridgeConnect,
-              amrServiceConnect,
-              lastSendGoalId: this.missionStatus.lastSendGoalId,
-              amrHasMission: this.amrStatus.amrHasMission,
-              pendingReadStatus: this.missionStatus.pendingReadStatus
-            }),
-            { expiration: "3000" }
-          );
-        }
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
         // topology is declared by the rabbit client's recovery setup before it reports connected
@@ -210,7 +111,17 @@ class AmrCore {
       })
     ).subscribe();
 
-
+    // the ready gate: the dynamic consumers and the outbox only run once QAMS has reconciled
+    // its mission state with what this amr-core and the AMR know
+    this.connections$().pipe(
+      switchMap((connections) => {
+        const [qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect] = connections;
+        if (qamsConnect && rabbitConnect && rosbridgeConnect && amrServiceConnect) {
+          return this.reconcileWithQams$();
+        }
+        return from(this.holdUntilReady(connections));
+      })
+    ).subscribe();
 
     this.netWorkManager.subscribe(async (action) => {
       switch (action.type) {
@@ -289,11 +200,162 @@ class AmrCore {
     return this.firstRegisterGate;
   }
 
-  private registerProcess(return_code: string): { approveNotSameSession: boolean, resendMission: boolean } {
+  private connections$(): Observable<Connections> {
+    return combineLatest([
+      this.qams_connect$,
+      this.rabbit_connect$,
+      this.ros_bridge_connect$,
+      this.amr_service_connect$
+    ]).pipe(
+      distinctUntilChanged((prev, curr) => prev.every((value, index) => value === curr[index]))
+    ) as Observable<Connections>;
+  }
+
+  private async holdUntilReady([qamsConnect, rabbitConnect, rosbridgeConnect, amrServiceConnect]: Connections) {
+    const disconnected = [
+      !qamsConnect && "QAMS",
+      !rabbitConnect && "RabbitMQ",
+      !rosbridgeConnect && "ROS Bridge",
+      !amrServiceConnect && "AMR Service",
+    ].filter(Boolean).join(", ");
+    // a new session is coming - hold reliable messages until it is settled
+    this.rb.closeOutbox();
+    try {
+      await this.rb.pauseDynamicConsumers(`disconnect service: ${disconnected}`);
+    } catch (err) {
+      errorLogger.error(`pause consumers failed: ${err instanceof Error ? err.message : String(err)}`, {
+        title: "system",
+        type: "connect status"
+      });
+    }
+    // still registered with QAMS but the AMR side is down: say so, so QAMS stops sending new
+    // missions here - it keeps the current one and reconciles once everything is back
+    if (qamsConnect && rabbitConnect) {
+      this.rb.reqPublish(
+        HANDSHAKE_EX,
+        `qams.register.req.checkHealth.${MAC}`,
+        this.connectionHealthMessage(rosbridgeConnect, amrServiceConnect),
+        { expiration: String(CH_RETRY_MS) }
+      );
+    }
+  }
+
+  private connectionHealthMessage(rosbridgeConnect: boolean, amrServiceConnect: boolean) {
+    return sendConnectionHealth({
+      rosbridgeConnect,
+      amrServiceConnect,
+      lastSendGoalId: this.missionStatus.lastSendGoalId,
+      amrHasMission: this.amrStatus.amrHasMission,
+      pendingReadStatus: this.missionStatus.pendingReadStatus,
+      carHasMission: this.carState.getHasMission(),
+      runningGoalId: this.carState.getRunningGoalId(),
+      reconcileVersion: RECONCILE_VERSION,
+    });
+  }
+
+  private reconcileWithQams$(): Observable<unknown> {
+    return from(this.carState.waitForHasMission(CAR_STATE_WAIT_MS)).pipe(
+      switchMap(() => this.askQamsToReconcile$()),
+      concatMap((answer) => from(this.applyReconcile(answer))),
+      catchError((err) => {
+        errorLogger.error(`reconcile with QAMS failed: ${err instanceof Error ? err.message : String(err)}`, {
+          title: "system",
+          type: "connect status"
+        });
+        return EMPTY;
+      })
+    );
+  }
+
+  /** CONNECTION_HEALTH with one id, resent until QAMS answers that id */
+  private askQamsToReconcile$(): Observable<ConnectionHealthRes> {
+    const id = randomUUID();
+    // built once: every resend is the same request, so QAMS answers a resend from its cache
+    // instead of reconciling (and issuing a session) a second time
+    const message = this.connectionHealthMessage(true, true);
+    const answer$ = this.rb.registerResTransactionOutput$.pipe(
+      filter((action) => action.payload.cmd_id === CMD_ID.CONNECTION_HEALTH && action.payload.id === id),
+      map((action) => action.payload as ConnectionHealthRes),
+      take(1),
+      share()
+    );
+    const ask$ = timer(0, CH_RETRY_MS).pipe(
+      tap((attempt) => {
+        if (attempt > 0) {
+          warnLogger.warn(`no answer to CONNECTION_HEALTH yet, resend (${attempt})`, {
+            title: "system",
+            type: "connect status",
+            status: { id }
+          });
+        }
+        this.rb.reqPublish(
+          HANDSHAKE_EX,
+          `qams.register.req.checkHealth.${MAC}`,
+          message,
+          { expiration: String(CH_RETRY_MS) },
+          id
+        );
+      }),
+      takeUntil(answer$),
+      ignoreElements()
+    );
+    return merge(ask$, answer$);
+  }
+
+  private async applyReconcile(answer: ConnectionHealthRes) {
+    // the session is settled - everything from here on, and everything released from the
+    // outbox, carries the session QAMS now accepts
+    this.setSystemStatus({ session: answer.newSession });
+    const { approveNotSameSession, resendMission } = this.registerProcess(answer);
+    this.info.approveNotSameSession = approveNotSameSession;
+    if (this.info.approveNotSameSession) {
+      infoLogger.info("start consume qams handshake queue, accept not equal session", {
+        amrId: "Rabbitmq",
+        type: "create consumer"
+      })
+    } else {
+      infoLogger.info("start consume qams handshake queue, just accept equal session", {
+        amrId: "Rabbitmq",
+        type: "create consumer"
+      })
+    }
+    try {
+      await this.rb.consumeDynamicTopic();
+    } catch (err) {
+      // rabbit dropped again mid-reconcile - its reconnect re-runs this whole gate
+      errorLogger.error(`consume topic failed: ${err instanceof Error ? err.message : String(err)}`, {
+        title: "system",
+        type: "connect status"
+      });
+      return;
+    }
+    // release everything held while disconnected, stamped with the session QAMS now accepts
+    this.rb.openOutbox();
+    if (resendMission) {
+      this.rb.reqPublishWithAck(
+        HANDSHAKE_EX,
+        `qams.${MAC}.handshake.resend_mission_request`,
+        sendResendMissionRequest()
+      )
+    }
+  }
+
+  private registerProcess(answer: ConnectionHealthRes): { approveNotSameSession: boolean, resendMission: boolean } {
+    const { return_code, settledReadStatusId, adoptGoalId } = answer;
     // every branch below means "we've now heard QAMS's authoritative view this process
     // lifetime" - ends the ambiguity window that Mission's ROS-feedback handler holds off
     // canceling for while lastSendGoalId is still empty from a fresh restart.
     this.missionStatus.awaitingReconcile = false;
+    // a goal-lost report queued before this reconcile describes a state QAMS just re-judged
+    this.ms.discardLostReport();
+    // QAMS has settled a result we were still holding (applied it, or it was for a goal QAMS
+    // no longer runs) - drop it so neither the outbox nor a restart delivers it again
+    if (settledReadStatusId) this.ms.dropPendingReadStatus(settledReadStatusId, `CONNECTION_HEALTH ${return_code}`);
+    infoLogger.info("reconcile result from QAMS", {
+      title: "system",
+      type: "connect status",
+      status: { return_code, message: answer.message, settledReadStatusId, adoptGoalId }
+    });
     switch (return_code) {
       case ReturnCode.SUCCESS:
         return { approveNotSameSession: false, resendMission: false };
@@ -313,12 +375,22 @@ class AmrCore {
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION");
         return { approveNotSameSession: false, resendMission: true };
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
+        // the AMR is running the goal QAMS waits for but our record of it was lost
+        if (adoptGoalId) this.ms.adoptGoal(adoptGoalId);
         return { approveNotSameSession: true, resendMission: false }
       case ReturnCode.MISSION_COMPLETED_DURING_DISCONNECT:
         // the goal finished while disconnected and QAMS already applied the result we carried
         // in CH.pendingReadStatus - nothing to cancel or resend, just drop the local record
         this.ms.resetMissionStatus("MISSION_COMPLETED_DURING_DISCONNECT");
         this.amrStatus.amrHasMission = false;
+        return { approveNotSameSession: false, resendMission: false };
+      case ReturnCode.MISSION_RESULT_UNKNOWN:
+        // QAMS can not tell whether the AMR finished this step and asked a person to check on
+        // site: keep the record (a late result is still reported) and leave the AMR alone
+        warnLogger.warn(`QAMS can not tell whether goal ${this.missionStatus.lastSendGoalId} finished, waiting for a person to check`, {
+          title: "system",
+          type: "connect status"
+        });
         return { approveNotSameSession: false, resendMission: false };
       case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
         // both sides think they know the active goal and disagree - conservative: cancel

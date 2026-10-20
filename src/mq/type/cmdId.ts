@@ -29,7 +29,8 @@ export enum CMD_ID {
   FORCE_SHUTDOWN = "FS",
   MOVEMENT_CONFIG = 'MC',
   CONNECTION_HEALTH = "CH",
-  RESEND_MISSION_REQUEST = "RM"
+  RESEND_MISSION_REQUEST = "RM",
+  MISSION_LOST = "ML"
 }
 
 export const blackList = [

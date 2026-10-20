@@ -1,15 +1,25 @@
 import { interval, Subject } from "rxjs";
+import { randomUUID } from "crypto";
 import * as ROS from '../ros'
 import { MAC } from "../configs";
 import { Output, sendAmrHasMission, sendCancelMission, sendStartMission, sendTargetLoc, setMissionInfo } from "~/actions/mission/output";
 import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { CMD_ID } from "~/mq/type/cmdId";
-import { sendBaseResponse, sendFeedBack, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
+import { sendBaseResponse, sendFeedBack, sendMissionLost, sendReadStatus, sendWriteStatusResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { HANDSHAKE_EX, IO_EX, RES_EX } from "~/mq/type/type";
 import { AllHandshake } from "~/mq/type/handshake";
 import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
+import CarState from "./carState";
+import { saveMissionState } from "./missionStateStore";
+
+// how long the AMR must report has_mission=false, after it had taken the goal, before the
+// goal counts as dropped without a result
+const LOST_AFTER_MS = 20000;
+// has_mission=true right after a new goal may still be the previous goal's - only count it
+// as "the AMR took this goal" once it is seen this long after the goal was recorded
+const ACCEPT_GRACE_MS = 2000;
 
 export default class Mission {
   private output$: Subject<Output>
@@ -25,12 +35,23 @@ export default class Mission {
   // recognized (by goal id) and dropped instead of being treated as abnormal.
   private canceledGoalIds: Set<string> = new Set();
 
+  // watch for a goal the AMR took and then dropped without publishing a result (its mission
+  // node restarted, someone cleared it on the AMR) - QAMS would otherwise wait forever
+  private lostWatch = { goalId: "", recordedAt: 0, accepted: false, idleSince: 0 };
+  private lostReportedGoalId = "";
+  private lostReportId = "";
+
   constructor(
     private rb: RBClient,
     private missionStatus: MISSION_STATUS,
-    private amrStatus: AMR_STATUS
+    private amrStatus: AMR_STATUS,
+    private carState: CarState
   ) {
     this.output$ = new Subject();
+    // a result restored from disk keeps its transaction id, so a late ack still matches it
+    this.pendingReadStatusId = this.missionStatus.pendingReadStatus?.id ?? "";
+
+    interval(1000).subscribe(() => this.checkLostGoal());
 
     this.rb.onControlTransaction((action) => {
       this.reqProcess(action);
@@ -58,6 +79,12 @@ export default class Mission {
         return;
       }
 
+      const settledGoalId = this.missionStatus.pendingReadStatus?.read.feedback_id;
+      if (this.missionStatus.lastSendGoalId && this.missionStatus.lastSendGoalId !== settledGoalId) {
+        // QAMS already sent the next goal and it got here before this ack - keep that record
+        this.dropPendingReadStatus(payload.id, "READ_STATUS");
+        return;
+      }
       this.pendingReadStatusId = "";
       this.resetMissionStatus("READ_STATUS");
       this.amrStatus.amrHasMission = false;
@@ -166,6 +193,7 @@ export default class Mission {
       // kept until QAMS acks it (or a reconcile decides it) - CONNECTION_HEALTH carries it,
       // so a result produced while disconnected can still be settled after reconnecting
       this.missionStatus.pendingReadStatus = { id: this.pendingReadStatusId, read: newState.read };
+      saveMissionState(this.missionStatus);
       // retried (same id) on ack timeout by the client itself, and held in the client's outbox
       // across disconnects; the onResTransaction handler above is the actual settlement point
       // via pendingReadStatusId matching, so the returned promise is intentionally not used.
@@ -274,6 +302,12 @@ export default class Mission {
     this.missionStatus.lastSendGoalId = data.lastSendGoalId ?? this.missionStatus.lastSendGoalId;
     this.missionStatus.targetLoc = data.targetLoc ?? this.missionStatus.targetLoc;
     this.missionStatus.lastTransactionId = data.lastTransactionId ?? this.missionStatus.lastTransactionId;
+    saveMissionState(this.missionStatus);
+    if (data.lastSendGoalId) {
+      // a goal (re)sent to the AMR starts a fresh watch, even when it reuses the same id
+      this.lostWatch = { goalId: data.lastSendGoalId, recordedAt: Date.now(), accepted: false, idleSince: 0 };
+      this.lostReportedGoalId = "";
+    }
 
     infoLogger.info(`mission status update`, {
       title: "mission",
@@ -294,11 +328,95 @@ export default class Mission {
     }
     this.missionStatus.pendingReadStatus = null;
     this.pendingReadStatusId = "";
+    this.discardLostReport();
+    saveMissionState(this.missionStatus);
     infoLogger.info(`reset mission status from [${from}]`, {
       title: "mission",
       type: "mission status",
       status: this.missionStatus
     })
+  }
+
+  /** QAMS settled this result some other way (reconcile) - forget it, keep the goal record */
+  public dropPendingReadStatus(id: string, from: string) {
+    const pending = this.missionStatus.pendingReadStatus;
+    if (!pending || pending.id !== id) return;
+    this.rb.discardOutbox(pending.id);
+    this.missionStatus.pendingReadStatus = null;
+    this.pendingReadStatusId = "";
+    saveMissionState(this.missionStatus);
+    infoLogger.info(`drop settled mission result from [${from}]`, {
+      title: "mission",
+      type: "mission status",
+      status: { id, goalId: pending.read.feedback_id }
+    })
+  }
+
+  /** the AMR is running this goal but our record of it was lost - take it back */
+  public adoptGoal(goalId: string) {
+    infoLogger.info(`adopt goal ${goalId} the AMR is still running`, {
+      title: "mission",
+      type: "mission status",
+      status: { goalId }
+    })
+    this.updateStatue({ missionType: "", lastSendGoalId: goalId, targetLoc: "", lastTransactionId: randomUUID() });
+  }
+
+  /**
+   * A goal-lost report queued before a reconcile describes a state the reconcile has already
+   * re-judged - never let it reach QAMS afterwards.
+   */
+  public discardLostReport() {
+    if (!this.lostReportId) return;
+    this.rb.discardOutbox(this.lostReportId);
+    this.lostReportId = "";
+  }
+
+  private checkLostGoal() {
+    const goalId = this.missionStatus.lastSendGoalId;
+    const now = Date.now();
+    if (!goalId || this.missionStatus.pendingReadStatus) {
+      this.lostWatch = { goalId: "", recordedAt: 0, accepted: false, idleSince: 0 };
+      return;
+    }
+    if (this.lostWatch.goalId !== goalId) {
+      this.lostWatch = { goalId, recordedAt: now, accepted: false, idleSince: 0 };
+    }
+    // judged only while settled with QAMS: during a disconnect / before the reconcile the
+    // CONNECTION_HEALTH reconcile is the one that looks at an idle AMR
+    if (this.missionStatus.awaitingReconcile || !this.rb.isOutboxOpen()) {
+      this.lostWatch.idleSince = 0;
+      return;
+    }
+
+    const hasMission = this.carState.getHasMission();
+    const runningGoalId = this.carState.getRunningGoalId();
+    if (runningGoalId === goalId || (hasMission === true && now - this.lostWatch.recordedAt >= ACCEPT_GRACE_MS)) {
+      this.lostWatch.accepted = true;
+      this.lostWatch.idleSince = 0;
+      return;
+    }
+    if (!this.lostWatch.accepted || hasMission !== false || runningGoalId) {
+      this.lostWatch.idleSince = 0;
+      return;
+    }
+    if (!this.lostWatch.idleSince) this.lostWatch.idleSince = now;
+    if (now - this.lostWatch.idleSince < LOST_AFTER_MS || this.lostReportedGoalId === goalId) return;
+
+    this.lostReportedGoalId = goalId;
+    this.lostReportId = randomUUID();
+    warnLogger.warn(`AMR dropped goal ${goalId} without a result, report to QAMS`, {
+      title: "mission",
+      type: "mission lost",
+      status: { goalId, idleMs: now - this.lostWatch.idleSince, missionType: this.missionStatus.missionType }
+    });
+    this.rb.reqPublishWithAck(
+      HANDSHAKE_EX,
+      `qams.${MAC}.handshake.missionLost`,
+      sendMissionLost({ goalId, missionType: this.missionStatus.missionType }),
+      undefined,
+      this.lostReportId
+    );
   }
 
 

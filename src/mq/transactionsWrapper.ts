@@ -120,6 +120,12 @@ export const sendConnectionHealth = (data: {
     lastSendGoalId: string,
     amrHasMission: boolean,
     pendingReadStatus: PENDING_READ_STATUS | null,
+    // what the AMR itself reported since the ROS bridge (re)connected; null = nothing yet
+    carHasMission: boolean | null,
+    // goal id of feedback the AMR sent in the last few seconds; null = no fresh feedback
+    runningGoalId: string | null,
+    // 2 = QAMS may use the fields above; an older QAMS ignores them
+    reconcileVersion: number,
 }) => {
     return {
         cmd_id: CMD_ID.CONNECTION_HEALTH,
@@ -139,6 +145,14 @@ export const sendRegisterRequest = (data: {
 export const sendResendMissionRequest = () => {
     return {
         cmd_id: CMD_ID.RESEND_MISSION_REQUEST
+    }
+}
+
+// the AMR dropped this goal without a result - QAMS asks a person to check
+export const sendMissionLost = (data: { goalId: string, missionType: string }) => {
+    return {
+        cmd_id: CMD_ID.MISSION_LOST,
+        ...data
     }
 }
 
@@ -162,7 +176,8 @@ type AllReqType =
     typeof sendForceShutdown |
     typeof sendRegisterRequest |
     typeof sendConnectionHealth |
-    typeof sendResendMissionRequest
+    typeof sendResendMissionRequest |
+    typeof sendMissionLost
 
 export type RequestMsgType = ReturnType<AllReqType>
 

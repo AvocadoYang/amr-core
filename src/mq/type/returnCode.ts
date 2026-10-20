@@ -10,6 +10,9 @@ export enum ReturnCode {
     LOGIN_SUCCESS_UNEXPECTED = "3006",
     // the mission finished while disconnected; QAMS settled it from CH.pendingReadStatus
     MISSION_COMPLETED_DURING_DISCONNECT = "3005",
+    // QAMS cannot tell whether the AMR finished the current step (it holds no result and the
+    // AMR is idle) and asked a person to check on site - keep the record, touch nothing
+    MISSION_RESULT_UNKNOWN = "3007",
 
     FORMAT_ERROR_LOGIN_ERROR = "3441",
     NOT_IN_SYSTEM_LOGIN_ERROR = "3442",
