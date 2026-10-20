@@ -26,6 +26,10 @@ import { ConnectionHealthRes } from "./mq/type/res";
 const CH_RETRY_MS = 3000;
 // how long the ready gate waits for the AMR to publish has_mission before asking QAMS anyway
 const CAR_STATE_WAIT_MS = 3000;
+// a goal forwarded this recently may not show in has_mission / feedback yet (e.g. it was
+// queued during a stall and delivered right before the reconnect) - give the AMR this long
+// to report it before the reconcile takes its snapshot
+const FRESH_GOAL_WAIT_MS = 5000;
 // tells QAMS this amr-core reports carHasMission / runningGoalId / pendingReadStatus and
 // understands settledReadStatusId / adoptGoalId / 3007 in the answer
 const RECONCILE_VERSION = 2;
@@ -253,8 +257,16 @@ class AmrCore {
     });
   }
 
+  private async waitForCarState() {
+    await this.carState.waitForHasMission(CAR_STATE_WAIT_MS);
+    const until = Date.now() + FRESH_GOAL_WAIT_MS;
+    while (this.ms.goalJustSent(FRESH_GOAL_WAIT_MS) && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   private reconcileWithQams$(): Observable<unknown> {
-    return from(this.carState.waitForHasMission(CAR_STATE_WAIT_MS)).pipe(
+    return from(this.waitForCarState()).pipe(
       switchMap(() => this.askQamsToReconcile$()),
       concatMap((answer) => from(this.applyReconcile(answer))),
       catchError((err) => {

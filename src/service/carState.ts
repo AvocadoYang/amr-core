@@ -15,11 +15,14 @@ export default class CarState {
   private hasMission: boolean | null = null;
   private feedbackGoalId = "";
   private feedbackAt = 0;
+  // last time the AMR said has_mission=true
+  private hasMissionTrueAt = 0;
   private hasMissionWaiters: (() => void)[] = [];
 
   constructor() {
     ROS.has_mission.subscribe((hasMission) => {
       this.hasMission = hasMission;
+      if (hasMission) this.hasMissionTrueAt = Date.now();
       // idle now - the last feedback (a few seconds old at most) no longer means "running"
       if (!hasMission) this.feedbackGoalId = "";
       const waiters = this.hasMissionWaiters;
@@ -39,6 +42,7 @@ export default class CarState {
 
     ROS.connectionClosed$.subscribe(() => {
       this.hasMission = null;
+      this.hasMissionTrueAt = 0;
       this.feedbackGoalId = "";
       this.feedbackAt = 0;
     });
@@ -52,6 +56,11 @@ export default class CarState {
   public getRunningGoalId(): string | null {
     if (!this.feedbackGoalId || Date.now() - this.feedbackAt > FEEDBACK_FRESH_MS) return null;
     return this.feedbackGoalId;
+  }
+
+  /** the AMR reported this goal: feedback with its id, or has_mission=true after `since` */
+  public reportsRunning(goalId: string, since: number) {
+    return this.getRunningGoalId() === goalId || (this.hasMission === true && this.hasMissionTrueAt > since);
   }
 
   /** resolves once has_mission is known, or after timeoutMs if the AMR stays silent */

@@ -363,6 +363,18 @@ export default class Mission {
   }
 
   /**
+   * True while a goal forwarded moments ago has not shown up in what the AMR reports yet - a
+   * reconcile snapshot taken now would see the AMR "idle" and get the goal cancelled or
+   * handed to a person for nothing.
+   */
+  public goalJustSent(graceMs: number) {
+    const goalId = this.missionStatus.lastSendGoalId;
+    if (!goalId || this.missionStatus.pendingReadStatus || this.lostWatch.goalId !== goalId) return false;
+    if (Date.now() - this.lostWatch.recordedAt > graceMs) return false;
+    return !this.carState.reportsRunning(goalId, this.lostWatch.recordedAt);
+  }
+
+  /**
    * A goal-lost report queued before a reconcile describes a state the reconcile has already
    * re-judged - never let it reach QAMS afterwards.
    */
