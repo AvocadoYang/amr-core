@@ -10,7 +10,6 @@ import { AllRes, CONNECTION_HEATH_RES, REGISTER_RES } from "./type/res";
 import { RES_EX, IO_EX, HANDSHAKE_EX, PublishOptions, volatile, HEARTBEAT_EX, REGISTER_REQ_QUEUE, heartbeatPingQName, q2a_handshakeQName, q2a_ResponseQName, a2q_handshakeQName, a2q_ResponseQName, HEARTBEAT_PONG_QUEUE, dynamicListener, q2a_registerResponseQName, q2a_ioQName } from "./type/type";
 import { AllHandshake, HEARTBEAT } from "./type/handshake";
 import { AllIO } from './type/io'
-import { ReturnCode } from "./type/returnCode";
 import { CONNECT_STATUS, TRANSACTION_INFO } from "~/types/status";
 import { blackList, CMD_ID } from "./type/cmdId";
 
@@ -871,6 +870,14 @@ export default class RabbitClient {
     }
 
 
+    private logDropOldSession(type: string, msg: { session: string; payload?: { cmd_id?: string; id?: string } }) {
+        warnLogger.warn(`drop ${type} from an older session`, {
+            title: "RabbitMQ",
+            type,
+            status: { cmd_id: msg.payload?.cmd_id, id: msg.payload?.id, session: msg.session, current: this.info.session }
+        });
+    }
+
     public async consumeDynamicTopic() {
         if (!this.channel) return [];
 
@@ -888,23 +895,20 @@ export default class RabbitClient {
                     });
                     return;
                 }
-                const checkSession = (msg.session == this.info.session);
-                if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                    if (canPass) this.resTransactionOutput$.next(msg);
-                } else {
-                    this.resTransactionOutput$.next(msg);
-                };
+                // older session: sent before the last reconcile, QAMS sends again what is still needed
+                if (msg.session !== this.info.session) {
+                    this.logDropOldSession("response", msg);
+                    return;
+                }
+                this.resTransactionOutput$.next(msg);
             }),
 
             this.consume<AllHandshake>(q2a_handshakeQName, (msg) => {
-                const checkSession = (msg.session == this.info.session);
-                if (!checkSession) {
-                    const canPass = this.info.return_code == ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS;
-                    if (canPass) this.controlTransactionOutput$.next(msg);
-                } else {
-                    this.controlTransactionOutput$.next(msg);
+                if (msg.session !== this.info.session) {
+                    this.logDropOldSession("handshake", msg);
+                    return;
                 }
+                this.controlTransactionOutput$.next(msg);
             }),
 
             this.consume<AllIO>(q2a_ioQName, (msg) => {

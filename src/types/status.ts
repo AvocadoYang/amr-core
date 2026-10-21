@@ -30,4 +30,4 @@ export type PENDING_READ_STATUS = { id: string, read: READ_RESULT }
 export type CONNECT_STATUS =
     { qams_isConnect: boolean, amr_service_isConnect: boolean, rabbitMQ_isConnect: boolean, rosbridge_isConnect: boolean }
 
-export type TRANSACTION_INFO = { amrId?: string, qamsSerialNum?: string; session?: string, return_code?: string, approveNotSameSession?: boolean } 
+export type TRANSACTION_INFO = { amrId?: string, qamsSerialNum?: string; session?: string } 

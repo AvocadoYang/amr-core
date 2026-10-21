@@ -58,7 +58,7 @@ class AmrCore {
   private amrStatus: AMR_STATUS =
     { amrHasMission: false, poseAccurate: false, currentId: "5305" };
   private info: TRANSACTION_INFO =
-    { amrId: "", qamsSerialNum: "", session: "", return_code: "", approveNotSameSession: false }
+    { amrId: "", qamsSerialNum: "", session: "" }
   private connectStatus: CONNECT_STATUS =
     { qams_isConnect: false, amr_service_isConnect: false, rosbridge_isConnect: false, rabbitMQ_isConnect: false }
 
@@ -329,19 +329,13 @@ class AmrCore {
     // the session is settled - everything from here on, and everything released from the
     // outbox, carries the session QAMS now accepts
     this.setSystemStatus({ session: answer.newSession });
-    const { approveNotSameSession, resendMission } = this.registerProcess(answer);
-    this.info.approveNotSameSession = approveNotSameSession;
-    if (this.info.approveNotSameSession) {
-      infoLogger.info("start consume qams handshake queue, accept not equal session", {
-        amrId: "Rabbitmq",
-        type: "create consumer"
-      })
-    } else {
-      infoLogger.info("start consume qams handshake queue, just accept equal session", {
-        amrId: "Rabbitmq",
-        type: "create consumer"
-      })
-    }
+    const { resendMission } = this.registerProcess(answer);
+    // only messages of the new session are taken from here on, whatever the return code: the
+    // ones QAMS sent before this reconcile are dropped and QAMS sends again what is still needed
+    infoLogger.info("start consume qams handshake queue, just accept equal session", {
+      amrId: "Rabbitmq",
+      type: "create consumer"
+    })
     try {
       await this.rb.consumeDynamicTopic();
     } catch (err) {
@@ -363,7 +357,7 @@ class AmrCore {
     }
   }
 
-  private registerProcess(answer: ConnectionHealthRes): { approveNotSameSession: boolean, resendMission: boolean } {
+  private registerProcess(answer: ConnectionHealthRes): { resendMission: boolean } {
     const { return_code, settledReadStatusId, adoptGoalId } = answer;
     this.diag.setReconcile(return_code, answer.message);
     this.diag.reconcileEnd();
@@ -383,32 +377,32 @@ class AmrCore {
     });
     switch (return_code) {
       case ReturnCode.SUCCESS:
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
         ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
         this.ms.resetMissionStatus("MISSION_TIMEOUT_LOGIN_SUCCESS");
-        return { approveNotSameSession: false, resendMission: true };
+        return { resendMission: true };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION:
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION");
-        return { approveNotSameSession: false, resendMission: true };
+        return { resendMission: true };
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
         // the AMR is running the goal QAMS waits for but our record of it was lost
         if (adoptGoalId) this.ms.adoptGoal(adoptGoalId);
-        return { approveNotSameSession: true, resendMission: false }
+        return { resendMission: false }
       case ReturnCode.MISSION_COMPLETED_DURING_DISCONNECT:
         // the goal finished while disconnected and QAMS already applied the result we carried
         // in CH.pendingReadStatus - nothing to cancel or resend, just drop the local record
         this.ms.resetMissionStatus("MISSION_COMPLETED_DURING_DISCONNECT");
         this.amrStatus.amrHasMission = false;
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       case ReturnCode.MISSION_RESULT_UNKNOWN:
         // QAMS can not tell whether the AMR finished this step and asked a person to check on
         // site: keep the record (a late result is still reported) and leave the AMR alone
@@ -416,27 +410,25 @@ class AmrCore {
           title: "system",
           type: "connect status"
         });
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
         // both sides think they know the active goal and disagree - conservative: cancel
         // and wait, do not assume which one is right (mirrors QAMS's own conservative
         // handling of this code, which also does not auto-resend)
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("LOGIN_SUCCESS_UNEXPECTED");
-        return { approveNotSameSession: false, resendMission: false };
+        return { resendMission: false };
       default:
-        return { approveNotSameSession: false, resendMission: false }
+        return { resendMission: false }
     }
 
   }
 
   private setSystemStatus(data: TRANSACTION_INFO) {
-    const { amrId, session, return_code, approveNotSameSession, qamsSerialNum } = data;
+    const { amrId, session, qamsSerialNum } = data;
     this.info.qamsSerialNum = qamsSerialNum ?? this.info.qamsSerialNum
     this.info.amrId = amrId ?? this.info.amrId;
     this.info.session = session ?? this.info.session;
-    this.info.return_code = return_code ?? this.info.return_code
-    this.info.approveNotSameSession = approveNotSameSession ?? this.info.approveNotSameSession
   }
 
 
