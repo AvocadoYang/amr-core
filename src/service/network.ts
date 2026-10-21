@@ -45,9 +45,14 @@ class NetWorkManager {
     await this.attemptConnect();
   }
 
-  /** Resolves with the first REGISTER response matching requestId, or rejects on timeout. */
-  private waitForRegisterResponse(requestId: string, timeoutMs = 5000): Promise<REGISTER_RES> {
-    return new Promise((resolve, reject) => {
+  /**
+   * Resolves with the first REGISTER response matching requestId, or rejects on timeout.
+   * cancel() stops waiting without rejecting - a wait nobody awaits any more must be cancelled,
+   * or its timeout rejection goes unhandled and Node exits the whole process.
+   */
+  private waitForRegisterResponse(requestId: string, timeoutMs = 5000): { response: Promise<REGISTER_RES>; cancel: () => void } {
+    let cancel = () => {};
+    const response = new Promise<REGISTER_RES>((resolve, reject) => {
       const timer = setTimeout(() => {
         sub.unsubscribe();
         reject(new CustomerError("5557", "register response timeout"));
@@ -59,14 +64,20 @@ class NetWorkManager {
           resolve(action as REGISTER_RES);
         }
       });
+      cancel = () => {
+        clearTimeout(timer);
+        sub.unsubscribe();
+      };
     });
+    return { response, cancel };
   }
 
   private async attemptConnect() {
     try {
 
       const requestId = randomUUID();
-      const responsePromise = this.waitForRegisterResponse(requestId);
+      // listen before publishing so a fast answer is not missed
+      const wait = this.waitForRegisterResponse(requestId);
       const published = await this.rb.reqPublish(
         HANDSHAKE_EX,
         `qams.register.req.register.${MAC}`,
@@ -77,10 +88,12 @@ class NetWorkManager {
         requestId
       );
       if (!published) {
+        // RabbitMQ is down (e.g. the network cable is out): nothing will answer this request
+        wait.cancel();
         throw new CustomerError("5556", "failed to publish register request to QAMS");
       }
 
-      const response = await responsePromise;
+      const response = await wait.response;
       const { session, payload } = response;
       const { return_code, amrId, message, qamsSerialNum } = payload;
 
