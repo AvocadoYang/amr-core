@@ -193,6 +193,21 @@ export default class RabbitClient {
         this.rawConnection = null;
     }
 
+    /**
+     * Close the live connection so recovery opens a new one (same setup as any reconnect).
+     * Returns false when there is no live connection - recovery is already on it.
+     */
+    public forceReconnect(reason: string): boolean {
+        const model = this.rawConnection;
+        if (this.manualClose || !model) return false;
+        warnLogger.warn(`${reason}, forcing RabbitMQ reconnect`, {
+            title: "RabbitMQ",
+            type: "network"
+        });
+        model.close().catch(() => { });
+        return true;
+    }
+
     /** last thing that went wrong talking to RabbitMQ - shown on the diagnostics page */
     public lastNetworkError: { message: string; at: number } = { message: "", at: 0 };
 

@@ -135,6 +135,13 @@ class AmrCore {
       })
     ).subscribe();
 
+    // RabbitMQ came back while a register was still waiting: that request went out on the dead
+    // connection, so register again now instead of after its timeout
+    this.rabbit_connect$.pipe(
+      distinctUntilChanged(),
+      filter(Boolean)
+    ).subscribe(() => this.netWorkManager.retryNow());
+
     this.netWorkManager.subscribe(async (action) => {
       switch (action.type) {
         case IS_CONNECTED:

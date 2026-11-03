@@ -23,6 +23,12 @@ class NetWorkManager {
   private output$: Subject<Output>;
   private reconnectCount$: BehaviorSubject<number> = new BehaviorSubject(0);
   private connectingInProgress = false;
+  // the attempt in flight - its register wait and the retry timer after a failure - so a
+  // RabbitMQ reconnect can drop them and register again on the new connection right away
+  private attemptGen = 0;
+  private pendingWait: { cancel: () => void } | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastForcedReconnect = 0;
   /** last failed attempt to log in to QAMS - shown on the diagnostics page */
   public lastError: { message: string; at: number } = { message: "", at: 0 };
 
@@ -43,6 +49,37 @@ class NetWorkManager {
     if (this.connectingInProgress) return;
     this.connectingInProgress = true;
     await this.attemptConnect();
+  }
+
+  /**
+   * RabbitMQ (re)connected. A register still waiting for its answer went out on the old
+   * connection and is lost - send it again now instead of waiting for its timeout (after an HA
+   * switchover this is ~8 s offline instead of ~17 s). No-op when no attempt is running: main
+   * starts a fresh one through fleetConnect().
+   */
+  public retryNow() {
+    if (!this.connectingInProgress) return;
+    this.pendingWait?.cancel();
+    this.pendingWait = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    infoLogger.info("RabbitMQ reconnected, register with QAMS again now", {
+      title: "system",
+      type: "QAMS",
+    });
+    void this.attemptConnect();
+  }
+
+  /**
+   * A register timed out on a connection that still looks fine. With HA the VIP can move to the
+   * other host without breaking this TCP connection (e.g. a NAT on the way keeps it), and the
+   * BACKUP it still reaches does not answer - so open a new connection, which goes to whoever
+   * holds the VIP now. At most once per 30 s: on a single-host site whose QAMS is just down
+   * (restarting) it would otherwise reopen RabbitMQ every 10 s for nothing.
+   */
+  private reconnectRabbitAfterTimeout() {
+    if (Date.now() - this.lastForcedReconnect < 30_000) return;
+    if (this.rb.forceReconnect("register response timeout")) this.lastForcedReconnect = Date.now();
   }
 
   /**
@@ -73,11 +110,15 @@ class NetWorkManager {
   }
 
   private async attemptConnect() {
+    // a newer attempt (retryNow) supersedes this one: it must not log in or schedule retries
+    const gen = ++this.attemptGen;
+    this.retryTimer = null;
     try {
 
       const requestId = randomUUID();
       // listen before publishing so a fast answer is not missed
       const wait = this.waitForRegisterResponse(requestId);
+      this.pendingWait = wait;
       const published = await this.rb.reqPublish(
         HANDSHAKE_EX,
         `qams.register.req.register.${MAC}`,
@@ -94,6 +135,8 @@ class NetWorkManager {
       }
 
       const response = await wait.response;
+      if (gen !== this.attemptGen) return;
+      this.pendingWait = null;
       const { session, payload } = response;
       const { return_code, amrId, message, qamsSerialNum } = payload;
 
@@ -114,6 +157,8 @@ class NetWorkManager {
         throw new CustomerError(return_code, message);
       }
     } catch (error) {
+      if (gen !== this.attemptGen) return;
+      this.pendingWait = null;
       this.lastError = {
         message:
           error instanceof CustomerError
@@ -158,7 +203,8 @@ class NetWorkManager {
           type: "QAMS",
         });
       }
-      setTimeout(async () => await this.attemptConnect(), 5000)
+      if (error instanceof CustomerError && error.statusCode == "5557") this.reconnectRabbitAfterTimeout();
+      this.retryTimer = setTimeout(async () => await this.attemptConnect(), 5000)
     }
 
   }
