@@ -95,6 +95,7 @@ async function refresh() {
       li("ping 交管電腦 " + (d.probes.ping ? d.probes.ping.target : "") + ": " + probeText(d.probes.ping, "通")),
       li("RabbitMQ " + (d.probes.rabbit ? d.probes.rabbit.target : "") + ": " + probeText(d.probes.rabbit, "通")),
       li("rosbridge " + (d.probes.ros ? d.probes.ros.target : "") + ": " + probeText(d.probes.ros, "通")),
+      li("WiFi: " + (d.wifi ? d.wifi.s + " dBm" + (d.wifi.b ? " · AP " + d.wifi.b : "") + (d.wifi.f ? " · " + d.wifi.f + " MHz" : "") + (d.wifi.r ? " · " + d.wifi.r + " Mbit/s" : "") : "沒有無線網卡或沒連上 (透過網路線接無線橋接器的車看不到)")),
     ]);
     const m = d.mission;
     fill("mission", [

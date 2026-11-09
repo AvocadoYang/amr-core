@@ -9,6 +9,7 @@ import { errorLogger, infoLogger } from "~/logger/logger";
 import { AMR_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "~/types/status";
 import CarState from "./carState";
 import { DIAG_PAGE } from "./diagnosticsPage";
+import { WifiProbe } from "./wifi";
 
 /**
  * Read-only status page for the person standing next to the car ("why does the traffic
@@ -102,6 +103,8 @@ export default class Diagnostics {
   private events: { at: number; text: string }[] = [];
   private seen = { pose: 0, hasMission: 0, ioInfo: 0 };
   private probes: { ping?: Probe; rabbit?: Probe; ros?: Probe } = {};
+  /** WiFi signal / access point, also sent to the traffic computer in every heartbeat answer */
+  private wifi = new WifiProbe(IFACE_NAME);
   private probing = false;
   private reconcile = { code: "", message: "", at: 0 };
   private reconcileBegan = 0;
@@ -127,6 +130,7 @@ export default class Diagnostics {
     this.addEvent(`amr-core 啟動 (${this.version})`);
     void this.runProbes();
     setInterval(() => void this.runProbes(), PROBE_EVERY_MS).unref();
+    this.wifi.start(PROBE_EVERY_MS);
     this.listen();
   }
 
@@ -186,6 +190,8 @@ export default class Diagnostics {
       svc: { c: l.amrService.connected, s: sec(l.amrService.since) },
       rb: { c: l.rabbit.connected, s: sec(l.rabbit.since) },
       q: { c: l.qams.connected, s: sec(l.qams.since) },
+      // WiFi: s = dBm, b = access point, f = MHz, r = Mbit/s; null = no wireless interface / not connected
+      w: this.wifi.value,
     };
   }
 
@@ -347,6 +353,7 @@ export default class Diagnostics {
         rabbit: this.probes.rabbit ? { target: `${RABBIT_MQ_HOST}:${RABBIT_MQ_PORT}`, ...this.probes.rabbit } : null,
         ros: this.probes.ros ? { target: `${rosEp.host}:${rosEp.port}`, ...this.probes.ros } : null,
       },
+      wifi: this.wifi.value,
       mission: {
         goalId: this.missionStatus.lastSendGoalId,
         type: this.missionStatus.missionType,
