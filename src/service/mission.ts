@@ -17,6 +17,8 @@ import { saveMissionState } from "./missionStateStore";
 // how long the AMR must report has_mission=false, after it had taken the goal, before the
 // goal counts as dropped without a result
 const LOST_AFTER_MS = 20000;
+// without the action status: an AMR that moved this recently still runs its goal
+const MOVED_RECENTLY_MS = 5000;
 // has_mission=true right after a new goal may still be the previous goal's - only count it
 // as "the AMR took this goal" once it is seen this long after the goal was recorded
 const ACCEPT_GRACE_MS = 2000;
@@ -405,6 +407,13 @@ export default class Mission {
     const runningGoalId = this.carState.getRunningGoalId();
     if (runningGoalId === goalId || (hasMission === true && now - this.lostWatch.recordedAt >= ACCEPT_GRACE_MS)) {
       this.lostWatch.accepted = true;
+      this.lostWatch.idleSince = 0;
+      return;
+    }
+    // no action status from this AMR: a moving AMR still runs its goal, even with has_mission=false
+    // and no feedback (some send feedback only in a goal's first second - 2026-11-11 site, where
+    // every move longer than ~21 s was reported lost). Only a stopped AMR counts toward LOST_AFTER_MS
+    if (!this.carState.usesActionStatus() && this.carState.movedWithin(MOVED_RECENTLY_MS)) {
       this.lostWatch.idleSince = 0;
       return;
     }

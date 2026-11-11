@@ -7,6 +7,16 @@ const FEEDBACK_FRESH_MS = 5000;
 // no feedback for this long = the AMR stopped sending it (logged once)
 const FEEDBACK_SILENT_MS = 3000;
 const CAR_STATE_LOG = { title: "car", type: "car state" };
+// the action server's goal status counts while its last message is this fresh (actionlib sends it ~5 Hz)
+const STATUS_FRESH_MS = 3000;
+// goal states that mean the AMR still holds the goal: PENDING, ACTIVE, PREEMPTING, RECALLING
+const HELD_STATES = [0, 1, 6, 7];
+// a pose change at least this big counts as "the AMR is moving"
+const MOVED_DIST_M = 0.05;
+const MOVED_DEG = 2;
+const STATUS_MISSING_LOG_AFTER_MS = 10000;
+
+const angleDiffDeg = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
 /**
  * What the AMR itself last said about its goal. This is kept apart from
@@ -34,6 +44,15 @@ export default class CarState {
   private feedbackCount = 0;
   private feedbackSince = 0;
   private lastFeedbackGoalId = "";
+  // the mission action server's goal status (actionlib), when this AMR publishes it: the only
+  // signal that says which goal the AMR holds - some AMRs send has_mission=false and feedback only
+  // in the first second of a goal (2026-11-11 site)
+  private statusAt = 0;
+  private heldGoalIds: string[] = [];
+  private loggedHeld: string | null = null;
+  // the AMR's movement: without the action status, a moving AMR still runs its goal
+  private lastPose: { x: number; y: number; yaw: number } | null = null;
+  private lastMovedAt = 0;
 
   constructor() {
     ROS.has_mission.subscribe((hasMission) => {
@@ -60,6 +79,21 @@ export default class CarState {
       if (this.hasMission !== null) this.logHasMission(this.hasMission);
     }, 1000);
 
+    ROS.missionGoalStatus$.subscribe((msg) => {
+      this.statusAt = Date.now();
+      this.heldGoalIds = (msg?.status_list ?? [])
+        .filter((goal) => HELD_STATES.includes(Number(goal?.status)))
+        .map((goal) => String(goal?.goal_id?.id ?? ""))
+        .filter(Boolean);
+      this.logHeldGoals();
+      const waiters = this.hasMissionWaiters;
+      this.hasMissionWaiters = [];
+      waiters.forEach((resolve) => resolve());
+    });
+
+    ROS.pose$.subscribe((pose) => this.trackMovement(pose));
+    ROS.connected$.subscribe(() => this.logRosTopics());
+
     // a result ends that goal, even if its last feedback is still fresh
     ROS.getReadStatus$.subscribe((result) => {
       if (result.status.goal_id.id === this.feedbackGoalId) this.feedbackGoalId = "";
@@ -73,7 +107,71 @@ export default class CarState {
       this.hasMissionTrueAt = 0;
       this.feedbackGoalId = "";
       this.feedbackAt = 0;
+      this.statusAt = 0;
+      this.heldGoalIds = [];
+      this.loggedHeld = null;
+      this.lastPose = null;
     });
+  }
+
+  private trackMovement(pose: { x: number; y: number; yaw: number }) {
+    if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.y)) return;
+    if (!this.lastPose) {
+      this.lastPose = pose;
+      return;
+    }
+    const dist = Math.hypot(pose.x - this.lastPose.x, pose.y - this.lastPose.y);
+    if (dist > MOVED_DIST_M || angleDiffDeg(pose.yaw, this.lastPose.yaw) > MOVED_DEG) {
+      this.lastMovedAt = Date.now();
+      this.lastPose = pose;
+    }
+  }
+
+  private logHeldGoals() {
+    const key = this.heldGoalIds.join(",");
+    if (key === this.loggedHeld) return;
+    if (this.loggedHeld === null) {
+      infoLogger.info("車端有送 mission/status (actionlib): 用它判斷車上有沒有任務", {
+        ...CAR_STATE_LOG,
+        status: { held: this.heldGoalIds },
+      });
+    } else {
+      infoLogger.info(key ? `車端 action status: 在跑 ${key}` : "車端 action status: 沒有任務", CAR_STATE_LOG);
+    }
+    this.loggedHeld = key;
+  }
+
+  /** once per ROS connection: which mission topics the AMR has, and whether it sends mission/status */
+  private logRosTopics() {
+    const connectedAt = Date.now();
+    ROS.listTopics()
+      .then(({ topics, types }) => {
+        const relevant = topics
+          .map((topic, i) => ({ topic, type: types[i] }))
+          .filter(({ topic }) => topic.includes("/fleet_manager/") || topic.endsWith("/has_mission"));
+        const hasStatus = relevant.some(({ topic }) => topic.endsWith("/fleet_manager/mission/status"));
+        infoLogger.info(`車端任務相關 topic ${relevant.length} 個, ${hasStatus ? "有" : "沒有"} mission/status`, {
+          ...CAR_STATE_LOG,
+          status: { topics: relevant.map(({ topic, type }) => `${topic} (${type})`) },
+        });
+      })
+      .catch((err) => {
+        infoLogger.info(`讀不到車端的 topic 清單 (車上可能沒開 rosapi): ${err?.message ?? err}`, CAR_STATE_LOG);
+      });
+    setTimeout(() => {
+      if (this.statusAt >= connectedAt) return;
+      infoLogger.info("車端 10 秒內沒有送 mission/status: 用 has_mission / feedback / 有沒有在動判斷車上的任務", CAR_STATE_LOG);
+    }, STATUS_MISSING_LOG_AFTER_MS);
+  }
+
+  /** the AMR publishes its action server's goal status (and did so in the last few seconds) */
+  public usesActionStatus() {
+    return this.statusAt > 0 && Date.now() - this.statusAt <= STATUS_FRESH_MS;
+  }
+
+  /** the AMR's pose changed within the last `ms` */
+  public movedWithin(ms: number) {
+    return this.lastMovedAt > 0 && Date.now() - this.lastMovedAt <= ms;
   }
 
   private logHasMission(hasMission: boolean) {
@@ -125,24 +223,31 @@ export default class CarState {
     );
   }
 
+  /** with the action status: whether the AMR holds any goal; otherwise its has_mission */
   public getHasMission(): boolean | null {
+    if (this.usesActionStatus()) return this.heldGoalIds.length > 0;
     return this.hasMission;
   }
 
-  /** goal id of feedback received in the last few seconds, otherwise null */
+  /**
+   * with the action status: the goal the AMR holds; otherwise the goal of feedback received in the
+   * last few seconds. null = none
+   */
   public getRunningGoalId(): string | null {
+    if (this.usesActionStatus()) return this.heldGoalIds[0] ?? null;
     if (!this.feedbackGoalId || Date.now() - this.feedbackAt > FEEDBACK_FRESH_MS) return null;
     return this.feedbackGoalId;
   }
 
-  /** the AMR reported this goal: feedback with its id, or has_mission=true after `since` */
+  /** the AMR reported this goal: in its status / feedback, or has_mission=true after `since` */
   public reportsRunning(goalId: string, since: number) {
-    return this.getRunningGoalId() === goalId || (this.hasMission === true && this.hasMissionTrueAt > since);
+    if (this.getRunningGoalId() === goalId) return true;
+    return !this.usesActionStatus() && this.hasMission === true && this.hasMissionTrueAt > since;
   }
 
-  /** resolves once has_mission is known, or after timeoutMs if the AMR stays silent */
+  /** resolves once has_mission (or the action status) is known, or after timeoutMs if the AMR stays silent */
   public waitForHasMission(timeoutMs: number): Promise<void> {
-    if (this.hasMission !== null) return Promise.resolve();
+    if (this.getHasMission() !== null) return Promise.resolve();
     return new Promise((resolve) => {
       const done = () => {
         clearTimeout(timer);

@@ -76,6 +76,31 @@ export const connectionClosed$ = fromEventPattern<never>((next) => {
 }).pipe(share());
 
 
+/**
+ * The mission action server's goal status list (actionlib GoalStatusArray), if this AMR publishes
+ * one: which goals it holds right now (PENDING / ACTIVE / PREEMPTING / RECALLING), independent of
+ * has_mission and of how often it sends feedback.
+ */
+export const missionGoalStatus$ = (() => {
+  const topic = new ROSLIB.Topic({
+    ros,
+    name: `/kenmec_${AMR}/fleet_manager/mission/status`,
+    messageType: "actionlib_msgs/GoalStatusArray",
+  });
+  return fromEventPattern<{ status_list?: { goal_id?: { id?: string }; status?: number }[] }>((next) => {
+    topic.subscribe((msg) => next(msg as any));
+  }).pipe(share());
+})();
+
+/** the topics the AMR's rosbridge knows (needs rosapi on the AMR, rejects without it) */
+export const listTopics = () =>
+  new Promise<{ topics: string[]; types: string[] }>((resolve, reject) => {
+    ros.getTopics(
+      (result: any) => resolve({ topics: result?.topics ?? [], types: result?.types ?? [] }),
+      (err: any) => reject(err)
+    );
+  });
+
 // 座標✅
 export const pose$ = (() => {
   const schema = object({
