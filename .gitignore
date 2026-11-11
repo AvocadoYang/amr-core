@@ -3,3 +3,5 @@ build
 dist
 default.yaml
 data
+amr-core-linux
+amr-core-win.exe

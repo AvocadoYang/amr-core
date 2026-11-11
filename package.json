@@ -8,19 +8,13 @@
   "scripts": {
     "prebuild": "rimraf dist",
     "format": "prettier --write \"src/**/*.ts\"",
-    "start": "pm2 start ecosystem.config.js --attach",
-    "stop": "pm2 delete ecosystem.config.js",
+    "start": "node dist/main.js",
     "debug": "ts-node-dev --watch .env,config --respawn -r tsconfig-paths/register ./src/main.ts",
     "lint": "eslint \"{src}/**/*.ts\" --fix",
     "build": "tsc --project tsconfig.json  && tscpaths -p tsconfig.json -s ./src -o ./dist &&copyfiles .env ./dist && copyfiles -u 1 ./config/** ./dist/config",
     "build_pkg": "pkg dist/main.js -t \"node22-linux,node22-win\"  -c package.json && copyfiles .env ./build && copyfiles -u 1 ./config/** ./build/config"
   },
   "pkg": {
-    "ignore": [
-      "**/node_modules/pm2/**",
-      "**/node_modules/pm2-*/**",
-      "**/node_modules/@pm2/**"
-    ],
     "targets": [
       "node22-linux"
     ],
@@ -37,7 +31,6 @@
     "faker": "^5.5.3",
     "js-yaml": "^4.1.0",
     "macaddress": "^0.5.2",
-    "pm2": "^5.3.0",
     "roslib": "^1.1.0",
     "rxjs": "^7.4.0",
     "socket.io": "^4.8.1",
