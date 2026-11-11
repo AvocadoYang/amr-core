@@ -3,6 +3,7 @@ import * as path from 'path';
 import { DEBUG_LOGGER, HEARTBEAT_LOGGER } from "../configs"
 import { createLogger, transports, format } from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
+import { ForwardTransport } from './forward';
 import { kenmecLogs } from '~/helpers/system';
 
 const AMR_ID_COLOR = chalk.green;
@@ -105,6 +106,7 @@ export const infoLogger = createLogger({
       silent: SILENT,
     }),
     setDailyReport("INFO"),
+    new ForwardTransport(),
   ],
 });
 
@@ -120,6 +122,7 @@ export const warnLogger = createLogger({
       silent: SILENT,
     }),
     setDailyReport("WARN"),
+    new ForwardTransport(),
   ],
 });
 
@@ -135,6 +138,7 @@ export const errorLogger = createLogger({
       silent: SILENT,
     }),
     setDailyReport("ERROR"),
+    new ForwardTransport(),
   ],
 });
 

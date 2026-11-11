@@ -1,4 +1,5 @@
 import { CMD_ID } from './type/cmdId';
+import type { ForwardEntry } from '../logger/forward';
 import { ReturnCode } from './type/returnCode';
 import { PENDING_READ_STATUS, READ_RESULT } from '~/types/status';
 
@@ -159,7 +160,17 @@ export const sendMissionLost = (data: { goalId: string, missionType: string }) =
 
 
 
+/** a batch of this amr-core's logs for QAMS (see logger/forward.ts) */
+export const sendCarLog = (entries: ForwardEntry[], dropped: number) => {
+    return {
+        cmd_id: CMD_ID.CAR_LOG,
+        entries,
+        dropped
+    }
+}
+
 type AllReqType =
+    typeof sendCarLog |
     typeof sendHeartbeat |
     typeof sendReadStatus |
     typeof sendFeedBack |

@@ -30,7 +30,9 @@ export enum CMD_ID {
   MOVEMENT_CONFIG = 'MC',
   CONNECTION_HEALTH = "CH",
   RESEND_MISSION_REQUEST = "RM",
-  MISSION_LOST = "ML"
+  MISSION_LOST = "ML",
+  // this amr-core's own info / warn / error logs, written to the car's log on the QAMS machine
+  CAR_LOG = "LG"
 }
 
 export const blackList = [
@@ -43,7 +45,8 @@ export const blackList = [
   CMD_ID.REGISTERED,
   CMD_ID.CHECK_POSITION,
   CMD_ID.HAS_CARGO,
-  CMD_ID.EMERGENCY_STOP
+  CMD_ID.EMERGENCY_STOP,
+  CMD_ID.CAR_LOG
 ]
 
 export const fakeFeedBack = {

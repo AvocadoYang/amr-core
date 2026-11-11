@@ -17,7 +17,8 @@ import { AMR_STATUS, CONNECT_STATUS, MISSION_STATUS, TRANSACTION_INFO } from "./
 import { BehaviorSubject, catchError, combineLatest, concatMap, distinctUntilChanged, EMPTY, filter, from, ignoreElements, map, merge, Observable, share, switchMap, take, takeUntil, tap, timer } from "rxjs";
 import { errorLogger, infoLogger, warnLogger } from "./logger/logger";
 import { HANDSHAKE_EX, IO_EX } from "./mq/type/type";
-import { sendConnectionHealth, sendResendMissionRequest } from "./mq/transactionsWrapper";
+import { sendCarLog, sendConnectionHealth, sendResendMissionRequest } from "./mq/transactionsWrapper";
+import { returnForwardBatch, takeForwardBatch } from "./logger/forward";
 import { CMD_ID } from "./mq/type/cmdId";
 import { ConnectionHealthRes } from "./mq/type/res";
 
@@ -37,6 +38,9 @@ const FEEDBACK_WAIT_MS = 3000;
 // ended before asking QAMS to resend. A resend that arrives while the AMR is still braking is
 // rejected (AMR_is_running) - QAMS retries those, this just avoids the first one
 const RELEASE_WAIT_MS = 6000;
+// our info / warn / error logs go to QAMS in batches (logger/forward.ts)
+const LOG_FORWARD_INTERVAL_MS = 1000;
+const LOG_FORWARD_BATCH = 100;
 // tells QAMS this amr-core reports carHasMission / runningGoalId / pendingReadStatus and
 // understands settledReadStatusId / adoptGoalId / 3007 in the answer
 const RECONCILE_VERSION = 2;
@@ -80,6 +84,7 @@ class AmrCore {
   // bumped by every reconcile answer: a resend request still waiting for the AMR to let go of
   // its old goal is dropped once a newer reconcile has taken over
   private reconcileSeq = 0;
+  private logForwardBusy = false;
 
   // single source of truth for the 4 upstream connections; every other service reacts to what main decides here instead of tracking its own copy
   private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -105,6 +110,7 @@ class AmrCore {
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus, this.carState);
     this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus);
     this.mc = new MoveControl(this.rb, this.info);
+    this.startLogForwarding();
 
     // log + mirror the connections into connectStatus, and (re)register with QAMS whenever
     // RabbitMQ is up but QAMS is not
@@ -301,6 +307,29 @@ class AmrCore {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
+  }
+
+  /**
+   * Sends the buffered logs to QAMS once a second, but only while the session is settled
+   * (outbox open): logs written during a disconnect wait and go out after the reconcile.
+   */
+  private startLogForwarding() {
+    setInterval(async () => {
+      if (this.logForwardBusy || !this.rb.isOutboxOpen()) return;
+      const { entries, dropped } = takeForwardBatch(LOG_FORWARD_BATCH);
+      if (!entries.length && !dropped) return;
+      this.logForwardBusy = true;
+      try {
+        const sent = await this.rb.reqPublish(IO_EX, `amr.io.${MAC}.log`, sendCarLog(entries, dropped), {
+          expiration: "60000"
+        });
+        if (!sent) returnForwardBatch(entries, dropped);
+      } catch {
+        returnForwardBatch(entries, dropped);
+      } finally {
+        this.logForwardBusy = false;
+      }
+    }, LOG_FORWARD_INTERVAL_MS);
   }
 
   /**
