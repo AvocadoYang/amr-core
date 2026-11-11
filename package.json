@@ -16,6 +16,11 @@
     "build_pkg": "pkg dist/main.js -t \"node22-linux,node22-win\"  -c package.json && copyfiles .env ./build && copyfiles -u 1 ./config/** ./build/config"
   },
   "pkg": {
+    "ignore": [
+      "**/node_modules/pm2/**",
+      "**/node_modules/pm2-*/**",
+      "**/node_modules/@pm2/**"
+    ],
     "targets": [
       "node22-linux"
     ],
