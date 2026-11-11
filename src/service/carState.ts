@@ -1,3 +1,4 @@
+import { Subject } from "rxjs";
 import * as ROS from "../ros";
 
 // feedback older than this does not count as "the AMR is running that goal"
@@ -18,13 +19,17 @@ export default class CarState {
   // last time the AMR said has_mission=true
   private hasMissionTrueAt = 0;
   private hasMissionWaiters: (() => void)[] = [];
+  /** goal id of every result the AMR publishes (any status: succeeded, preempted, rejected...) */
+  public readonly goalEnded$ = new Subject<{ goalId: string; status: number }>();
 
   constructor() {
     ROS.has_mission.subscribe((hasMission) => {
       this.hasMission = hasMission;
       if (hasMission) this.hasMissionTrueAt = Date.now();
-      // idle now - the last feedback (a few seconds old at most) no longer means "running"
-      if (!hasMission) this.feedbackGoalId = "";
+      // has_mission=false does NOT clear the feedback: some AMRs report has_mission=false for the
+      // whole of a move while their feedback keeps coming (2026-11-11 site, the reconcile then
+      // took a moving AMR for idle). A goal that really ended is cleared by its result below,
+      // or goes stale after FEEDBACK_FRESH_MS.
       const waiters = this.hasMissionWaiters;
       this.hasMissionWaiters = [];
       waiters.forEach((resolve) => resolve());
@@ -38,6 +43,7 @@ export default class CarState {
     // a result ends that goal, even if its last feedback is still fresh
     ROS.getReadStatus$.subscribe((result) => {
       if (result.status.goal_id.id === this.feedbackGoalId) this.feedbackGoalId = "";
+      this.goalEnded$.next({ goalId: result.status.goal_id.id, status: result.status.status });
     });
 
     ROS.connectionClosed$.subscribe(() => {

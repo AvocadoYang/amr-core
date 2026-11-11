@@ -30,6 +30,13 @@ const CAR_STATE_WAIT_MS = 3000;
 // queued during a stall and delivered right before the reconnect) - give the AMR this long
 // to report it before the reconcile takes its snapshot
 const FRESH_GOAL_WAIT_MS = 5000;
+// we still hold a goal but the AMR sent no feedback lately: wait this long for some before the
+// snapshot - an AMR stopped at the end of its allowed path may send feedback only now and then
+const FEEDBACK_WAIT_MS = 3000;
+// after canceling for a 3004 resend: wait this long for the AMR to report the canceled goal
+// ended before asking QAMS to resend. A resend that arrives while the AMR is still braking is
+// rejected (AMR_is_running) - QAMS retries those, this just avoids the first one
+const RELEASE_WAIT_MS = 6000;
 // tells QAMS this amr-core reports carHasMission / runningGoalId / pendingReadStatus and
 // understands settledReadStatusId / adoptGoalId / 3007 in the answer
 const RECONCILE_VERSION = 2;
@@ -70,6 +77,9 @@ class AmrCore {
   private st: Status;
   private carState: CarState;
   private diag: Diagnostics;
+  // bumped by every reconcile answer: a resend request still waiting for the AMR to let go of
+  // its old goal is dropped once a newer reconcile has taken over
+  private reconcileSeq = 0;
 
   // single source of truth for the 4 upstream connections; every other service reacts to what main decides here instead of tracking its own copy
   private qams_connect$ = new BehaviorSubject<boolean>(false);
@@ -279,6 +289,43 @@ class AmrCore {
     while (this.ms.goalJustSent(FRESH_GOAL_WAIT_MS) && Date.now() < until) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    // our record says the AMR runs a goal, but it is neither saying has_mission=true nor sending
+    // feedback: give it a moment before the reconcile judges it idle
+    if (this.missionStatus.lastSendGoalId && !this.missionStatus.pendingReadStatus) {
+      const feedbackUntil = Date.now() + FEEDBACK_WAIT_MS;
+      while (
+        this.carState.getHasMission() !== true &&
+        !this.carState.getRunningGoalId() &&
+        Date.now() < feedbackUntil
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+  }
+
+  /**
+   * After a cancel: resolves once the AMR reports one of these goals ended (any result), or
+   * after RELEASE_WAIT_MS. has_mission / feedback can not tell this - some AMRs report
+   * has_mission=false and no feedback while still holding a goal.
+   */
+  private waitForCarToRelease(goalIds: string[]): Promise<string> {
+    if (!goalIds.length) return Promise.resolve("nothing held");
+    return new Promise((resolve) => {
+      let finished = false;
+      let timer: NodeJS.Timeout | undefined;
+      let sub: { unsubscribe(): void } | undefined;
+      const finish = (why: string) => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        sub?.unsubscribe();
+        resolve(why);
+      };
+      sub = this.carState.goalEnded$
+        .pipe(filter((ended) => goalIds.includes(ended.goalId)))
+        .subscribe((ended) => finish(`result ${ended.status} for ${ended.goalId}`));
+      timer = setTimeout(() => finish(`no result within ${RELEASE_WAIT_MS} ms`), RELEASE_WAIT_MS);
+    });
   }
 
   private reconcileWithQams$(): Observable<unknown> {
@@ -336,7 +383,8 @@ class AmrCore {
     // the session is settled - everything from here on, and everything released from the
     // outbox, carries the session QAMS now accepts
     this.setSystemStatus({ session: answer.newSession });
-    const { resendMission } = this.registerProcess(answer);
+    const { resendMission, releaseGoalIds } = this.registerProcess(answer);
+    const reconcileSeq = ++this.reconcileSeq;
     // only messages of the new session are taken from here on, whatever the return code: the
     // ones QAMS sent before this reconcile are dropped and QAMS sends again what is still needed
     infoLogger.info("start consume qams handshake queue, just accept equal session", {
@@ -356,6 +404,21 @@ class AmrCore {
     // release everything held while disconnected, stamped with the session QAMS now accepts
     this.rb.openOutbox();
     if (resendMission) {
+      // 3004: the cancel just went out. Ask for the resend only once the AMR has let go of the old
+      // goal - a goal sent while it is still braking is rejected (AMR_is_running, 2026-11-11 site)
+      const released = await this.waitForCarToRelease(releaseGoalIds);
+      if (reconcileSeq !== this.reconcileSeq || !this.rb.isOutboxOpen()) {
+        warnLogger.warn(`resend request dropped: a newer reconcile took over while waiting (${released})`, {
+          title: "system",
+          type: "connect status"
+        });
+        return;
+      }
+      infoLogger.info(`ask QAMS to resend the step (${released})`, {
+        title: "system",
+        type: "connect status",
+        status: { releaseGoalIds }
+      });
       this.rb.reqPublishWithAck(
         HANDSHAKE_EX,
         `qams.${MAC}.handshake.resend_mission_request`,
@@ -364,7 +427,7 @@ class AmrCore {
     }
   }
 
-  private registerProcess(answer: ConnectionHealthRes): { resendMission: boolean } {
+  private registerProcess(answer: ConnectionHealthRes): { resendMission: boolean; releaseGoalIds: string[] } {
     const { return_code, settledReadStatusId, adoptGoalId } = answer;
     this.diag.setReconcile(return_code, answer.message);
     this.diag.reconcileEnd();
@@ -384,32 +447,37 @@ class AmrCore {
     });
     switch (return_code) {
       case ReturnCode.SUCCESS:
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_AMR_SERVICE:
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS:
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS");
         ROS.cancelCarStatusAnyway(this.missionStatus.lastSendGoalId);
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       case ReturnCode.MISSION_TIMEOUT_LOGIN_SUCCESS:
         this.ms.resetMissionStatus("MISSION_TIMEOUT_LOGIN_SUCCESS");
-        return { resendMission: true };
-      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION:
+        return { resendMission: true, releaseGoalIds: [] };
+      case ReturnCode.MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION: {
+        // the goals the AMR may still hold, taken before the record is wiped: the resend request
+        // waits until the AMR reports one of them ended
+        const releaseGoalIds = [this.missionStatus.lastSendGoalId, this.carState.getRunningGoalId() ?? ""]
+          .filter((goalId, i, all) => goalId && all.indexOf(goalId) === i);
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("MISSION_NOT_SYNC_LOGIN_SUCCESS_WITH_RESET_STATUS_RESEND_MISSION");
-        return { resendMission: true };
+        return { resendMission: true, releaseGoalIds };
+      }
       case ReturnCode.MISSION_CONTINUE_LOGIN_SUCCESS:
         // the AMR is running the goal QAMS waits for but our record of it was lost
         if (adoptGoalId) this.ms.adoptGoal(adoptGoalId);
-        return { resendMission: false }
+        return { resendMission: false, releaseGoalIds: [] }
       case ReturnCode.MISSION_COMPLETED_DURING_DISCONNECT:
         // the goal finished while disconnected and QAMS already applied the result we carried
         // in CH.pendingReadStatus - nothing to cancel or resend, just drop the local record
         this.ms.resetMissionStatus("MISSION_COMPLETED_DURING_DISCONNECT");
         this.amrStatus.amrHasMission = false;
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       case ReturnCode.MISSION_RESULT_UNKNOWN:
         // QAMS can not tell whether the AMR finished this step and asked a person to check on
         // site: keep the record (a late result is still reported) and leave the AMR alone
@@ -417,16 +485,16 @@ class AmrCore {
           title: "system",
           type: "connect status"
         });
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       case ReturnCode.LOGIN_SUCCESS_UNEXPECTED:
         // both sides think they know the active goal and disagree - conservative: cancel
         // and wait, do not assume which one is right (mirrors QAMS's own conservative
         // handling of this code, which also does not auto-resend)
         ROS.cancelCarStatusAnyway("");
         this.ms.resetMissionStatus("LOGIN_SUCCESS_UNEXPECTED");
-        return { resendMission: false };
+        return { resendMission: false, releaseGoalIds: [] };
       default:
-        return { resendMission: false }
+        return { resendMission: false, releaseGoalIds: [] }
     }
 
   }
