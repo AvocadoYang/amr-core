@@ -129,6 +129,7 @@ class AmrCore {
 
         this.setServiceConnectStatus({ qamsConnect, rosbridgeConnect, rabbitConnect, amrServiceConnect });
         this.diag.setLinks({ qams: qamsConnect, rabbit: rabbitConnect, ros: rosbridgeConnect, amrService: amrServiceConnect });
+        this.carState.setQamsConnected(qamsConnect);
       }),
       switchMap(([qamsConnect, rabbitConnect]) => {
         // topology is declared by the rabbit client's recovery setup before it reports connected

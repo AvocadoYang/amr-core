@@ -15,6 +15,15 @@ const HELD_STATES = [0, 1, 6, 7];
 const MOVED_DIST_M = 0.05;
 const MOVED_DEG = 2;
 const STATUS_MISSING_LOG_AFTER_MS = 10000;
+// while QAMS is disconnected, log where the AMR is this often (when it moved at least
+// POSE_LOG_MIN_MOVE_M): the logs reach QAMS after the reconnect, so QAMS can see where the AMR went
+// and which points it passed while traffic control could not see it (2026-11-12 site)
+const POSE_LOG_WHILE_OFFLINE_MS = 5000;
+const POSE_LOG_MIN_MOVE_M = 0.3;
+
+type Pose = { x: number; y: number; yaw: number };
+const poseText = (pose: Pose | null) =>
+  pose ? `(${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}, yaw ${pose.yaw.toFixed(1)})` : "(還沒收到)";
 
 const angleDiffDeg = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
 
@@ -53,6 +62,11 @@ export default class CarState {
   // the AMR's movement: without the action status, a moving AMR still runs its goal
   private lastPose: { x: number; y: number; yaw: number } | null = null;
   private lastMovedAt = 0;
+  // where the AMR is now, and the QAMS link (null = not connected to QAMS yet since start)
+  private pose: Pose | null = null;
+  private qamsConnected: boolean | null = null;
+  private offlinePoseTimer: ReturnType<typeof setInterval> | null = null;
+  private loggedOfflinePose: Pose | null = null;
 
   constructor() {
     ROS.has_mission.subscribe((hasMission) => {
@@ -91,12 +105,20 @@ export default class CarState {
       waiters.forEach((resolve) => resolve());
     });
 
-    ROS.pose$.subscribe((pose) => this.trackMovement(pose));
+    ROS.pose$.subscribe((pose) => {
+      if (pose && Number.isFinite(pose.x) && Number.isFinite(pose.y)) this.pose = pose;
+      this.trackMovement(pose);
+    });
     ROS.connected$.subscribe(() => this.logRosTopics());
 
     // a result ends that goal, even if its last feedback is still fresh
     ROS.getReadStatus$.subscribe((result) => {
       if (result.status.goal_id.id === this.feedbackGoalId) this.feedbackGoalId = "";
+      // where the AMR was when it said it finished: QAMS traffic control checks the same thing
+      infoLogger.info(
+        `車端回報結果 goal ${result.status.goal_id.id} (status ${result.status.status}), 車的位置 ${poseText(this.pose)}`,
+        { ...CAR_STATE_LOG, status: { pose: this.pose } }
+      );
       this.goalEnded$.next({ goalId: result.status.goal_id.id, status: result.status.status });
     });
 
@@ -111,7 +133,45 @@ export default class CarState {
       this.heldGoalIds = [];
       this.loggedHeld = null;
       this.lastPose = null;
+      this.pose = null;
     });
+  }
+
+  /** the QAMS link went up / down: log where the AMR is, and keep logging it while QAMS is away */
+  public setQamsConnected(connected: boolean) {
+    if (connected === this.qamsConnected) return;
+    const wasConnected = this.qamsConnected === true;
+    this.qamsConnected = connected;
+    if (connected) {
+      if (this.offlinePoseTimer) clearInterval(this.offlinePoseTimer);
+      this.offlinePoseTimer = null;
+      if (this.loggedOfflinePose) {
+        infoLogger.info(`跟 QAMS 連上了, 車的位置 ${poseText(this.pose)}`, {
+          ...CAR_STATE_LOG,
+          status: { pose: this.pose },
+        });
+      }
+      this.loggedOfflinePose = null;
+      return;
+    }
+    // not connected yet since start: nothing to report
+    if (!wasConnected) return;
+    this.loggedOfflinePose = this.pose ?? { x: NaN, y: NaN, yaw: NaN };
+    infoLogger.info(`跟 QAMS 斷線, 車的位置 ${poseText(this.pose)}`, {
+      ...CAR_STATE_LOG,
+      status: { pose: this.pose },
+    });
+    this.offlinePoseTimer = setInterval(() => {
+      const pose = this.pose;
+      const last = this.loggedOfflinePose;
+      if (!pose) return;
+      if (last && Math.hypot(pose.x - last.x, pose.y - last.y) < POSE_LOG_MIN_MOVE_M) return;
+      this.loggedOfflinePose = pose;
+      infoLogger.info(`跟 QAMS 斷線中, 車的位置 ${poseText(pose)}`, {
+        ...CAR_STATE_LOG,
+        status: { pose },
+      });
+    }, POSE_LOG_WHILE_OFFLINE_MS);
   }
 
   private trackMovement(pose: { x: number; y: number; yaw: number }) {
