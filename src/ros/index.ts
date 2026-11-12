@@ -27,7 +27,7 @@ import {
 import { infoLogger, warnLogger, errorLogger } from "~/logger/logger";
 import { RBClient } from "~/mq";
 import { RES_EX } from "~/mq/type/type";
-import { sendAllowPathResponse, sendBaseResponse } from "~/mq/transactionsWrapper";
+import { sendAllowPathResponse, sendBaseResponse, sendShortestPathRejectedResponse } from "~/mq/transactionsWrapper";
 import { ReturnCode } from "~/mq/type/returnCode";
 import { CMD_ID } from "~/mq/type/cmdId";
 import { group } from "console";
@@ -283,7 +283,21 @@ export const sendShortestPath = (() => {
             }),
             { expiration: "10000" }
           )
-        };
+        } else {
+          // 車拒絕這條路徑也要回給 QAMS (2026-11-12 現場: 車回 0011 沒轉, QAMS 每 10 秒重送同一條, 任務卡住)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          const carCode = (data as { return_code?: unknown }).return_code;
+          rb.resPublish(
+            RES_EX,
+            `qams.${MAC}.res.shortestPath`,
+            sendShortestPathRejectedResponse({
+              amrId,
+              return_code: carCode ? String(carCode) : "unknown",
+              id
+            }),
+            { expiration: "10000" }
+          )
+        }
         infoLogger.info(`receive shortest path response from ros service`, {
           title: "traffic",
           type: "shortest path [res]",

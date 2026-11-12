@@ -245,7 +245,24 @@ export const sendWriteStatusResponse = (data: {
 
 
 
-type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse | typeof sendWriteStatusResponse;
+/**
+ * 車端的 /fleet_manager/shortest_path 回 result:false: 車拒絕這條路徑 (例如 0011).
+ * return_code 帶車端給的碼; rejectedByCar 讓 QAMS 分得出這跟 amr-core 呼叫服務失敗 (0001) 不一樣,
+ * 不要再重送同一條.
+ */
+export const sendShortestPathRejectedResponse = (data: {
+    return_code: string,
+    id: string,
+    amrId: string,
+}) => {
+    return {
+        cmd_id: CMD_ID.SHORTEST_PATH,
+        rejectedByCar: true as const,
+        ...data
+    }
+}
+
+type AllResType = typeof sendBaseResponse | typeof sendHeartBeatResponse | typeof sendWriteStatusResponse | typeof sendShortestPathRejectedResponse;
 export type ResponseMsgType = ReturnType<AllResType>;
 
 
