@@ -134,11 +134,25 @@ export const sendConnectionHealth = (data: {
     }
 }
 
+/** amr-core 會的功能, 註冊時告訴 QAMS (舊版 QAMS 不看這個欄位) */
+export const AMR_CORE_CAPABILITIES = ["chargeLock"];
+
 export const sendRegisterRequest = (data: {
     serialNumber: string,
+    /** 充電鎖現在的狀態: QAMS 重開後靠這個知道車鎖在哪座充電站 */
+    chargeLock?: { locked: boolean, dockLocationId: string },
 }) => {
     return {
         cmd_id: CMD_ID.REGISTER,
+        ...data,
+        capabilities: AMR_CORE_CAPABILITIES
+    }
+}
+
+/** 回覆 QAMS 的充電鎖: requestId 是 QAMS 那次上 / 解鎖的 id */
+export const sendChargeLockAck = (data: { requestId: string, locked: boolean, paused: boolean }) => {
+    return {
+        cmd_id: CMD_ID.CHARGE_LOCK,
         ...data
     }
 }
@@ -188,7 +202,8 @@ type AllReqType =
     typeof sendRegisterRequest |
     typeof sendConnectionHealth |
     typeof sendResendMissionRequest |
-    typeof sendMissionLost
+    typeof sendMissionLost |
+    typeof sendChargeLockAck
 
 export type RequestMsgType = ReturnType<AllReqType>
 

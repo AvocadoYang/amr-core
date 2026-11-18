@@ -32,7 +32,9 @@ export enum CMD_ID {
   RESEND_MISSION_REQUEST = "RM",
   MISSION_LOST = "ML",
   // this amr-core's own info / warn / error logs, written to the car's log on the QAMS machine
-  CAR_LOG = "LG"
+  CAR_LOG = "LG",
+  // 充電鎖: QAMS 叫 amr-core 上 / 解鎖 (q2a.io), amr-core 用同一個 cmd_id 回覆 (amr.io)
+  CHARGE_LOCK = "CL"
 }
 
 export const blackList = [

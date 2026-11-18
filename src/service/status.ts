@@ -2,7 +2,7 @@ import { RBClient } from '~/mq';
 import * as ROS from '../ros'
 import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from "../configs";
 import { CMD_ID, fakeIoInfo } from '~/mq/type/cmdId';
-import { sendBaseResponse, sendCargoVerity, sendCurrentId, sendErrorInfo, sendErrorInfoCRD, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
+import { sendBaseResponse, sendCargoVerity, sendChargeLockAck, sendCurrentId, sendErrorInfo, sendErrorInfoCRD, sendForceRebindLocation, sendIOInfo, sendIsRegistered, sendPose, sendPoseAccurate, sendStackInfo, sendSystemState } from '~/mq/transactionsWrapper';
 import { HANDSHAKE_EX, IO_EX, RES_EX } from '~/mq/type/type';
 import { infoLogger } from '~/logger/logger';
 import { isDifferentPose, formatPose, SimplePose } from '~/helpers';
@@ -11,6 +11,7 @@ import { throttleTime } from 'rxjs';
 import { MapType } from '~/types/map';
 import axios from 'axios';
 import { AMR_STATUS, CONNECT_STATUS, TRANSACTION_INFO } from '~/types/status';
+import { ChargeLock } from './chargeLock';
 
 
 class Status {
@@ -19,7 +20,8 @@ class Status {
         private rb: RBClient,
         private info: TRANSACTION_INFO,
         private connectStatus: CONNECT_STATUS,
-        private amrStatus: AMR_STATUS
+        private amrStatus: AMR_STATUS,
+        private chargeLock: ChargeLock
     ) {
 
         this.rb.onControlTransaction(async (action) => {
@@ -77,8 +79,17 @@ class Status {
             const { id, cmd_id } = payload;
             switch (payload.cmd_id) {
                 case CMD_ID.EMERGENCY_STOP:
-                    ROS.pause(payload.payload);
+                    // 充電鎖上鎖時只放行立即暫停 (見 chargeLock.ts)
+                    this.chargeLock.onStopRequest(payload.payload);
                     break;
+                case CMD_ID.CHARGE_LOCK: {
+                    const reply = this.chargeLock.handle(!!payload.lock, payload.reason ?? "", payload.dockLocationId ?? "");
+                    this.rb.reqPublish(IO_EX, `amr.io.${MAC}.chargeLock`, sendChargeLockAck({
+                        requestId: payload.requestId,
+                        ...reply
+                    }), { expiration: "3000" });
+                    break;
+                }
                 case CMD_ID.HAS_CARGO:
                     ROS.sendHasCargo(payload.hasCargo);
                     break;

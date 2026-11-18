@@ -36,7 +36,9 @@ class NetWorkManager {
     private rb: RBClient,
     private amrStatus: AMR_STATUS,
     private missionStatus: MISSION_STATUS,
-    private connectStatus: CONNECT_STATUS
+    private connectStatus: CONNECT_STATUS,
+    /** 充電鎖現在的狀態, 註冊時帶給 QAMS */
+    private chargeLockInfo: () => { locked: boolean, dockLocationId: string } = () => ({ locked: false, dockLocationId: "" })
   ) {
     this.output$ = new Subject();
     this.rosConnect();
@@ -124,6 +126,7 @@ class NetWorkManager {
         `qams.register.req.register.${MAC}`,
         sendRegisterRequest({
           serialNumber: MAC,
+          chargeLock: this.chargeLockInfo(),
         }),
         { expiration: "3000" },
         requestId

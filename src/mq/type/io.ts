@@ -31,4 +31,18 @@ export type HasCargo = {
 export type HAS_CARGO = Base<HasCargo>;
 
 
-export type AllIO = EMERGENCY_STOP | HAS_CARGO
+/** QAMS 叫車端上 / 解充電鎖 (見 service/chargeLock.ts) */
+export type ChargeLockReq = {
+    cmd_id: CMD_ID.CHARGE_LOCK,
+    id: string,
+    amrId: string,
+    requestId: string,
+    lock: boolean,
+    reason: string,
+    /** 哪一座充電站 (點位 ID); 舊版 QAMS 不帶 */
+    dockLocationId?: string
+}
+export type CHARGE_LOCK = Base<ChargeLockReq>;
+
+
+export type AllIO = EMERGENCY_STOP | HAS_CARGO | CHARGE_LOCK

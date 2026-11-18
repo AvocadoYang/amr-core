@@ -11,6 +11,7 @@
     "start": "node dist/main.js",
     "debug": "ts-node-dev --watch .env,config --respawn -r tsconfig-paths/register ./src/main.ts",
     "lint": "eslint \"{src}/**/*.ts\" --fix",
+    "test": "TS_NODE_TRANSPILE_ONLY=1 node -r ts-node/register -r tsconfig-paths/register --test test/*.test.ts",
     "build": "tsc --project tsconfig.json  && tscpaths -p tsconfig.json -s ./src -o ./dist &&copyfiles .env ./dist && copyfiles -u 1 ./config/** ./dist/config",
     "build_pkg": "pkg dist/main.js -t \"node22-linux,node22-win\"  -c package.json && copyfiles .env ./build && copyfiles -u 1 ./config/** ./build/config"
   },

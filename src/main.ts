@@ -4,6 +4,7 @@ import { MAC, MISSION_CONTROL_HOST, MISSION_CONTROL_PORT } from './configs'
 import { cleanEnv, str } from "envalid";
 import { CarState, Diagnostics, HeartbeatMonitor, MissionManager, MoveControl, NetWorkManager, Status } from "./service";
 import { loadMissionState } from "./service/missionStateStore";
+import { ChargeLock } from "./service/chargeLock";
 import { RBClient } from "./mq";
 import { IS_CONNECTED, isConnected, ROS_BRIDGE_CONNECTED } from "./actions/networkManager/output";
 import { RB_IS_CONNECTED } from "./actions/rabbitmq/output";
@@ -79,6 +80,7 @@ class AmrCore {
   private ms: MissionManager;
   private mc: MoveControl;
   private st: Status;
+  private chargeLock: ChargeLock;
   private carState: CarState;
   private diag: Diagnostics;
   // bumped by every reconcile answer: a resend request still waiting for the AMR to let go of
@@ -101,14 +103,29 @@ class AmrCore {
     this.carState = new CarState();
     this.diag = new Diagnostics(this.info, this.missionStatus, this.amrStatus, this.carState);
     this.hb = new HeartbeatMonitor(this.info, this.rb, this.missionStatus, this.connectStatus, this.diag)
-    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus);
+    // 充電鎖: 重開時從存檔讀回來, 鎖著就馬上開始每秒暫停車
+    this.chargeLock = new ChargeLock({
+      publishPause: (payload) => ROS.pause(payload),
+      isRosConnected: () => this.connectStatus.rosbridge_isConnect,
+      amrId: () => this.info.amrId ?? "",
+      log: {
+        info: (msg) => infoLogger.info(msg, { title: "charge lock", type: "charge lock" }),
+        warn: (msg) => warnLogger.warn(msg, { title: "charge lock", type: "charge lock" }),
+        error: (msg) => errorLogger.error(msg, { title: "charge lock", type: "charge lock" }),
+      },
+    });
+    this.ros_bridge_connect$.pipe(distinctUntilChanged(), filter(Boolean)).subscribe(() => {
+      // connectStatus 跟著 connections$ 更新, 等它更新完再送暫停
+      setTimeout(() => this.chargeLock.onRosConnected(), 0);
+    });
+    this.netWorkManager = new NetWorkManager(this.rb, this.amrStatus, this.missionStatus, this.connectStatus, () => this.chargeLock.registerInfo);
     this.diag.attachSources({
       qamsError: () => this.netWorkManager.lastError,
       rabbitError: () => this.rb.lastNetworkError,
       heartbeat: () => this.hb.getHeartbeatTimes(),
     });
     this.ms = new MissionManager(this.rb, this.missionStatus, this.amrStatus, this.carState);
-    this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus);
+    this.st = new Status(this.rb, this.info, this.connectStatus, this.amrStatus, this.chargeLock);
     this.mc = new MoveControl(this.rb, this.info);
     this.startLogForwarding();
 
